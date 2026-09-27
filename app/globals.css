@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-mint: #a7eff1;
+  --color-cream: #fffbea;
+  --color-gold: #dcbb52;
+  --color-ink: #333333;
+  --font-sans: var(--font-geist-sans);
+}
+
+body {
+  background: #fffbea;
+  color: #333333;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+button,
+a,
+input,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea {
+  font: inherit;
+}
