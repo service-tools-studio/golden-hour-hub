@@ -21,36 +21,38 @@ export function PageHeader({
 }) {
   const trail = crumbs ?? (crumb ? [crumb] : undefined);
   const bar = (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-start justify-between gap-3">
       {trail ? (
-        <nav aria-label="Breadcrumb" className="flex min-h-11 min-w-0 items-center text-sm text-ink/55">
+        <nav aria-label="Breadcrumb" className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center text-sm text-ink/55">
           {trail.map((item, index) => (
-            <span key={`${item.label}-${index}`} className="flex min-w-0 items-center">
+            <span key={`${item.label}-${index}`} className="inline-flex items-center whitespace-nowrap">
               {index > 0 ? (
                 <span className="px-1.5" aria-hidden="true">
                   /
                 </span>
               ) : null}
               {item.href ? (
-                <Link href={item.href} className="shrink-0 font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
+                <Link href={item.href} className="font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
                   {item.label}
                 </Link>
               ) : (
-                <button type="button" onClick={item.onClick} className="max-w-36 truncate font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
+                <button type="button" onClick={item.onClick} className="font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
                   {item.label}
                 </button>
               )}
             </span>
           ))}
-          <span className="px-1.5" aria-hidden="true">
-            /
+          <span className="inline-flex items-center whitespace-nowrap">
+            <span className="px-1.5" aria-hidden="true">
+              /
+            </span>
+            <span>{title}</span>
           </span>
-          <span className="truncate">{title}</span>
         </nav>
       ) : (
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">{eyebrow}</p>
       )}
-      <Link href="/" className="shrink-0 text-sm font-medium text-ink/60">
+      <Link href="/" className="flex h-11 shrink-0 items-center text-sm font-medium text-ink/60">
         Switch
       </Link>
     </div>

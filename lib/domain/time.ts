@@ -91,6 +91,13 @@ export function mondayOf(date: string): string {
   return addDays(date, delta);
 }
 
+/** Sunday on or before this date. Calendar grids use this; availability weeks stay Monday. */
+export function sundayOf(date: string): string {
+  const { year, month, day } = parseYmd(date);
+  const utcDay = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return addDays(date, -utcDay);
+}
+
 /**
  * The Monday–Sunday week cleaners still need to submit.
  * Deadline is the Sunday before that Monday.
@@ -239,6 +246,21 @@ export function formatShortDate(date: string): string {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
+  }).format(utcNoon(date));
+}
+
+export function formatMonthYear(date: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(utcNoon(date));
+}
+
+export function formatMonthName(date: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
     timeZone: "UTC",
   }).format(utcNoon(date));
 }

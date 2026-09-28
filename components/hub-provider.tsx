@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { mergeAdjacentWindows } from "@/lib/domain/availability";
 import { deriveCrewSettings } from "@/lib/domain/cleaners";
 import { validateCustomerInput, type CustomerInput } from "@/lib/domain/customers";
 import {
@@ -166,7 +167,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       ...data.availability.filter(
         (window) => window.cleanerId !== cleanerId || window.date < weekStart || window.date > weekEnd,
       ),
-      ...windows,
+      ...mergeAdjacentWindows(windows),
     ];
     const decision = validateAvailabilityEdit({
       newWindows: combined
@@ -249,6 +250,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       lastName: person.lastName,
       phone: person.phone,
       email: person.email,
+      notes: person.notes,
       status: priorCustomer?.status ?? "ACTIVE",
       createdAt: priorCustomer?.createdAt ?? now,
       createdBy: priorCustomer?.createdBy ?? "kelsey",

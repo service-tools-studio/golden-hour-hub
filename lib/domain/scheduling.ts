@@ -57,6 +57,34 @@ export function calculateBlockedRange(input: {
   };
 }
 
+const COUNTS_TOWARD_JOB_TIME = new Set<AssignmentStatus>(["INVITED", "CONFIRMED"]);
+
+/** Earliest arrival-window start through the latest expected end, across cleaners still on the job. */
+export function cleaningCoverage(
+  assignments: Array<
+    Pick<
+      AssignmentSchedule,
+      "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes"
+    >
+  >,
+): { startUtc: Date; endUtc: Date } | null {
+  const active = assignments.filter((assignment) => COUNTS_TOWARD_JOB_TIME.has(assignment.status));
+  if (active.length === 0) return null;
+  let startUtc: Date | null = null;
+  let endUtc: Date | null = null;
+  for (const assignment of active) {
+    const blocked = calculateBlockedRange({
+      date: assignment.serviceDate,
+      arrivalWindowStart: assignment.arrivalWindowStart,
+      arrivalWindowEnd: assignment.arrivalWindowEnd,
+      expectedDurationMinutes: assignment.expectedDurationMinutes,
+    });
+    if (!startUtc || blocked.startUtc.getTime() < startUtc.getTime()) startUtc = blocked.startUtc;
+    if (!endUtc || blocked.endUtc.getTime() > endUtc.getTime()) endUtc = blocked.endUtc;
+  }
+  return startUtc && endUtc ? { startUtc, endUtc } : null;
+}
+
 export function calculateConfirmedHeadcount(
   assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize">>,
 ): number {

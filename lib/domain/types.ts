@@ -78,6 +78,7 @@ export type Customer = {
   /** Digits only, 10-digit US number. */
   phone: string;
   email?: string;
+  notes?: string;
   status: CustomerStatus;
   createdAt: string;
   createdBy: string;

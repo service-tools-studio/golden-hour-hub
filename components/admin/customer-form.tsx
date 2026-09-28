@@ -14,6 +14,14 @@ function inputClass(invalid: boolean) {
     : fieldClass;
 }
 
+function StepGlyph({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round">
+      {direction === "up" ? <path d="M12 5v14M5 12h14" /> : <path d="M5 12h14" />}
+    </svg>
+  );
+}
+
 function NumberStepper({
   label,
   value,
@@ -40,28 +48,18 @@ function NumberStepper({
     if (next < min || (max !== undefined && next > max)) return;
     onChange(next);
   }
+  const stepButton =
+    "flex size-11 items-center justify-center rounded-full bg-mint text-ink shadow-[0_4px_12px_rgba(51,51,51,0.08)] transition active:scale-95 disabled:bg-ink/8 disabled:text-ink/25 disabled:shadow-none";
   return (
     <div id={id}>
-      <p className={`mb-1.5 text-sm font-medium ${error ? "text-red-700" : "text-ink/80"}`}>{label}</p>
-      <div className={`overflow-hidden rounded-2xl border bg-white ${error ? "border-red-600" : "border-ink/15"}`}>
-        <button
-          type="button"
-          aria-label={`Increase ${label}`}
-          disabled={atMax}
-          onClick={() => change(1)}
-          className="flex min-h-12 w-full items-center justify-center text-2xl font-semibold leading-none text-ink disabled:text-ink/25"
-        >
-          +
+      <p className={`mb-1.5 text-center text-sm font-medium ${error ? "text-red-700" : "text-ink/80"}`}>{label}</p>
+      <div className={`flex flex-col items-center gap-1 rounded-3xl px-1 py-2 ${error ? "bg-red-50 ring-1 ring-red-600" : "bg-white"}`}>
+        <button type="button" aria-label={`Increase ${label}`} disabled={atMax} onClick={() => change(1)} className={stepButton}>
+          <StepGlyph direction="up" />
         </button>
-        <p className="border-y border-ink/10 py-2 text-center text-base font-semibold">{value}</p>
-        <button
-          type="button"
-          aria-label={`Decrease ${label}`}
-          disabled={atMin}
-          onClick={() => change(-1)}
-          className="flex min-h-12 w-full items-center justify-center text-2xl font-semibold leading-none text-ink disabled:text-ink/25"
-        >
-          −
+        <p className="min-h-8 text-center text-base font-semibold tabular-nums leading-8">{value}</p>
+        <button type="button" aria-label={`Decrease ${label}`} disabled={atMin} onClick={() => change(-1)} className={stepButton}>
+          <StepGlyph direction="down" />
         </button>
       </div>
       {error ? (
@@ -147,12 +145,20 @@ export function CustomerForm({
     lastName: customer?.lastName ?? "",
     phone: customer ? formatPhone(customer.phone) : "",
     email: customer?.email ?? "",
+    notes: customer?.notes ?? "",
   });
   const [properties, setProperties] = useState(() => draftsFor(customer, hub.properties));
 
+  const notesRef = useRef<HTMLTextAreaElement>(null);
   const initial = useRef({ form, properties });
   const latest = useRef({ form, properties });
   latest.current = { form, properties };
+
+  function liveForm() {
+    const notes = notesRef.current?.value;
+    if (notes === undefined) return latest.current.form;
+    return { ...latest.current.form, notes };
+  }
 
   function clearError(field: string) {
     setError((current) => (current?.field === field ? null : current));
@@ -185,7 +191,7 @@ export function CustomerForm({
   function persist(): string | null {
     const current = latest.current;
     const input = {
-      ...current.form,
+      ...liveForm(),
       properties: current.properties.map((item) => ({
         propertyId: item.propertyId,
         label: item.label,
@@ -204,7 +210,7 @@ export function CustomerForm({
       setError({ field: decision.field ?? "form", message: decision.message, at: Date.now() });
       return null;
     }
-    const result = hub.saveCustomer(input, customer?.customerId);
+    const result = hub.saveCustomer(decision.value, customer?.customerId);
     if (!result.ok || !result.customerId) {
       setError({
         field: "form",
@@ -234,7 +240,7 @@ export function CustomerForm({
   }, [error]);
 
   function isDirty(): boolean {
-    return JSON.stringify(latest.current) !== JSON.stringify(initial.current);
+    return JSON.stringify({ form: liveForm(), properties: latest.current.properties }) !== JSON.stringify(initial.current);
   }
 
   useImperativeHandle(ref, () => ({
@@ -267,6 +273,14 @@ export function CustomerForm({
       </Field>
       <Field id="customer-email" label="Email" error={fieldMessage("email")}>
         <input className={inputClass(Boolean(fieldMessage("email")))} type="email" value={form.email} onChange={(event) => set("email", event.target.value)} aria-invalid={Boolean(fieldMessage("email"))} />
+      </Field>
+      <Field id="customer-notes" label="Notes">
+        <textarea
+          ref={notesRef}
+          className={`${inputClass(false)} min-h-24 py-3`}
+          value={form.notes}
+          onChange={(event) => set("notes", event.target.value)}
+        />
       </Field>
       <div className="space-y-3 pt-2">
         <h2 className="text-lg font-semibold">Properties</h2>
@@ -310,15 +324,15 @@ export function CustomerForm({
                   aria-invalid={Boolean(streetError)}
                 />
               </Field>
-              <div className="grid grid-cols-[1fr_4.5rem_5.5rem] gap-2">
-                <Field id={`property-${property.key}-city`} label="City" error={cityError}>
-                  <input
-                    className={inputClass(Boolean(cityError))}
-                    value={property.city}
-                    onChange={(event) => updateProperty(property.key, { city: event.target.value })}
-                    aria-invalid={Boolean(cityError)}
-                  />
-                </Field>
+              <Field id={`property-${property.key}-city`} label="City" error={cityError}>
+                <input
+                  className={inputClass(Boolean(cityError))}
+                  value={property.city}
+                  onChange={(event) => updateProperty(property.key, { city: event.target.value })}
+                  aria-invalid={Boolean(cityError)}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
                 <Field id={`property-${property.key}-state`} label="State" error={stateError}>
                   <input
                     className={inputClass(Boolean(stateError))}

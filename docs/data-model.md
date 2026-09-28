@@ -1,10 +1,10 @@
 # Data model
 
-This is the proposed DynamoDB design. It is not implemented yet.
+The records below are the domain types in `lib/domain/types.ts`. The preview keeps them in memory. DynamoDB is not connected. The keys are the proposed layout for those same records.
 
-One table, `GoldenHourHub`. Two indexes. A handful of item types. Money is integer cents. Dates are `YYYY-MM-DD` in `America/Los_Angeles`. Instants are ISO-8601 UTC.
+One table, `GoldenHourHub`. Two indexes. Money is integer cents. Dates are `YYYY-MM-DD` in `America/Los_Angeles`. Times are local `HH:mm`. An end time of `24:00` is midnight at the end of that date. Instants are ISO-8601 UTC.
 
-A customer is the person. A property is one house that person owns. A recurring series is not a job. Each cleaning date is its own job at one property. Each cleaner on that job has their own assignment. Accepting one date does not accept the series.
+A customer is the person. A property is one house that person owns. A recurring series is not a job. Each cleaning date is its own job at one property. Each cleaner on that job has their own assignment. Accepting one date does not accept the series. A job repeats only when `seriesId` is set. `serviceType` is a label: `RECURRING`, `DEEP_CLEAN`, `MOVE_OUT`, `POST_CONSTRUCTION`, or `OTHER`.
 
 ## Keys
 
@@ -27,11 +27,11 @@ gsi1pk CLEANER_STATUS#ACTIVE
 gsi1sk ramos#claudia
 ```
 
-Fields: `firstName`, `lastName`, `email`, `mobilePhone`, `status`, `helpersApproved`, `typicalHelperCount`, `typicalCrewSize`, plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
+Fields: `cleanerId`, `firstName`, `lastName`, `email`, `mobilePhone`, `status` (`ACTIVE` or `INACTIVE`), `helpersApproved`, `typicalHelperCount`, `typicalCrewSize`, plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
 
 `helpersApproved` lives only here. Assignments do not copy it. Acceptance reads the profile immediately before the write.
 
-If `helpersApproved` is false, `typicalHelperCount` is 0 and `typicalCrewSize` is 1. If true, `typicalCrewSize` is `1 + typicalHelperCount`.
+If `helpersApproved` is false, `typicalHelperCount` is 0 and `typicalCrewSize` is 1. If true, `typicalHelperCount` is an integer from 0 to 8 and `typicalCrewSize` is `1 + typicalHelperCount`.
 
 ### Availability window
 
@@ -42,7 +42,9 @@ gsi1pk AVAIL#2026-09-28
 gsi1sk claudia#08:00#w1
 ```
 
-`start` and `end` are local `HH:mm`. These rows are the submitted availability. Bookings never rewrite them.
+Fields: `availabilityId`, `cleanerId`, `date`, `start`, `end`. These rows are the submitted availability. Bookings never rewrite them.
+
+Windows that touch on the same day are one block. `08:00–11:00` and `11:00–17:00` are stored as `08:00–17:00`. A gap stays two windows. An overlap is rejected. The end must be after the start. A blank start or end is not saved.
 
 ### Availability submission
 
@@ -53,6 +55,8 @@ gsi1pk SUBMISSION#2026-09-28
 gsi1sk claudia
 ```
 
+Fields: `submissionId`, `cleanerId`, `weekStart`, `submittedAt`, `updatedAt`. `weekStart` is the Monday of that week.
+
 A row means the week was submitted, even when that week has zero `AVAIL` rows. Missing cleaners are active profiles minus this query.
 
 ### Customer
@@ -62,9 +66,9 @@ pk CUSTOMER#cust-jeff
 sk PROFILE
 ```
 
-Fields: `firstName`, `lastName`, `phone` (10 digits), `email`, `status`, and the audit fields.
+Fields: `customerId`, `firstName`, `lastName`, `phone` (10 digits), optional `email`, optional `notes`, `status` (`ACTIVE` or `INACTIVE`), and the audit fields.
 
-The person does not store an address. A customer with two houses has two property items.
+The person does not store an address. A customer with two houses has two property items. A customer needs at least one property.
 
 ### Property
 
@@ -76,13 +80,21 @@ customerId cust-jeff
 
 `customerId` is stored on the item as well as in the key. The customer profile loads with one query: `pk = CUSTOMER#id`, which returns `PROFILE` and every `PROPERTY#` row.
 
-Fields: optional `label` (for example “Hawthorne”), `streetAddress`, `city`, `state`, `zip`, `bedrooms`, `bathrooms`, `squareFeet`, `preferences`, `status` (`ACTIVE` or `INACTIVE`), and the audit fields.
+Fields: `propertyId`, optional `label` (for example “Hawthorne”), `streetAddress`, `city`, `state` (two letters), `zip` (5 digits), `bedrooms` (integer 0–20), `bathrooms` (0–20, halves allowed), `squareFeet` (integer, at least 1), `preferences`, `status` (`ACTIVE` or `INACTIVE`), and the audit fields.
 
 House preferences live here: side gate, fragrance-free products, the cat. Visit-only notes stay on the job as special instructions.
 
-### Customer search items
+### Customer search
 
-Golden Hour will have hundreds of customers, not hundreds of thousands. Search is prefix matching on small items. No OpenSearch.
+The preview searches active customers in memory. An empty query returns every active customer. Text is lowercased and punctuation is collapsed to spaces.
+
+- Name matches when the query is contained in `last first` or `first last`. “Bach” matches Jeff Bachrach. “achrach” matches too.
+- Phone matches when the query has at least 3 digits and those digits are contained in the 10-digit number or its last 7.
+- Address matches when the query is contained in the street, the city, or the property label.
+
+Email is not searched. Inactive customers are left out.
+
+The proposed table uses small prefix items for the same fields. Name and phone keys point at the customer. The address key points at the property and also stores `customerId`.
 
 ```
 pk SEARCH#NAME   sk bachrach jeff#cust-jeff
@@ -92,11 +104,7 @@ pk SEARCH#PHONE7 sk 5551234#cust-jeff
 pk SEARCH#ADDR   sk 123 main st#prop-main
 ```
 
-Name and phone keys point at the customer. The address key points at the property and also stores `customerId`, so a street search opens that person’s profile on the matching house.
-
-The app lowercases text, collapses punctuation, and queries `begins_with`. “Bach” matches the last-name key. “5551234” matches the last-seven phone key. A middle-of-the-word query such as “achrach” will not match. That is acceptable at this size.
-
-Renames, and address edits, delete the old search items and write the new ones in the same transaction as the profile or property update. Historical jobs are not part of that transaction.
+A `begins_with` query matches a prefix, not the middle of a word. The preview’s `includes` match is wider than that index. Renames and address edits delete the old search items and write the new ones in the same transaction as the profile or property update. Historical jobs are not part of that transaction.
 
 ### Recurring series
 
@@ -109,7 +117,7 @@ gsi2pk CUSTOMER#cust-jeff
 gsi2sk SERIES#series-jeff
 ```
 
-`gsi1sk` starts with `generatedThroughDate` so the daily generator can find active series that are behind.
+`gsi1sk` starts with `generatedThroughDate` so the daily generator can find active series that are behind. The field is optional until the first run.
 
 The recurrence object is:
 
@@ -121,9 +129,9 @@ weekOrdinals  optional, e.g. [1, 3] or ["LAST"]
 dayOfMonth    optional, e.g. 15
 ```
 
-Weekly rules use `daysOfWeek`. Monthly rules use either `dayOfMonth` or `weekOrdinals` plus `daysOfWeek`, not both. The screen shows a sentence such as “Every 1st and 3rd Saturday of the month.” It does not show a recurrence-rule string.
+Weekly rules use `daysOfWeek`. Monthly rules use either `dayOfMonth` or `weekOrdinals` plus `daysOfWeek`, not both. The screen shows a sentence such as “Every 1st and 3rd Saturday of the month.” It does not show a recurrence-rule string. The start date has to fall on that pattern.
 
-Also stored: `customerId`, `propertyId`, `startDate`, `endMode` (`UNTIL_CANCELED` or `END_ON_DATE`), optional `endDate`, default headcount, default arrival window, default duration, default service type, default instructions, `staffingTemplateMode` (`INVITE`, `DIRECT`, or `BLANK`), `staffingTemplate`, `status`, and audit fields.
+Also stored: `customerId`, `propertyId`, `startDate`, `endMode` (`UNTIL_CANCELED` or `END_ON_DATE`), optional `endDate`, `defaultHeadcountNeeded`, default arrival window, `defaultExpectedDurationMinutes`, `defaultServiceType`, optional `defaultSpecialInstructions`, `staffingTemplateMode` (`INVITE`, `DIRECT`, or `BLANK`), `staffingTemplate`, `status` (`ACTIVE` or `INACTIVE`), optional `generatedThroughDate`, and audit fields.
 
 A series belongs to one property. New occurrences copy that property.
 
@@ -134,35 +142,33 @@ A template entry is not a booking. It holds `cleanerId`, `proposedCrewSize`, arr
 ```
 pk    SERIES#series-jeff
 sk    OCCUR#2026-10-20
-jobId job_01H...
+jobId job-johnson
 ```
 
-Written with `attribute_not_exists(pk)`. A second generator run for that series and date fails the condition and skips the job. That is the duplicate protection.
+This item is the table’s copy of “this series already has this date.” The domain skips a date that is already in that set. Written with `attribute_not_exists(pk)`. A second generator run for that series and date fails the condition and skips the job.
 
 Query `pk = SERIES#id` and `sk begins_with OCCUR#` to list occurrence dates, then batch-get the jobs.
 
 ### Job
 
 ```
-pk     JOB#job_01H
+pk     JOB#job-johnson
 sk     PROFILE
 gsi1pk JOBDATE#2026-10-20
-gsi1sk job_01H
+gsi1sk job-johnson
 gsi2pk CUSTOMER#cust-jeff
-gsi2sk JOB#2026-10-20#job_01H
+gsi2sk JOB#2026-10-20#job-johnson
 ```
 
-Fields: `customerId`, `propertyId`, optional `seriesId`, `serviceType`, `date`, `headcountNeeded`, `confirmedHeadcount`, `snapshot`, `specialInstructions`, `status` (`SCHEDULED` or `CANCELED`), optional `staffingAttention` and `staffingAttentionReason`, and audit fields.
+Fields: `jobId`, `customerId`, `propertyId`, optional `seriesId`, `serviceType`, `date`, `headcountNeeded`, `snapshot`, `specialInstructions`, `status` (`SCHEDULED` or `CANCELED`), and audit fields.
 
-`confirmedHeadcount` is the running sum of `confirmedCrewSize` for `CONFIRMED` assignments. The screen can also recompute it from assignments. The stored number exists so the accept transaction can enforce the cap.
-
-`serviceType` is a label. A job repeats only when `seriesId` is set.
+Confirmed headcount is not stored. It is the sum of `confirmedCrewSize` on `CONFIRMED` assignments for that job.
 
 ### Snapshot on the job
 
 Copied when the job is created. Later edits to the customer or the property do not change it.
 
-- `customerDisplayName`, `phone`, `email`
+- `customerDisplayName`, `phone`, optional `email`
 - `propertyId`, optional `propertyLabel`
 - `streetAddress`, `city`, `state`, `zip`
 - `bedrooms`, `bathrooms`, `squareFeet`
@@ -173,19 +179,21 @@ The live property is the current house. The snapshot is what applied to that cle
 ### Assignment
 
 ```
-pk     JOB#job_01H
-sk     ASSIGN#as_01H
+pk     JOB#job-johnson
+sk     ASSIGN#as-claudia-johnson
 gsi1pk CLEANER#claudia
-gsi1sk 2026-10-20#as_01H
+gsi1sk 2026-10-20#as-claudia-johnson
 ```
 
-Fields: `cleanerId`, `serviceDate`, `status`, `proposedCrewSize`, `confirmedCrewSize`, `arrivalWindowStart`, `arrivalWindowEnd`, `expectedDurationMinutes`, `payType`, `payPerPersonCents`, `proposedTotalPayCents`, `confirmedTotalPayCents`, `invitedAt`, `respondedAt`, `createdAt`, `updatedAt`.
+Fields: `assignmentId`, `jobId`, `cleanerId`, `serviceDate`, `status`, `proposedCrewSize`, optional `confirmedCrewSize`, `arrivalWindowStart`, `arrivalWindowEnd`, `expectedDurationMinutes`, `payType` (`FLAT` or `HOURLY`), `payPerPersonCents`, `proposedTotalPayCents`, optional `confirmedTotalPayCents`, optional `invitedAt`, optional `respondedAt`, `createdAt`, `updatedAt`.
 
 Statuses: `INVITED`, `CONFIRMED`, `DECLINED`, `CANCELED`, `EXPIRED_JOB_FILLED`.
 
 There is no recurring-assignment record. A series template is copied into a new assignment per job. `serviceDate` is the job date, stored here so a cleaner’s week can be loaded from GSI1 without reading every job first.
 
-`confirmedTotalPayCents` for `FLAT` is the crew total. For `HOURLY` it is the crew rate per hour, not a finished invoice.
+`payPerPersonCents` is cents per person for a flat job, or cents per person per hour. `proposedTotalPayCents` and `confirmedTotalPayCents` multiply that rate by the crew size. For `HOURLY` the total is the crew rate per hour, not a finished invoice.
+
+The blocked range is not stored. It starts at `arrivalWindowStart`. It ends at `arrivalWindowEnd` plus `expectedDurationMinutes`. If the arrival window ends at or before it starts, the window end is the next calendar day. A job’s displayed cleaning span is the earliest of those starts through the latest of those ends, counting only `INVITED` and `CONFIRMED` assignments.
 
 ## Access patterns
 
@@ -193,12 +201,12 @@ There is no recurring-assignment record. A series template is copied into a new 
 | --- | --- |
 | Cleaner by id | Get `CLEANER#id` / `PROFILE` |
 | Active cleaners | Query GSI1 `CLEANER_STATUS#ACTIVE` |
-| One cleaner’s week of availability | Query `CLEANER#id`, `sk` between `AVAIL#start` and `AVAIL#end` |
+| One cleaner’s week of availability | Query `CLEANER#id`, `sk` between `AVAIL#weekStart` and `AVAIL#weekEnd` |
 | Everyone’s availability on a date | Query GSI1 `AVAIL#date` |
 | Submission for a week | Get `SUBMISSION#weekStart`, or query GSI1 `SUBMISSION#weekStart` |
 | Customer by id, with properties | Query `CUSTOMER#id` |
 | One property | Get `CUSTOMER#id` / `PROPERTY#id` |
-| Customer search | Query the `SEARCH#` prefixes |
+| Customer search | Match name, phone, street, city, and property label as above |
 | Jobs for a customer | Query GSI2 `CUSTOMER#id`, `sk begins_with JOB#`, then group by `propertyId` |
 | Series for a customer | Query GSI2 `CUSTOMER#id`, `sk begins_with SERIES#` |
 | Series by id | Get `SERIES#id` / `PROFILE` |
@@ -208,37 +216,40 @@ There is no recurring-assignment record. A series template is copied into a new 
 | One cleaner’s assignments | Query GSI1 `CLEANER#id`, `sk begins_with` the date |
 | Confirmed conflicts | That cleaner query, keep `CONFIRMED`, compare blocked ranges |
 
-## Atomic accept
+## Accepting an invitation
 
 Read the job, the invitation, the cleaner profile, that cleaner’s confirmed assignments, and their availability.
 
-Then one `TransactWriteItems`:
+The invitation can be accepted only when all of these are true:
 
-1. Update the assignment to `CONFIRMED`, set `confirmedCrewSize`, `confirmedTotalPayCents`, and `respondedAt`. Condition: `status = INVITED`.
-2. Update the job: `confirmedHeadcount = confirmedHeadcount + :crew`. Condition: `status = SCHEDULED` and `confirmedHeadcount <= headcountNeeded - :crew`.
+- the assignment is `INVITED` and belongs to this cleaner and this job
+- the job is `SCHEDULED` and the cleaner is `ACTIVE`
+- the requested crew size is a positive integer, is `1` when the cleaner is not helper-approved, and fits the headcount still open
+- the blocked range sits inside submitted availability
+- it does not overlap another confirmed job for that cleaner
 
-If two cleaners take the last spot, one condition fails and that transaction rolls back. The cleaner sees “This job was just filled.”
+Then the assignment becomes `CONFIRMED`, with `confirmedCrewSize`, `confirmedTotalPayCents`, and `respondedAt`. Pay is computed from `payPerPersonCents` on the assignment, not from a total sent by the phone. A solo cleaner sending `2` is rejected before that write.
 
-The server sets crew size to the request only after checking `helpersApproved`. A solo cleaner sending `2` is rejected before the transaction. Pay is computed from `payPerPersonCents` on the assignment, not from a total sent by the phone.
+If the confirmed people now meet `headcountNeeded`, the other `INVITED` assignments on that job become `EXPIRED_JOB_FILLED` in the same update.
 
-After a successful accept, if the job is full, a follow-up transaction sets the other `INVITED` rows to `EXPIRED_JOB_FILLED`, each conditioned on `status = INVITED`. If that follow-up fails, the next read of a full job repairs them.
+The preview does this in one memory update. A database write has to apply the same headcount check atomically, so two cleaners cannot both take the last open spots. The second one sees “This job was just filled.”
 
-## Generation idempotency
+## Generation
 
-For each missing date in the horizon, one transaction:
+For each date the recurrence rule produces, skip it when that series already has the date. Otherwise one transaction:
 
 1. Put `OCCUR#date` with `attribute_not_exists(pk)`.
 2. Put the job, including a fresh snapshot of the customer and that series’ property.
-3. Put any new assignment rows.
+3. Put the assignment rows from the staffing template.
+
+`INVITE` copies each valid template entry as a new `INVITED` assignment. `BLANK` creates the job with no assignments. `DIRECT` confirms an entry only when the cleaner is active, the crew size is legal, the crew still fits `headcountNeeded`, that week’s availability was submitted, the block sits inside it, and it does not overlap another confirmed job. A failed direct entry is left off the job. The reason comes back beside the assignments. It is not a field on the job.
 
 If the lock exists, the whole transaction is skipped. Running the generator twice does not create a second job for that series and date.
 
-Direct assignments that are unsafe (no availability submitted yet, outside availability, conflict, or crew rules) do not get a `CONFIRMED` row. The job is still created, with `staffingAttention` set, so it shows up for Kelsey. The conflict is not hidden.
-
 ## What a series edit is allowed to change
 
-`THIS_ONLY` updates that job and its not-yet-confirmed assignments. The series row stays as it was.
+`THIS_ONLY` updates that date. The series row stays as it was.
 
-`THIS_AND_FUTURE` updates the series and scheduled jobs on or after the chosen date. It does not rewrite earlier jobs, confirmed pay, or confirmed crew size.
+`THIS_AND_FUTURE` updates the series and every occurrence date on or after the chosen date. Earlier dates stay as they were.
 
-Stopping future generation sets the series to `INACTIVE`. It does not delete history. Canceling this and future cleanings also cancels those scheduled jobs and their assignments, and sets the series inactive.
+Stopping future generation sets the series to `INACTIVE`. It does not delete history.

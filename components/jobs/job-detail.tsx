@@ -9,10 +9,12 @@ import { seriesSummary } from "@/lib/mock/seed";
 import {
   crewLine,
   formatArrival,
+  formatCleaningSpan,
   formatDuration,
   formatLongDate,
   formatScheduleFacts,
   payLine,
+  serviceEmoji,
   serviceLabel,
 } from "@/lib/format";
 
@@ -23,6 +25,7 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
   const assignments = hub.assignments.filter((item) => item.jobId === job.jobId);
   const confirmed = calculateConfirmedHeadcount(assignments);
+  const cleaningSpan = formatCleaningSpan(assignments);
   return (
     <Screen>
       <PageHeader
@@ -35,10 +38,11 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
       />
       <div className="space-y-3 px-5 pt-4">
         <Card>
-          <p className="text-base">{serviceLabel(job.serviceType)}</p>
+          <ServiceLine serviceType={job.serviceType} />
           <p className="mt-2 text-lg font-semibold">
             Headcount: {confirmed} / {job.headcountNeeded} confirmed
           </p>
+          {cleaningSpan ? <p className="mt-1 text-lg font-semibold">{cleaningSpan}</p> : null}
           {confirmed >= job.headcountNeeded ? (
             <p className="mt-2 inline-flex rounded-full bg-mint px-3 py-1 text-sm font-semibold">Fully Staffed</p>
           ) : null}
@@ -127,13 +131,17 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
       <PageHeader eyebrow="Confirmed job" title={job.snapshot.customerDisplayName} subtitle={formatLongDate(job.date)} />
       <div className="space-y-3 px-5 pt-4">
         <Card>
-          <p className="text-base">{serviceLabel(job.serviceType)}</p>
-          <p className="mt-3 text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
+          <ServiceLine serviceType={job.serviceType} />
+          <p className="mt-3 text-sm text-ink/60">Arrival window</p>
+          <p className="text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
           <p className="text-sm text-ink/70">{formatDuration(assignment.expectedDurationMinutes)}</p>
-          <p className="mt-4 text-base">
-            {job.snapshot.streetAddress}
-            <br />
-            {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
+          <p className="mt-4 flex items-start gap-2 text-base">
+            <span aria-hidden="true">📍</span>
+            <span>
+              {job.snapshot.streetAddress}
+              <br />
+              {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
+            </span>
           </p>
           <p className="mt-3 text-sm">
             {job.snapshot.bedrooms} bed · {job.snapshot.bathrooms} bath · {job.snapshot.squareFeet.toLocaleString()} sq ft
@@ -159,6 +167,16 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
         </Card>
       </div>
     </Screen>
+  );
+}
+
+function ServiceLine({ serviceType }: { serviceType: Parameters<typeof serviceLabel>[0] }) {
+  const emoji = serviceEmoji(serviceType);
+  return (
+    <p className="flex items-start gap-2 text-base">
+      {emoji ? <span aria-hidden="true">{emoji}</span> : null}
+      <span>{serviceLabel(serviceType)}</span>
+    </p>
   );
 }
 

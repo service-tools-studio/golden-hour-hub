@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { copyWeekWindows, listSubmissionStatus } from "./availability.ts";
+import { copyWeekWindows, listSubmissionStatus, mergeAdjacentWindows } from "./availability.ts";
 import {
   calculateConfirmedFlatPay,
   calculateConfirmedHourlyCrewRate,
@@ -16,6 +16,7 @@ import {
 import {
   calculateBlockedRange,
   calculateConfirmedHeadcount,
+  cleaningCoverage,
   calculateRemainingHeadcount,
   claimHeadcount,
   detectConfirmedAssignmentConflict,
@@ -27,7 +28,7 @@ import {
   validateRequestedCrewSize,
   type AssignmentSchedule,
 } from "./scheduling.ts";
-import { addDays, nextAvailabilityWeek, zonedToUtc } from "./time.ts";
+import { addDays, nextAvailabilityWeek, zonedParts, zonedToUtc } from "./time.ts";
 import type { AvailabilityWindow, Customer } from "./types.ts";
 
 function schedule(overrides: Partial<AssignmentSchedule> = {}): AssignmentSchedule {
@@ -61,6 +62,35 @@ describe("blocked time and effective availability", () => {
     assert.equal(zonedToUtc("2026-01-15", "12:00").toISOString(), "2026-01-15T20:00:00.000Z");
     assert.equal(zonedToUtc("2026-09-26", "12:00").toISOString(), "2026-09-26T19:00:00.000Z");
     assert.equal(zonedToUtc("2026-03-09", "12:00").toISOString(), "2026-03-09T19:00:00.000Z");
+  });
+
+  it("spans from the earliest arrival start to the latest expected end", () => {
+    const coverage = cleaningCoverage([
+      schedule({
+        assignmentId: "later",
+        status: "INVITED",
+        arrivalWindowStart: "11:00",
+        arrivalWindowEnd: "11:30",
+        expectedDurationMinutes: 180,
+      }),
+      schedule({ arrivalWindowStart: "09:00", arrivalWindowEnd: "10:00", expectedDurationMinutes: 240 }),
+      schedule({
+        assignmentId: "declined",
+        status: "DECLINED",
+        arrivalWindowStart: "07:00",
+        arrivalWindowEnd: "08:00",
+        expectedDurationMinutes: 600,
+      }),
+      schedule({ assignmentId: "canceled", status: "CANCELED", arrivalWindowStart: "06:00", arrivalWindowEnd: "07:00" }),
+    ]);
+    assert.ok(coverage);
+    const start = zonedParts(coverage.startUtc);
+    const end = zonedParts(coverage.endUtc);
+    assert.equal(start.hour, 9);
+    assert.equal(start.minute, 0);
+    assert.equal(end.hour, 14);
+    assert.equal(end.minute, 30);
+    assert.equal(cleaningCoverage([schedule({ status: "DECLINED" })]), null);
   });
 
   it("does not subtract pending invitations from availability", () => {
@@ -275,6 +305,26 @@ describe("weekly submission", () => {
     assert.equal(status.find((item) => item.cleanerId === "manuel")?.submitted, false);
   });
 
+  it("consolidates adjacent windows on the same day into one block", () => {
+    const windows: AvailabilityWindow[] = [
+      { availabilityId: "early", cleanerId: "claudia", date: "2026-09-28", start: "08:00", end: "11:00" },
+      { availabilityId: "late", cleanerId: "claudia", date: "2026-09-28", start: "11:00", end: "17:00" },
+      { availabilityId: "gap", cleanerId: "claudia", date: "2026-09-29", start: "13:00", end: "15:00" },
+      { availabilityId: "overlap", cleanerId: "claudia", date: "2026-09-30", start: "08:00", end: "12:00" },
+      { availabilityId: "overlap-next", cleanerId: "claudia", date: "2026-09-30", start: "10:00", end: "17:00" },
+    ];
+    const merged = mergeAdjacentWindows(windows);
+    assert.deepEqual(
+      merged.map((window) => ({ date: window.date, start: window.start, end: window.end, availabilityId: window.availabilityId })),
+      [
+        { date: "2026-09-28", start: "08:00", end: "17:00", availabilityId: "early" },
+        { date: "2026-09-29", start: "13:00", end: "15:00", availabilityId: "gap" },
+        { date: "2026-09-30", start: "08:00", end: "12:00", availabilityId: "overlap" },
+        { date: "2026-09-30", start: "10:00", end: "17:00", availabilityId: "overlap-next" },
+      ],
+    );
+  });
+
   it("copies last week forward without changing the source windows", () => {
     const original: AvailabilityWindow[] = [
       {
@@ -367,7 +417,17 @@ describe("customers", () => {
     if (valid.ok) {
       assert.equal(valid.value.phone, "5035550199");
       assert.equal(valid.value.properties[0].state, "OR");
+      assert.equal(valid.value.notes, undefined);
     }
+    const withNotes = validateCustomerInput({
+      firstName: "Amy",
+      lastName: "Johnson",
+      phone: "(503) 555-0199",
+      notes: "  Gate code 1234  ",
+      properties: [home],
+    });
+    assert.equal(withNotes.ok, true);
+    if (withNotes.ok) assert.equal(withNotes.value.notes, "Gate code 1234");
     const invalid = validateCustomerInput({
       firstName: "Amy",
       lastName: "Johnson",

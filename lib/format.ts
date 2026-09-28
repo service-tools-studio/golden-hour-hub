@@ -1,5 +1,5 @@
 import type { AssignmentStatus, CleanerProfile, JobAssignment, ServiceType } from "./domain/types";
-import { calculateBlockedRange } from "./domain/scheduling";
+import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import { addDays, formatHm, formatLongDate, formatShortDate, formatTimeLabel, zonedParts } from "./domain/time";
 import { formatMoney } from "./domain/compensation";
 import { formatPhone } from "./domain/customers";
@@ -21,6 +21,19 @@ export function serviceLabel(serviceType: ServiceType): string {
   }
 }
 
+export function serviceEmoji(serviceType: ServiceType): string | null {
+  switch (serviceType) {
+    case "DEEP_CLEAN":
+      return "🧼";
+    case "MOVE_OUT":
+      return "📦";
+    case "RECURRING":
+      return "🗓️";
+    default:
+      return null;
+  }
+}
+
 export function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
@@ -31,6 +44,21 @@ export function formatDuration(minutes: number): string {
 
 export function formatArrival(start: string, end: string): string {
   return `${formatTimeLabel(start)} – ${formatTimeLabel(end)}`;
+}
+
+export function formatCleaningSpan(
+  assignments: Array<
+    Pick<
+      AssignmentSchedule,
+      "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes"
+    >
+  >,
+): string | null {
+  const coverage = cleaningCoverage(assignments);
+  if (!coverage) return null;
+  const end = zonedParts(coverage.endUtc);
+  const start = zonedParts(coverage.startUtc);
+  return formatArrival(formatHm(start.hour, start.minute), formatHm(end.hour, end.minute));
 }
 
 export function formatJobSpan(input: {

@@ -18,6 +18,7 @@ export type CustomerInput = {
   lastName: string;
   phone: string;
   email?: string;
+  notes?: string;
   properties: PropertyInput[];
 };
 
@@ -123,6 +124,7 @@ export function validateCustomerInput(
   const lastName = input.lastName.trim();
   const phone = normalizePhone(input.phone);
   const email = input.email?.trim() ?? "";
+  const notes = input.notes?.trim() ?? "";
 
   if (firstName.length < 1) {
     return { ok: false, field: "firstName", message: "Enter a first name." };
@@ -153,6 +155,7 @@ export function validateCustomerInput(
       lastName,
       phone,
       email: email || undefined,
+      notes: notes || undefined,
       properties,
     },
   };

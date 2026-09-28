@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
 import { useHub } from "@/components/hub-provider";
@@ -10,6 +10,39 @@ import { Card, PageHeader, Screen, fieldClass } from "@/components/ui";
 import { searchCustomers } from "@/lib/domain/customers";
 import { seriesSummary } from "@/lib/mock/seed";
 import { formatLongDate, formatPhone, serviceLabel } from "@/lib/format";
+
+function useUnsavedNavigation(active: boolean, blocked: () => boolean, onBlock: (href: string) => void) {
+  const activeRef = useRef(active);
+  const blockedRef = useRef(blocked);
+  const onBlockRef = useRef(onBlock);
+  activeRef.current = active;
+  blockedRef.current = blocked;
+  onBlockRef.current = onBlock;
+
+  useEffect(() => {
+    function onClick(event: MouseEvent) {
+      if (!activeRef.current || !blockedRef.current()) return;
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const raw = anchor.getAttribute("href");
+      if (!raw || raw.startsWith("#")) return;
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      const next = `${url.pathname}${url.search}`;
+      if (next === `${window.location.pathname}${window.location.search}`) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onBlockRef.current(next);
+    }
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
+}
 
 function Pencil() {
   return (
@@ -96,6 +129,13 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
   const [editingSeriesId, setEditingSeriesId] = useState<string | null>(null);
   const [focusPropertyId, setFocusPropertyId] = useState<string | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<{ href?: string } | null>(null);
+  const editingRecord = editing || Boolean(editingSeriesId);
+
+  useUnsavedNavigation(
+    Boolean(customer) && editingRecord,
+    () => Boolean((editingSeriesId ? seriesFormRef.current : formRef.current)?.isDirty()),
+    (href) => setLeaveTarget({ href }),
+  );
 
   function activeForm() {
     return editingSeriesId ? seriesFormRef.current : formRef.current;
@@ -141,7 +181,6 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
   const series = hub.series.filter((item) => item.customerId === customer.customerId);
 
   const editingSeries = editingSeriesId ? series.find((item) => item.seriesId === editingSeriesId) : undefined;
-  const editingRecord = editing || Boolean(editingSeries);
   const name = `${customer.firstName} ${customer.lastName}`;
   const homes = hub.properties.filter((property) => property.customerId === customer.customerId);
   const place =
@@ -184,19 +223,17 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
           />
         ) : (
           <>
-          <Card>
-            <p>{formatPhone(customer.phone)}</p>
-            {customer.email ? <p className="text-sm text-ink/70">{customer.email}</p> : null}
-            <button
-              type="button"
-              onClick={() => {
-                setFocusPropertyId(null);
-                setEditing(true);
-              }}
-              className="mt-4 min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream"
-            >
-              Edit customer
-            </button>
+          <Card
+            className="relative"
+            onClick={() => {
+              setFocusPropertyId(null);
+              setEditing(true);
+            }}
+          >
+            <Pencil />
+            <p className="pr-6">{formatPhone(customer.phone)}</p>
+            {customer.email ? <p className="pr-6 text-sm text-ink/70">{customer.email}</p> : null}
+            {customer.notes ? <p className="mt-3 text-sm">Notes: {customer.notes}</p> : null}
           </Card>
           <h2 className="pt-2 text-lg font-semibold">Properties</h2>
           {homes.length === 0 ? <p className="text-sm text-ink/60">No properties yet.</p> : null}
