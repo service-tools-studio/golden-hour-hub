@@ -1,6 +1,6 @@
 # Data model
 
-The records below are the domain types in `lib/domain/types.ts`. The preview keeps them in memory. DynamoDB is not connected. The keys are the proposed layout for those same records.
+The records below are the domain types in `lib/domain/types.ts`. The preview keeps them in memory. When `DYNAMODB_TABLE_NAME` is set, the same records are stored with the keys below.
 
 One table, `GoldenHourHub`. Two indexes. Money is integer cents. Dates are `YYYY-MM-DD` in `America/Los_Angeles`. Times are local `HH:mm`. An end time of `24:00` is midnight at the end of that date. Instants are ISO-8601 UTC.
 
@@ -27,11 +27,19 @@ gsi1pk CLEANER_STATUS#ACTIVE
 gsi1sk ramos#claudia
 ```
 
-Fields: `cleanerId`, `firstName`, `lastName`, `email`, `mobilePhone`, `status` (`ACTIVE` or `INACTIVE`), `helpersApproved`, `typicalHelperCount`, `typicalCrewSize`, plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
+Fields: `cleanerId`, `firstName`, `lastName`, `email`, `mobilePhone`, `status` (`ACTIVE` or `INACTIVE`), `typicalHelperCount`, `maxHelperCount`, plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
 
-`helpersApproved` lives only here. Assignments do not copy it. Acceptance reads the profile immediately before the write.
+Helper authorization is `maxHelperCount`. It is not a stored boolean. `maxHelperCount = 0` means no helpers. `maxHelperCount >= 1` means helpers are approved up to that number. The screen may show “Helpers approved? Yes / No”; that choice only writes the counts. Yes requires `maxHelperCount >= 1`. No writes `typicalHelperCount = 0` and `maxHelperCount = 0`.
 
-If `helpersApproved` is false, `typicalHelperCount` is 0 and `typicalCrewSize` is 1. If true, `typicalHelperCount` is an integer from 0 to 8 and `typicalCrewSize` is `1 + typicalHelperCount`.
+`typicalHelperCount` and `maxHelperCount` are integers, both `>= 0`, and `typicalHelperCount <= maxHelperCount`. Crew sizes are derived and are not stored:
+
+- `typicalCrewSize = 1 + typicalHelperCount`
+- `maxCrewSize = 1 + maxHelperCount`
+- helpers approved when `maxHelperCount > 0`
+
+Claudia stores `typicalHelperCount = 1` and `maxHelperCount = 2`, so her usual crew is 2 and her maximum crew is 3. Maria stores both counts as 0, so she is always a crew of 1 and the crew stepper is not shown.
+
+Acceptance, direct assignment, and any move into `PENDING_AVAILABILITY` or `CONFIRMED` reload this profile and use the current `maxHelperCount`. An older invitation does not keep a higher crew. A confirmed assignment is not rewritten when the maximum later changes.
 
 ### Availability window
 
@@ -185,9 +193,11 @@ gsi1pk CLEANER#claudia
 gsi1sk 2026-10-20#as-claudia-johnson
 ```
 
-Fields: `assignmentId`, `jobId`, `cleanerId`, `serviceDate`, `status`, `proposedCrewSize`, optional `confirmedCrewSize`, `arrivalWindowStart`, `arrivalWindowEnd`, `expectedDurationMinutes`, `payType` (`FLAT` or `HOURLY`), `payPerPersonCents`, `proposedTotalPayCents`, optional `confirmedTotalPayCents`, optional `invitedAt`, optional `respondedAt`, `createdAt`, `updatedAt`.
+Fields: `assignmentId`, `jobId`, `cleanerId`, `serviceDate`, `status`, `proposedCrewSize`, optional `pendingCrewSize`, optional `confirmedCrewSize`, optional `attentionReason`, `arrivalWindowStart`, `arrivalWindowEnd`, `expectedDurationMinutes`, `payType` (`FLAT` or `HOURLY`), `payPerPersonCents`, `proposedTotalPayCents`, optional `confirmedTotalPayCents`, optional `invitedAt`, optional `respondedAt`, `createdAt`, `updatedAt`.
 
-Statuses: `INVITED`, `CONFIRMED`, `DECLINED`, `CANCELED`, `EXPIRED_JOB_FILLED`.
+Statuses: `INVITED`, `PENDING_AVAILABILITY`, `CONFIRMED`, `NEEDS_ATTENTION`, `DECLINED`, `CANCELED`, `EXPIRED_JOB_FILLED`.
+
+`pendingCrewSize` is the crew the cleaner or admin committed before that week’s availability could be checked. `confirmedCrewSize` is set only when the status is `CONFIRMED`. `attentionReason` is set when the status is `NEEDS_ATTENTION`. Confirmed headcount ignores every status except `CONFIRMED`.
 
 There is no recurring-assignment record. A series template is copied into a new assignment per job. `serviceDate` is the job date, stored here so a cleaner’s week can be loaded from GSI1 without reading every job first.
 
@@ -216,33 +226,62 @@ The blocked range is not stored. It starts at `arrivalWindowStart`. It ends at `
 | One cleaner’s assignments | Query GSI1 `CLEANER#id`, `sk begins_with` the date |
 | Confirmed conflicts | That cleaner query, keep `CONFIRMED`, compare blocked ranges |
 
+## Assignment states
+
+These are separate steps: create the job occurrence, create the invitation or intended assignment, record the cleaner’s intent, validate the schedule, then confirm.
+
+| From | When | To |
+| --- | --- | --- |
+| `INVITED` | Cleaner accepts, that week is already submitted, and crew, headcount, availability, conflicts, and pay all pass | `CONFIRMED` |
+| `INVITED` | Cleaner accepts, that week is not submitted yet, and the current crew ceiling and remaining headcount pass | `PENDING_AVAILABILITY` |
+| `INVITED` | Cleaner accepts, that week is submitted, and a check fails | stays `INVITED`; the cleaner sees the reason |
+| `INVITED` | Cleaner declines | `DECLINED` |
+| `PENDING_AVAILABILITY` | That week is submitted and every check passes | `CONFIRMED` |
+| `PENDING_AVAILABILITY` | That week is submitted and a check fails | `NEEDS_ATTENTION` |
+| `INVITED` or `PENDING_AVAILABILITY` | Confirmed people reach `headcountNeeded` | `EXPIRED_JOB_FILLED` |
+| Direct template, week already submitted and valid | Generation | `CONFIRMED` |
+| Direct template, week not submitted | Generation | `PENDING_AVAILABILITY` |
+| Direct or invite template, cleaner inactive or crew above the current maximum | Generation | `NEEDS_ATTENTION` |
+| Direct template, week submitted but headcount, availability, or a confirmed conflict fails | Generation | `NEEDS_ATTENTION` |
+
+`NEEDS_ATTENTION` is the flag for admin and cleaner. The app does not confirm it, does not change the cleaner’s availability, and does not double-book. A confirmed row stays confirmed when `maxHelperCount` later changes.
+
 ## Accepting an invitation
 
-Read the job, the invitation, the cleaner profile, that cleaner’s confirmed assignments, and their availability.
+Read the job, the invitation, the cleaner’s current profile, that cleaner’s confirmed assignments, and whether the week containing the job date has a submission.
 
-The invitation can be accepted only when all of these are true:
+Crew is checked before availability:
 
 - the assignment is `INVITED` and belongs to this cleaner and this job
 - the job is `SCHEDULED` and the cleaner is `ACTIVE`
-- the requested crew size is a positive integer, is `1` when the cleaner is not helper-approved, and fits the headcount still open
-- the blocked range sits inside submitted availability
-- it does not overlap another confirmed job for that cleaner
+- `1 <= requestedCrewSize <= 1 + current maxHelperCount`
+- the requested crew fits the headcount still open
 
-Then the assignment becomes `CONFIRMED`, with `confirmedCrewSize`, `confirmedTotalPayCents`, and `respondedAt`. Pay is computed from `payPerPersonCents` on the assignment, not from a total sent by the phone. A solo cleaner sending `2` is rejected before that write.
+If that week has no submission and those checks pass, the assignment becomes `PENDING_AVAILABILITY` with `pendingCrewSize`. It is not schedule-confirmed.
 
-If the confirmed people now meet `headcountNeeded`, the other `INVITED` assignments on that job become `EXPIRED_JOB_FILLED` in the same update.
+If that week is submitted, the blocked range must sit inside the submitted windows and must not overlap another confirmed job. Then the assignment becomes `CONFIRMED`, with `confirmedCrewSize`, `confirmedTotalPayCents`, and `respondedAt`. Pay is computed from `payPerPersonCents` on the assignment, not from a total sent by the phone. A solo cleaner sending `2` is rejected before that write.
+
+If the confirmed people now meet `headcountNeeded`, the other `INVITED` and `PENDING_AVAILABILITY` assignments on that job become `EXPIRED_JOB_FILLED` in the same update.
+
+After a cleaner submits a week, each of that cleaner’s `PENDING_AVAILABILITY` rows in that Monday–Sunday week is checked again with the current profile. A row that fits becomes `CONFIRMED`. A row that does not fit becomes `NEEDS_ATTENTION` with `attentionReason`. Confirmed history is not rewritten.
 
 The preview does this in one memory update. A database write has to apply the same headcount check atomically, so two cleaners cannot both take the last open spots. The second one sees “This job was just filled.”
 
 ## Generation
 
-For each date the recurrence rule produces, skip it when that series already has the date. Otherwise one transaction:
+Once a day, and again whenever the app loads, each `ACTIVE` series is filled through today + 56 days (`today + 8 weeks`), stopping earlier at `endDate` when there is one. Dates before today are not backfilled. An `INACTIVE` series gets no new jobs. Existing jobs and assignments stay.
+
+For each date the recurrence rule produces inside that window, skip it when that series already has the date. Otherwise one transaction:
 
 1. Put `OCCUR#date` with `attribute_not_exists(pk)`.
-2. Put the job, including a fresh snapshot of the customer and that series’ property.
+2. Put the job, including a fresh snapshot of the customer and that series’ property. The job id is `job-{seriesId}-{date}`.
 3. Put the assignment rows from the staffing template.
 
-`INVITE` copies each valid template entry as a new `INVITED` assignment. `BLANK` creates the job with no assignments. `DIRECT` confirms an entry only when the cleaner is active, the crew size is legal, the crew still fits `headcountNeeded`, that week’s availability was submitted, the block sits inside it, and it does not overlap another confirmed job. A failed direct entry is left off the job. The reason comes back beside the assignments. It is not a field on the job.
+The 8-week horizon limits how far ahead job rows exist. It does not limit which of those jobs may be invited. There is no 14-day invitation cutoff, and an invitation does not require that week’s availability to exist.
+
+`INVITE` creates an `INVITED` assignment when the cleaner is active and `proposedCrewSize <= 1 + current maxHelperCount`, even if that week has no submission. `BLANK` creates the job with no assignments. `DIRECT` creates `CONFIRMED` only when the cleaner is active, the crew size is legal for the current maximum, the crew still fits `headcountNeeded`, that week’s availability was submitted, the block sits inside it, and it does not overlap another confirmed job. If that week is not submitted, `DIRECT` creates `PENDING_AVAILABILITY` with `pendingCrewSize` and does not confirm it. Any other failure creates `NEEDS_ATTENTION` with `attentionReason`, so the intended cleaner stays visible.
+
+A staffing template is checked against the current `maxHelperCount` when it is applied. It is not permanent authorization. The same current maximum is read again when the assignment becomes `PENDING_AVAILABILITY` or `CONFIRMED`.
 
 If the lock exists, the whole transaction is skipped. Running the generator twice does not create a second job for that series and date.
 

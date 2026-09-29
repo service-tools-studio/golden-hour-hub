@@ -1,4 +1,6 @@
+import { maxCrewSize } from "./cleaners.ts";
 import { confirmedCompensationCents } from "./compensation.ts";
+import { snapshotVisit } from "./customers.ts";
 import {
   availabilityCoversBlockedRange,
   calculateBlockedRange,
@@ -6,10 +8,16 @@ import {
   type ScheduleWindow,
 } from "./scheduling.ts";
 import type {
+  AvailabilitySubmission,
+  AvailabilityWindow,
+  Customer,
   DayOfWeek,
   EditScope,
+  Job,
   JobAssignment,
+  Property,
   RecurrenceRule,
+  RecurringSeries,
   Result,
   StaffingTemplateEntry,
   StaffingTemplateMode,
@@ -24,6 +32,9 @@ import {
   mondayOf,
   parseYmd,
 } from "./time.ts";
+
+/** How far ahead recurring job occurrences are created. */
+export const RECURRING_HORIZON_DAYS = 56;
 
 const DAY_LABEL: Record<DayOfWeek, string> = {
   MONDAY: "Monday",
@@ -209,7 +220,7 @@ export function planOccurrenceStaffing(input: {
     cleanerId: string;
     firstName: string;
     status: "ACTIVE" | "INACTIVE";
-    helpersApproved: boolean;
+    maxHelperCount: number;
   }>;
   availabilityByCleaner: Record<string, { submitted: boolean; windows: ScheduleWindow[] }>;
   confirmedAssignments: JobAssignment[];
@@ -225,24 +236,19 @@ export function planOccurrenceStaffing(input: {
   for (const entry of input.template) {
     const cleaner = input.cleaners.find((candidate) => candidate.cleanerId === entry.cleanerId);
     if (!cleaner || cleaner.status !== "ACTIVE") {
-      attention.push({
-        cleanerId: entry.cleanerId,
-        reason: "This cleaner is not active, so the cleaning was left unassigned.",
-      });
+      const reason = "This cleaner is not active, so the cleaning was left unassigned.";
+      attention.push({ cleanerId: entry.cleanerId, reason });
+      if (cleaner) assignments.push(flaggedAssignment(input, entry, reason));
       continue;
     }
-    if (!cleaner.helpersApproved && entry.proposedCrewSize !== 1) {
-      attention.push({
-        cleanerId: cleaner.cleanerId,
-        reason: `${cleaner.firstName} is not approved to bring helpers, so the crew size must be 1.`,
-      });
-      continue;
-    }
-    if (!Number.isInteger(entry.proposedCrewSize) || entry.proposedCrewSize < 1) {
-      attention.push({
-        cleanerId: cleaner.cleanerId,
-        reason: `${cleaner.firstName}'s crew size is not valid.`,
-      });
+    const ceiling = maxCrewSize(cleaner.maxHelperCount);
+    if (!Number.isInteger(entry.proposedCrewSize) || entry.proposedCrewSize < 1 || entry.proposedCrewSize > ceiling) {
+      const reason =
+        ceiling === 1
+          ? `${cleaner.firstName} is not approved to bring helpers, so the crew size must be 1.`
+          : `${cleaner.firstName}'s crew is larger than the current maximum of ${ceiling}.`;
+      attention.push({ cleanerId: cleaner.cleanerId, reason });
+      assignments.push(flaggedAssignment(input, entry, reason));
       continue;
     }
 
@@ -262,22 +268,31 @@ export function planOccurrenceStaffing(input: {
       continue;
     }
 
-    if (confirmedPeople + entry.proposedCrewSize > input.headcountNeeded) {
-      attention.push({
-        cleanerId: cleaner.cleanerId,
-        reason: `${cleaner.firstName}'s crew does not fit the remaining headcount.`,
-      });
+    const availability = input.availabilityByCleaner[cleaner.cleanerId];
+    if (!availability?.submitted) {
+      assignments.push(
+        buildAssignment(
+          {
+            jobId: input.jobId,
+            serviceDate: input.serviceDate,
+            mode: "DIRECT",
+            nowIso: input.nowIso,
+            newId: input.newId,
+            pendingAvailability: true,
+          },
+          entry,
+        ),
+      );
       continue;
     }
 
-    const availability = input.availabilityByCleaner[cleaner.cleanerId];
-    if (!availability?.submitted) {
-      attention.push({
-        cleanerId: cleaner.cleanerId,
-        reason: `${cleaner.firstName} has not submitted availability for this week yet.`,
-      });
+    if (confirmedPeople + entry.proposedCrewSize > input.headcountNeeded) {
+      const reason = `${cleaner.firstName}'s crew does not fit the remaining headcount.`;
+      attention.push({ cleanerId: cleaner.cleanerId, reason });
+      assignments.push(flaggedAssignment(input, entry, reason));
       continue;
     }
+
     const blocked = calculateBlockedRange({
       date: input.serviceDate,
       arrivalWindowStart: entry.arrivalWindowStart,
@@ -285,17 +300,16 @@ export function planOccurrenceStaffing(input: {
       expectedDurationMinutes: entry.expectedDurationMinutes,
     });
     if (!availabilityCoversBlockedRange(availability.windows, blocked)) {
-      attention.push({
-        cleanerId: cleaner.cleanerId,
-        reason: `This schedule is outside ${cleaner.firstName}'s submitted availability.`,
-      });
+      const reason = `This schedule is outside ${cleaner.firstName}'s submitted availability.`;
+      attention.push({ cleanerId: cleaner.cleanerId, reason });
+      assignments.push(flaggedAssignment(input, entry, reason));
       continue;
     }
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: cleaner.cleanerId,
       blocked,
       confirmedAssignments: input.confirmedAssignments
-        .filter((assignment) => assignment.cleanerId === cleaner.cleanerId)
+        .filter((assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "CONFIRMED")
         .map((assignment) => ({
           assignmentId: assignment.assignmentId,
           cleanerId: assignment.cleanerId,
@@ -308,10 +322,9 @@ export function planOccurrenceStaffing(input: {
         })),
     });
     if (conflict) {
-      attention.push({
-        cleanerId: cleaner.cleanerId,
-        reason: `This recurring cleaning could not be assigned to ${cleaner.firstName} because it conflicts with another confirmed job.`,
-      });
+      const reason = `This recurring cleaning could not be assigned to ${cleaner.firstName} because it conflicts with another confirmed job.`;
+      attention.push({ cleanerId: cleaner.cleanerId, reason });
+      assignments.push(flaggedAssignment(input, entry, reason));
       continue;
     }
 
@@ -333,6 +346,97 @@ export function planOccurrenceStaffing(input: {
   return { assignments, attention };
 }
 
+export function recurringHorizonThrough(today: string): string {
+  return addDays(today, RECURRING_HORIZON_DAYS);
+}
+
+export function mergeRecurringHorizon(input: {
+  today: string;
+  series: RecurringSeries[];
+  jobs: Job[];
+  customers: Customer[];
+  properties: Property[];
+  cleaners: Array<{
+    cleanerId: string;
+    firstName: string;
+    status: "ACTIVE" | "INACTIVE";
+    maxHelperCount: number;
+  }>;
+  availability: AvailabilityWindow[];
+  submissions: AvailabilitySubmission[];
+  assignments: JobAssignment[];
+  nowIso: string;
+}): { series: RecurringSeries[]; jobs: Job[]; assignments: JobAssignment[] } {
+  const through = recurringHorizonThrough(input.today);
+  const jobs = [...input.jobs];
+  const assignments = [...input.assignments];
+  const series = input.series.map((item) => ({ ...item }));
+  let sequence = 0;
+  const newId = () => `gen-${sequence++}`;
+
+  for (const item of series) {
+    if (item.status !== "ACTIVE") continue;
+    const last = item.endDate && item.endDate < through ? item.endDate : through;
+    const dates = generateOccurrenceDates(item.recurrence, item.startDate, last, item.endDate).filter(
+      (date) => date >= input.today && date <= through,
+    );
+    const existing = new Set(jobs.filter((job) => job.seriesId === item.seriesId).map((job) => job.date));
+    const customer = input.customers.find((person) => person.customerId === item.customerId);
+    const property = input.properties.find((home) => home.propertyId === item.propertyId);
+    if (!customer || !property) continue;
+    for (const date of dates) {
+      if (!shouldGenerateOccurrence(existing, date)) continue;
+      const jobId = `job-${item.seriesId}-${date}`;
+      const job: Job = {
+        jobId,
+        customerId: item.customerId,
+        propertyId: item.propertyId,
+        seriesId: item.seriesId,
+        serviceType: item.defaultServiceType,
+        date,
+        headcountNeeded: item.defaultHeadcountNeeded,
+        snapshot: snapshotVisit(customer, property),
+        specialInstructions: item.defaultSpecialInstructions ?? "",
+        status: "SCHEDULED",
+        createdAt: input.nowIso,
+        createdBy: "kelsey",
+        updatedAt: input.nowIso,
+        updatedBy: "kelsey",
+      };
+      const weekStart = mondayOf(date);
+      const availabilityByCleaner: Record<string, { submitted: boolean; windows: ScheduleWindow[] }> = {};
+      for (const cleaner of input.cleaners) {
+        availabilityByCleaner[cleaner.cleanerId] = {
+          submitted: input.submissions.some(
+            (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
+          ),
+          windows: input.availability
+            .filter((window) => window.cleanerId === cleaner.cleanerId)
+            .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+        };
+      }
+      const plan = planOccurrenceStaffing({
+        jobId,
+        serviceDate: date,
+        headcountNeeded: item.defaultHeadcountNeeded,
+        mode: item.staffingTemplateMode,
+        template: item.staffingTemplate,
+        cleaners: input.cleaners,
+        availabilityByCleaner,
+        confirmedAssignments: assignments.filter((assignment) => assignment.status === "CONFIRMED"),
+        nowIso: input.nowIso,
+        newId,
+      });
+      jobs.push(job);
+      assignments.push(...plan.assignments);
+      existing.add(date);
+    }
+    item.generatedThroughDate = last;
+  }
+
+  return { series, jobs, assignments };
+}
+
 function buildAssignment(
   input: {
     jobId: string;
@@ -340,6 +444,7 @@ function buildAssignment(
     mode: Exclude<StaffingTemplateMode, "BLANK">;
     nowIso: string;
     newId: () => string;
+    pendingAvailability?: boolean;
   },
   entry: StaffingTemplateEntry,
 ): JobAssignment {
@@ -348,14 +453,16 @@ function buildAssignment(
     payPerPersonCents: entry.payPerPersonCents,
     confirmedCrewSize: entry.proposedCrewSize,
   });
-  const confirmed = input.mode === "DIRECT";
+  const confirmed = input.mode === "DIRECT" && !input.pendingAvailability;
+  const pending = input.mode === "DIRECT" && input.pendingAvailability === true;
   return {
     assignmentId: input.newId(),
     jobId: input.jobId,
     cleanerId: entry.cleanerId,
     serviceDate: input.serviceDate,
-    status: confirmed ? "CONFIRMED" : "INVITED",
+    status: confirmed ? "CONFIRMED" : pending ? "PENDING_AVAILABILITY" : "INVITED",
     proposedCrewSize: entry.proposedCrewSize,
+    pendingCrewSize: pending ? entry.proposedCrewSize : undefined,
     confirmedCrewSize: confirmed ? entry.proposedCrewSize : undefined,
     arrivalWindowStart: entry.arrivalWindowStart,
     arrivalWindowEnd: entry.arrivalWindowEnd,
@@ -365,7 +472,37 @@ function buildAssignment(
     proposedTotalPayCents,
     confirmedTotalPayCents: confirmed ? proposedTotalPayCents : undefined,
     invitedAt: input.nowIso,
-    respondedAt: confirmed ? input.nowIso : undefined,
+    respondedAt: confirmed || pending ? input.nowIso : undefined,
+    createdAt: input.nowIso,
+    updatedAt: input.nowIso,
+  };
+}
+
+function flaggedAssignment(
+  input: { jobId: string; serviceDate: string; nowIso: string; newId: () => string },
+  entry: StaffingTemplateEntry,
+  reason: string,
+): JobAssignment {
+  const proposedTotalPayCents = confirmedCompensationCents({
+    payType: entry.payType,
+    payPerPersonCents: entry.payPerPersonCents,
+    confirmedCrewSize: Math.max(entry.proposedCrewSize, 1),
+  });
+  return {
+    assignmentId: input.newId(),
+    jobId: input.jobId,
+    cleanerId: entry.cleanerId,
+    serviceDate: input.serviceDate,
+    status: "NEEDS_ATTENTION",
+    proposedCrewSize: entry.proposedCrewSize,
+    attentionReason: reason,
+    arrivalWindowStart: entry.arrivalWindowStart,
+    arrivalWindowEnd: entry.arrivalWindowEnd,
+    expectedDurationMinutes: entry.expectedDurationMinutes,
+    payType: entry.payType,
+    payPerPersonCents: entry.payPerPersonCents,
+    proposedTotalPayCents,
+    invitedAt: input.nowIso,
     createdAt: input.nowIso,
     updatedAt: input.nowIso,
   };

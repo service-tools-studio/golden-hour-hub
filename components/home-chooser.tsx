@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { personName } from "@/lib/domain/cleaners";
+import { cleanerCrewSummary } from "@/lib/format";
 
 export function HomeChooser() {
   const hub = useHub();
@@ -38,7 +39,7 @@ export function HomeChooser() {
           >
             <span className="block text-lg font-semibold">{personName(cleaner.firstName, cleaner.lastName)}</span>
             <span className="text-sm text-ink/60">
-              {cleaner.helpersApproved ? `Helper-approved crew of ${cleaner.typicalCrewSize}` : "Works alone"}
+              {cleanerCrewSummary(cleaner)}
             </span>
           </button>
         ))}

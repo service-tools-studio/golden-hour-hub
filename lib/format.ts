@@ -1,3 +1,4 @@
+import { helpersApproved, maxCrewSize, typicalCrewSize } from "./domain/cleaners";
 import type { AssignmentStatus, CleanerProfile, JobAssignment, ServiceType } from "./domain/types";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import { addDays, formatHm, formatLongDate, formatShortDate, formatTimeLabel, zonedParts } from "./domain/time";
@@ -121,8 +122,12 @@ export function assignmentStatusLabel(status: AssignmentStatus): string {
   switch (status) {
     case "INVITED":
       return "Awaiting";
+    case "PENDING_AVAILABILITY":
+      return "Waiting on availability";
     case "CONFIRMED":
       return "Confirmed";
+    case "NEEDS_ATTENTION":
+      return "Needs attention";
     case "DECLINED":
       return "Declined";
     case "CANCELED":
@@ -134,15 +139,22 @@ export function assignmentStatusLabel(status: AssignmentStatus): string {
 
 export function crewLine(cleaner: CleanerProfile, assignment: JobAssignment): string {
   if (assignment.status === "INVITED") return `${cleaner.firstName} — Awaiting`;
+  if (assignment.status === "PENDING_AVAILABILITY") return `${cleaner.firstName} — Waiting on availability`;
+  if (assignment.status === "NEEDS_ATTENTION") return `${cleaner.firstName} — Needs attention`;
   if (assignment.status === "DECLINED") return `${cleaner.firstName} — Declined`;
   if (assignment.status === "EXPIRED_JOB_FILLED") return `${cleaner.firstName} — Job filled`;
   if (assignment.status === "CANCELED") return `${cleaner.firstName} — Canceled`;
-  const crew = assignment.confirmedCrewSize ?? 1;
-  if (!cleaner.helpersApproved || crew <= 1) {
+  const crew = assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? 1;
+  if (!helpersApproved(cleaner.maxHelperCount) || crew <= 1) {
     return `${cleaner.firstName} — ${crew} ${crew === 1 ? "person" : "people"}`;
   }
   if (crew === 2) return `${cleaner.firstName} + helper — 2 people`;
   return `${cleaner.firstName} + helpers — ${crew} people`;
+}
+
+export function cleanerCrewSummary(cleaner: CleanerProfile): string {
+  if (!helpersApproved(cleaner.maxHelperCount)) return "Works alone · crew of 1";
+  return `Helpers approved · usual crew ${typicalCrewSize(cleaner.typicalHelperCount)} · max ${maxCrewSize(cleaner.maxHelperCount)}`;
 }
 
 export function payLine(assignment: JobAssignment, confirmed: boolean): string {

@@ -6,7 +6,7 @@ Business timezone: `America/Los_Angeles`. Recurrence uses calendar dates, not �
 
 Submitted availability is what the cleaner said. Confirming a job does not change those rows.
 
-Effective availability is submitted availability minus confirmed assignments only. Invited, declined, canceled, expired, and filled assignments do not block time.
+Effective availability is submitted availability minus confirmed assignments only. Invited, pending, needs-attention, declined, canceled, expired, and filled assignments do not block time.
 
 A cleaner may hold overlapping invitations. They cannot confirm a second job that overlaps a confirmed one.
 
@@ -33,15 +33,19 @@ The app does not cancel or move the confirmed job.
 
 `headcountNeeded` is people at the property, not the number of assignment rows.
 
-Confirmed headcount is the sum of `confirmedCrewSize` on `CONFIRMED` assignments.
+Confirmed headcount is the sum of `confirmedCrewSize` on `CONFIRMED` assignments. `PENDING_AVAILABILITY` does not use a spot.
 
-Only an admin changes `helpersApproved`, `typicalHelperCount`, and `typicalCrewSize`.
+Only an admin changes `typicalHelperCount` and `maxHelperCount`. Helper approval is derived: `maxHelperCount > 0`. Crew sizes are derived: typical crew is `1 + typicalHelperCount`, and the maximum crew is `1 + maxHelperCount`. `typicalHelperCount` cannot exceed `maxHelperCount`.
 
-A cleaner who is not helper-approved is always one person. They do not see a crew stepper. The server rejects a crew size other than 1, including a request that the screen did not offer.
+A cleaner with `maxHelperCount = 0` is always one person. They do not see helper wording or a crew stepper. The server rejects a crew size other than 1, including a request that the screen did not offer.
 
-A helper-approved cleaner may lower or raise the proposed crew before accepting. The minimum is 1. The maximum is the headcount still open. Helpers do not get accounts, availability, or their own pay rows. The primary cleaner is paid for the crew.
+A cleaner with `maxHelperCount > 0` may choose fewer people than their typical crew, or more, up to `min(1 + maxHelperCount, remaining headcount)`. They cannot pass the current maximum. The server reloads the profile at acceptance and at every later confirmation. An invitation that proposed a crew of 3 does not still allow 3 after the maximum is lowered to 1. A confirmed assignment keeps the crew it already has.
 
-Admins may invite more people than the job needs. The first valid confirmations fill the job. When it is full, remaining invitations become `EXPIRED_JOB_FILLED`.
+Admins use the same ceiling for direct assignment and for a recurring staffing template. They cannot set a crew above `1 + current maxHelperCount` or above the spots still open.
+
+Helpers do not get accounts, availability, acceptance actions, or their own pay rows. The primary cleaner is paid for the crew. Changing the crew inside the allowed range recalculates that pay from the stored per-person rate.
+
+Admins may invite more people than the job needs. The first valid confirmations fill the job. When it is full, remaining `INVITED` and `PENDING_AVAILABILITY` rows become `EXPIRED_JOB_FILLED`.
 
 Two confirms of the last spot cannot both succeed. The job update is conditional: `confirmedHeadcount + requested crew <= headcountNeeded`, in the same transaction as the status change.
 
@@ -63,31 +67,32 @@ After confirmation, the cleaner cannot change crew size or cancel in the app. Th
 
 ## Recurring generation
 
-Once a day, for each active series:
+Once a day, and whenever the schedule is loaded, for each active series:
 
-- Build occurrence dates from the series start through today + 8 weeks, and stop at `endDate` when there is one.
-- Skip any date that already has an `OCCUR#date` lock.
+- Build occurrence dates from the series start through today + 8 weeks (56 days), and stop at `endDate` when there is one.
+- Skip dates before today. Do not backfill a missed past date.
+- Skip any date that already has a job for that series, which the table stores as an `OCCUR#date` lock.
 - Create a job for each missing date, with a snapshot of the customer and the series property as they are at generation time.
-- Apply the staffing template.
+- Apply the staffing template using the cleaner’s current `maxHelperCount`.
 
-Eight weeks is long enough to staff ahead and short enough that the table does not fill with unused years. The generator is safe to run twice.
-
-Invitation text messages go out only when the new occurrence is within the next 14 days. Later invitations still exist in the app, under Action Required, when that week is close. Far-future texts are not sent just because the job row exists.
+The horizon is how far ahead job occurrences exist. It is not a limit on invitations. Admins may invite any generated occurrence inside those 8 weeks. Creating or sending that invitation does not require the cleaner’s availability for that week. The generator does not create years of future jobs. It stops when the series is stopped or canceled. Historical jobs and assignments stay. Running it again does not create a second job for the same series and date.
 
 ### Future staffing
 
-**Copy cleaners and send invitations.** Each new occurrence gets new `INVITED` assignments. The cleaner must accept that date. Accepting one date does not confirm the next. This is the default.
+**Copy cleaners and send invitations.** Each new occurrence gets a new `INVITED` assignment when the cleaner is active and the template crew fits the current maximum. The cleaner can accept a later week before submitting availability. That acceptance becomes `PENDING_AVAILABILITY`: they intend to take the cleaning, and it is not schedule-confirmed yet. Accepting one date does not confirm the next. If the week is already submitted, acceptance runs the normal availability, conflict, crew, headcount, and pay checks and becomes `CONFIRMED` only when they pass.
 
 **Copy cleaners and assign directly.** Used when the cleaner already agreed to the standing schedule. The new assignment is `CONFIRMED` only when all of these are true:
 
 - the cleaner is active
-- the crew size is legal for their helper approval
+- the crew size is legal for the current `maxHelperCount`
 - the confirmed people on that job would not pass `headcountNeeded`
 - that week’s availability has been submitted
 - the blocked time sits inside that availability
 - it does not overlap another confirmed job
 
-If any check fails, the job is still created and marked as needing attention. The assignment is not confirmed. The reason is kept on the job, for example: “This recurring cleaning could not be assigned to Claudia because it conflicts with another confirmed job.” A missing availability submission is not treated as a yes.
+If that week is not submitted yet, the assignment is `PENDING_AVAILABILITY` with the intended crew. The admin can see who the standing cleaner is. It is not treated as schedule-confirmed. If the week is submitted and a check fails, the assignment is `NEEDS_ATTENTION` with the reason, for example: “This recurring cleaning could not be assigned to Claudia because it conflicts with another confirmed job.” The job still exists. The app does not confirm it and does not change the cleaner’s availability.
+
+When the cleaner later submits that week, pending rows in the week are checked again. A fit becomes `CONFIRMED`. A conflict becomes `NEEDS_ATTENTION`.
 
 **Leave future cleanings unassigned.** Jobs are created with no assignments and show as needing staffing.
 

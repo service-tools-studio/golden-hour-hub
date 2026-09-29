@@ -1,3 +1,4 @@
+import { maxCrewSize } from "./cleaners.ts";
 import type {
   AssignmentStatus,
   AvailabilityWindow,
@@ -101,22 +102,25 @@ export function calculateRemainingHeadcount(
   return headcountNeeded - calculateConfirmedHeadcount(assignments);
 }
 
-export function isCleanerAllowedCrewSize(helpersApproved: boolean, crewSize: number): boolean {
+export function isCleanerAllowedCrewSize(maxHelperCount: number, crewSize: number): boolean {
   if (!Number.isInteger(crewSize) || crewSize < 1) return false;
-  if (!helpersApproved) return crewSize === 1;
-  return true;
+  return crewSize <= maxCrewSize(maxHelperCount);
 }
 
 export function validateRequestedCrewSize(input: {
-  helpersApproved: boolean;
+  maxHelperCount: number;
   requestedCrewSize: number;
   remainingHeadcount: number;
 }): Result<{ ok: true }> {
   if (!Number.isInteger(input.requestedCrewSize) || input.requestedCrewSize < 1) {
     return { ok: false, message: "Choose how many people from your crew can attend." };
   }
-  if (!input.helpersApproved && input.requestedCrewSize !== 1) {
-    return { ok: false, message: "You can only attend on your own for this job." };
+  const ceiling = maxCrewSize(input.maxHelperCount);
+  if (input.requestedCrewSize > ceiling) {
+    return {
+      ok: false,
+      message: ceiling === 1 ? "You can only attend on your own for this job." : `Your approved crew size is ${ceiling}.`,
+    };
   }
   if (input.remainingHeadcount <= 0 || input.requestedCrewSize > input.remainingHeadcount) {
     if (input.remainingHeadcount <= 0) {

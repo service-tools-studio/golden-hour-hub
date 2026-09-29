@@ -6,7 +6,7 @@ import {
   calculateConfirmedHourlyCrewRate,
   calculateFlatPayPerPerson,
 } from "./compensation.ts";
-import { deriveCrewSettings } from "./cleaners.ts";
+import { deriveCrewSettings, helpersApproved, maxCrewSize, typicalCrewSize, validateProposedCrewSize } from "./cleaners.ts";
 import {
   buildCustomerSearchKeys,
   searchCustomers,
@@ -202,55 +202,76 @@ describe("headcount and helper approval", () => {
       { status: "CONFIRMED" as const, confirmedCrewSize: 2 },
       { status: "CONFIRMED" as const, confirmedCrewSize: 1 },
       { status: "INVITED" as const, confirmedCrewSize: 4 },
+      { status: "PENDING_AVAILABILITY" as const, pendingCrewSize: 2 },
       { status: "DECLINED" as const, confirmedCrewSize: 1 },
     ];
     assert.equal(calculateConfirmedHeadcount(assignments), 3);
     assert.equal(calculateRemainingHeadcount(3, assignments), 0);
   });
 
-  it("lets a helper-approved cleaner confirm 1 or increase when spots remain", () => {
-    assert.equal(isCleanerAllowedCrewSize(true, 1), true);
-    assert.equal(isCleanerAllowedCrewSize(true, 3), true);
-    assert.equal(
-      validateRequestedCrewSize({ helpersApproved: true, requestedCrewSize: 1, remainingHeadcount: 3 }).ok,
-      true,
-    );
-    assert.equal(
-      validateRequestedCrewSize({ helpersApproved: true, requestedCrewSize: 3, remainingHeadcount: 3 }).ok,
-      true,
-    );
+  it("derives helper approval and crew sizes from helper counts", () => {
+    assert.equal(helpersApproved(0), false);
+    assert.equal(helpersApproved(1), true);
+    assert.equal(typicalCrewSize(1), 2);
+    assert.equal(maxCrewSize(2), 3);
+    assert.equal(typicalCrewSize(0), 1);
+    assert.equal(maxCrewSize(0), 1);
+    const claudia = deriveCrewSettings({ typicalHelperCount: 1, maxHelperCount: 2 });
+    assert.deepEqual(claudia, { ok: true, typicalHelperCount: 1, maxHelperCount: 2 });
+    const maria = deriveCrewSettings({ typicalHelperCount: 0, maxHelperCount: 0 });
+    assert.deepEqual(maria, { ok: true, typicalHelperCount: 0, maxHelperCount: 0 });
   });
 
-  it("rejects crew size above remaining headcount", () => {
+  it("rejects a typical helper count above the maximum", () => {
+    const result = deriveCrewSettings({ typicalHelperCount: 2, maxHelperCount: 1 });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.message, /cannot be more than the maximum/);
+  });
+
+  it("lets a helper-approved cleaner confirm fewer than typical or up to the maximum", () => {
+    assert.equal(isCleanerAllowedCrewSize(2, 1), true);
+    assert.equal(isCleanerAllowedCrewSize(2, 2), true);
+    assert.equal(isCleanerAllowedCrewSize(2, 3), true);
+    assert.equal(isCleanerAllowedCrewSize(2, 4), false);
+    assert.equal(validateRequestedCrewSize({ maxHelperCount: 2, requestedCrewSize: 1, remainingHeadcount: 3 }).ok, true);
+    assert.equal(validateRequestedCrewSize({ maxHelperCount: 2, requestedCrewSize: 3, remainingHeadcount: 3 }).ok, true);
+  });
+
+  it("rejects a crew larger than the approved maximum", () => {
     const result = validateRequestedCrewSize({
-      helpersApproved: true,
+      maxHelperCount: 2,
+      requestedCrewSize: 4,
+      remainingHeadcount: 5,
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.message, "Your approved crew size is 3.");
+    assert.equal(validateProposedCrewSize(2, 4).ok, false);
+  });
+
+  it("lets remaining headcount reduce the selectable crew below the approved maximum", () => {
+    const result = validateRequestedCrewSize({
+      maxHelperCount: 2,
       requestedCrewSize: 3,
       remainingHeadcount: 2,
     });
     assert.equal(result.ok, false);
     if (!result.ok) assert.match(result.message, /2 spots/);
+    assert.equal(validateRequestedCrewSize({ maxHelperCount: 2, requestedCrewSize: 2, remainingHeadcount: 2 }).ok, true);
   });
 
-  it("rejects crew size 2 for a cleaner who cannot bring helpers", () => {
-    assert.equal(isCleanerAllowedCrewSize(false, 2), false);
-    assert.equal(isCleanerAllowedCrewSize(false, 1), true);
+  it("keeps a cleaner with no helpers at a crew of 1", () => {
+    assert.equal(helpersApproved(0), false);
+    assert.equal(maxCrewSize(0), 1);
+    assert.equal(isCleanerAllowedCrewSize(0, 1), true);
+    assert.equal(isCleanerAllowedCrewSize(0, 2), false);
     const result = validateRequestedCrewSize({
-      helpersApproved: false,
+      maxHelperCount: 0,
       requestedCrewSize: 2,
       remainingHeadcount: 3,
     });
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.message, "You can only attend on your own for this job.");
-  });
-
-  it("forces a non-approved cleaner back to a crew of 1", () => {
-    const result = deriveCrewSettings({ helpersApproved: false, typicalHelperCount: 4 });
-    assert.deepEqual(result, {
-      ok: true,
-      helpersApproved: false,
-      typicalHelperCount: 0,
-      typicalCrewSize: 1,
-    });
+    assert.equal(validateRequestedCrewSize({ maxHelperCount: 0, requestedCrewSize: 1, remainingHeadcount: 3 }).ok, true);
   });
 
   it("keeps the final headcount slot safe when two confirmations read the same count", () => {

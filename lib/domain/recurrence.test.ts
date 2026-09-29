@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { calculateConfirmedHeadcount, calculateRemainingHeadcount } from "./scheduling.ts";
+import { addDays } from "./time.ts";
 import {
   calculateNextOccurrence,
   copyStaffingTemplateToOccurrence,
   determineRecurringEditScope,
   generateOccurrenceDates,
+  mergeRecurringHorizon,
   planOccurrenceStaffing,
+  RECURRING_HORIZON_DAYS,
   recurrenceSummary,
+  recurringHorizonThrough,
   shouldGenerateOccurrence,
   validateRecurrenceRule,
 } from "./recurrence.ts";
-import type { JobAssignment, RecurrenceRule, StaffingTemplateEntry } from "./types.ts";
+import type { Customer, Job, JobAssignment, Property, RecurrenceRule, RecurringSeries, StaffingTemplateEntry } from "./types.ts";
 
 const weeklyMonday: RecurrenceRule = {
   frequency: "WEEK",
@@ -238,13 +242,14 @@ describe("recurring edits and staffing", () => {
       headcountNeeded: 3,
       mode: "INVITE",
       template: [template({ cleanerId: "maria", proposedCrewSize: 2 })],
-      cleaners: [{ cleanerId: "maria", firstName: "Maria", status: "ACTIVE", helpersApproved: false }],
+      cleaners: [{ cleanerId: "maria", firstName: "Maria", status: "ACTIVE", maxHelperCount: 0 }],
       availabilityByCleaner: {},
       confirmedAssignments: [],
       nowIso: "2026-09-26T00:00:00.000Z",
       newId: () => "a1",
     });
-    assert.equal(plan.assignments.length, 0);
+    assert.equal(plan.assignments.length, 1);
+    assert.equal(plan.assignments[0].status, "NEEDS_ATTENTION");
     assert.match(plan.attention[0].reason, /not approved to bring helpers/);
   });
 
@@ -255,7 +260,7 @@ describe("recurring edits and staffing", () => {
       headcountNeeded: 3,
       mode: "INVITE",
       template: [template()],
-      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", helpersApproved: true }],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
       availabilityByCleaner: {},
       confirmedAssignments: [],
       nowIso: "2026-09-26T00:00:00.000Z",
@@ -293,7 +298,7 @@ describe("recurring edits and staffing", () => {
       headcountNeeded: 2,
       mode: "DIRECT",
       template: [template({ proposedCrewSize: 1, payPerPersonCents: 5_000 })],
-      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", helpersApproved: true }],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
       availabilityByCleaner: {
         claudia: {
           submitted: true,
@@ -304,24 +309,258 @@ describe("recurring edits and staffing", () => {
       nowIso: "2026-09-26T00:00:00.000Z",
       newId: () => "new",
     });
-    assert.equal(plan.assignments.length, 0);
+    assert.equal(plan.assignments.length, 1);
+    assert.equal(plan.assignments[0].status, "NEEDS_ATTENTION");
     assert.match(plan.attention[0].reason, /conflicts with another confirmed job/);
   });
 
-  it("does not directly confirm a week the cleaner has not submitted", () => {
+  it("keeps a direct recurring assignment pending until that week is submitted", () => {
     const plan = planOccurrenceStaffing({
       jobId: "job-oct-6",
       serviceDate: "2026-10-06",
       headcountNeeded: 2,
       mode: "DIRECT",
       template: [template({ proposedCrewSize: 1 })],
-      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", helpersApproved: true }],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
       availabilityByCleaner: { claudia: { submitted: false, windows: [] } },
       confirmedAssignments: [],
       nowIso: "2026-09-26T00:00:00.000Z",
       newId: () => "new",
     });
-    assert.equal(plan.assignments.length, 0);
-    assert.match(plan.attention[0].reason, /has not submitted availability/);
+    assert.equal(plan.assignments.length, 1);
+    assert.equal(plan.assignments[0].status, "PENDING_AVAILABILITY");
+    assert.equal(plan.assignments[0].pendingCrewSize, 1);
+    assert.equal(plan.assignments[0].confirmedCrewSize, undefined);
+    assert.equal(plan.attention.length, 0);
+  });
+
+  it("invites a recurring cleaner beyond the following week without availability", () => {
+    const plan = planOccurrenceStaffing({
+      jobId: "job-far",
+      serviceDate: "2026-11-16",
+      headcountNeeded: 2,
+      mode: "INVITE",
+      template: [template({ proposedCrewSize: 2 })],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availabilityByCleaner: { claudia: { submitted: false, windows: [] } },
+      confirmedAssignments: [],
+      nowIso: "2026-09-27T00:00:00.000Z",
+      newId: () => "far",
+    });
+    assert.equal(plan.assignments[0].status, "INVITED");
+    assert.equal(plan.attention.length, 0);
+  });
+
+  it("rejects a recurring template crew above the current maximum", () => {
+    const plan = planOccurrenceStaffing({
+      jobId: "job-1",
+      serviceDate: "2026-10-20",
+      headcountNeeded: 4,
+      mode: "DIRECT",
+      template: [template({ proposedCrewSize: 4 })],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availabilityByCleaner: {
+        claudia: { submitted: true, windows: [{ date: "2026-10-20", start: "08:00", end: "17:00" }] },
+      },
+      confirmedAssignments: [],
+      nowIso: "2026-09-26T00:00:00.000Z",
+      newId: () => "too-big",
+    });
+    assert.equal(plan.assignments[0].status, "NEEDS_ATTENTION");
+    assert.match(plan.attention[0].reason, /maximum of 3/);
+  });
+
+  it("confirms a direct assignment only when availability already fits", () => {
+    const plan = planOccurrenceStaffing({
+      jobId: "job-oct-6",
+      serviceDate: "2026-10-06",
+      headcountNeeded: 2,
+      mode: "DIRECT",
+      template: [template({ proposedCrewSize: 2 })],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availabilityByCleaner: {
+        claudia: { submitted: true, windows: [{ date: "2026-10-06", start: "08:00", end: "17:00" }] },
+      },
+      confirmedAssignments: [],
+      nowIso: "2026-09-26T00:00:00.000Z",
+      newId: () => "ok",
+    });
+    assert.equal(plan.assignments[0].status, "CONFIRMED");
+    assert.equal(plan.assignments[0].confirmedCrewSize, 2);
+  });
+});
+
+describe("rolling eight-week horizon", () => {
+  const customer: Customer = {
+    customerId: "amy",
+    firstName: "Amy",
+    lastName: "Johnson",
+    phone: "5035550100",
+    status: "ACTIVE",
+    createdAt: "2026-09-01T00:00:00.000Z",
+    createdBy: "kelsey",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+    updatedBy: "kelsey",
+  };
+  const property: Property = {
+    propertyId: "home",
+    customerId: "amy",
+    streetAddress: "88 Hawthorne Blvd",
+    city: "Portland",
+    state: "OR",
+    zip: "97214",
+    bedrooms: 3,
+    bathrooms: 2,
+    squareFeet: 1800,
+    preferences: "",
+    status: "ACTIVE",
+    createdAt: "2026-09-01T00:00:00.000Z",
+    createdBy: "kelsey",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+    updatedBy: "kelsey",
+  };
+
+  function series(overrides: Partial<RecurringSeries> = {}): RecurringSeries {
+    return {
+      seriesId: "series-amy",
+      customerId: "amy",
+      propertyId: "home",
+      recurrence: weeklyMonday,
+      startDate: "2026-09-07",
+      endMode: "UNTIL_CANCELED",
+      defaultHeadcountNeeded: 2,
+      defaultArrivalWindowStart: "09:00",
+      defaultArrivalWindowEnd: "10:00",
+      defaultExpectedDurationMinutes: 240,
+      defaultServiceType: "RECURRING",
+      staffingTemplateMode: "INVITE",
+      staffingTemplate: [template({ proposedCrewSize: 2 })],
+      status: "ACTIVE",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      createdBy: "kelsey",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      updatedBy: "kelsey",
+      ...overrides,
+    };
+  }
+
+  function pastJob(): Job {
+    return {
+      jobId: "job-past",
+      customerId: "amy",
+      propertyId: "home",
+      seriesId: "series-amy",
+      serviceType: "RECURRING",
+      date: "2026-09-21",
+      headcountNeeded: 2,
+      snapshot: {
+        customerDisplayName: "Amy Johnson",
+        phone: "5035550100",
+        propertyId: "home",
+        streetAddress: "88 Hawthorne Blvd",
+        city: "Portland",
+        state: "OR",
+        zip: "97214",
+        bedrooms: 3,
+        bathrooms: 2,
+        squareFeet: 1800,
+        preferences: "",
+      },
+      specialInstructions: "",
+      status: "SCHEDULED",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      createdBy: "kelsey",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      updatedBy: "kelsey",
+    };
+  }
+
+  it("creates occurrences only through today plus eight weeks", () => {
+    const today = "2026-09-27";
+    const through = recurringHorizonThrough(today);
+    assert.equal(through, addDays(today, RECURRING_HORIZON_DAYS));
+    assert.equal(RECURRING_HORIZON_DAYS, 56);
+    const result = mergeRecurringHorizon({
+      today,
+      series: [series()],
+      jobs: [pastJob()],
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: [],
+      nowIso: "2026-09-27T00:00:00.000Z",
+    });
+    const generated = result.jobs.filter((job) => job.jobId !== "job-past");
+    assert.ok(generated.length > 0);
+    assert.ok(generated.every((job) => job.date >= today && job.date <= through));
+    assert.ok(generated.some((job) => job.date > addDays(today, 14)));
+    assert.equal(result.jobs.some((job) => job.date === "2026-09-21"), true);
+    assert.ok(result.assignments.every((assignment) => assignment.status === "INVITED"));
+    assert.equal(result.series[0].generatedThroughDate, through);
+  });
+
+  it("adds newly eligible dates as time advances and does not duplicate", () => {
+    const today = "2026-09-27";
+    const first = mergeRecurringHorizon({
+      today,
+      series: [series()],
+      jobs: [],
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: [],
+      nowIso: "2026-09-27T00:00:00.000Z",
+    });
+    const again = mergeRecurringHorizon({
+      today,
+      series: first.series,
+      jobs: first.jobs,
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: first.assignments,
+      nowIso: "2026-09-28T00:00:00.000Z",
+    });
+    assert.equal(again.jobs.length, first.jobs.length);
+    const dates = again.jobs.map((job) => job.date);
+    assert.equal(new Set(dates).size, dates.length);
+    const later = mergeRecurringHorizon({
+      today: "2026-10-04",
+      series: again.series,
+      jobs: again.jobs,
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: again.assignments,
+      nowIso: "2026-10-04T00:00:00.000Z",
+    });
+    assert.ok(later.jobs.length > again.jobs.length);
+    assert.ok(later.jobs.some((job) => job.date > recurringHorizonThrough(today)));
+    assert.ok(later.jobs.every((job) => job.date <= recurringHorizonThrough("2026-10-04")));
+  });
+
+  it("stops generating after the series is canceled and keeps history", () => {
+    const stopped = mergeRecurringHorizon({
+      today: "2026-09-27",
+      series: [series({ status: "INACTIVE" })],
+      jobs: [pastJob()],
+      customers: [customer],
+      properties: [property],
+      cleaners: [],
+      availability: [],
+      submissions: [],
+      assignments: [],
+      nowIso: "2026-09-27T00:00:00.000Z",
+    });
+    assert.equal(stopped.jobs.length, 1);
+    assert.equal(stopped.jobs[0].jobId, "job-past");
   });
 });

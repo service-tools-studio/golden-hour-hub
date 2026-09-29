@@ -1,18 +1,21 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { bootstrapHub, persistHub } from "@/app/actions/hub-data";
 import { mergeAdjacentWindows } from "@/lib/domain/availability";
 import { deriveCrewSettings } from "@/lib/domain/cleaners";
 import { validateCustomerInput, type CustomerInput } from "@/lib/domain/customers";
 import {
   expireRemainingInvitationsWhenFilled,
+  revalidatePendingAssignments,
   validateInvitationAcceptance,
   withAssignmentConfirmed,
   withAssignmentDeclined,
+  withAssignmentPendingAvailability,
 } from "@/lib/domain/invitations";
-import { dateMatchesRule, validateRecurrenceRule } from "@/lib/domain/recurrence";
+import { dateMatchesRule, mergeRecurringHorizon, validateRecurrenceRule } from "@/lib/domain/recurrence";
 import { toAssignmentSchedule, validateAvailabilityEdit } from "@/lib/domain/scheduling";
-import { addDays, todayInBusinessZone } from "@/lib/domain/time";
+import { addDays, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
 import { buildSeed, type HubData } from "@/lib/mock/seed";
 import type {
   AppRole,
@@ -24,7 +27,8 @@ import type {
   SeriesStatus,
 } from "@/lib/domain/types";
 
-const STORAGE_KEY = "ghh-preview-v1";
+const STORAGE_KEY = "ghh-preview-v2";
+const SESSION_KEY = "ghh-session-v2";
 
 type HubState = HubData & {
   role: AppRole | null;
@@ -54,20 +58,55 @@ type HubContextValue = HubState & {
   ) => ActionResult;
   updateCleanerAdmin: (
     cleanerId: string,
-    input: { helpersApproved: boolean; typicalHelperCount: number; status: CleanerStatus },
+    input: { typicalHelperCount: number; maxHelperCount: number; status: CleanerStatus },
   ) => ActionResult;
 };
 
 const HubContext = createContext<HubContextValue | null>(null);
+
+function readSession(): { role: AppRole | null; cleanerId: string | null } {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return { role: null, cleanerId: null };
+    const parsed = JSON.parse(raw) as { role?: AppRole | null; cleanerId?: string | null };
+    return { role: parsed.role ?? null, cleanerId: parsed.cleanerId ?? null };
+  } catch {
+    return { role: null, cleanerId: null };
+  }
+}
+
+function readPreview(): HubState {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return createState();
+    const parsed = JSON.parse(raw) as HubState;
+    if (!parsed.cleaners || !parsed.jobs || !parsed.assignments || !parsed.properties) return createState();
+    if (parsed.cleaners.some((cleaner) => typeof cleaner.maxHelperCount !== "number")) return createState();
+    return { ...withCurrentHorizon(parsed), role: parsed.role ?? null, cleanerId: parsed.cleanerId ?? null };
+  } catch {
+    return createState();
+  }
+}
 
 function createState(): HubState {
   const today = todayInBusinessZone();
   return { ...buildSeed(today), role: null, cleanerId: null };
 }
 
+function withCurrentHorizon(data: HubData): HubData {
+  const today = todayInBusinessZone();
+  const generated = mergeRecurringHorizon({
+    ...data,
+    today,
+    nowIso: new Date().toISOString(),
+  });
+  return { ...data, today, series: generated.series, jobs: generated.jobs, assignments: generated.assignments };
+}
+
 export function HubProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<HubState | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -76,25 +115,46 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }, [toast]);
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        setState(createState());
+    let cancelled = false;
+    async function load() {
+      const remote = await bootstrapHub();
+      if (cancelled) return;
+      if (remote.source === "dynamodb") {
+        sourceRef.current = "dynamodb";
+        const session = readSession();
+        setState({
+          ...withCurrentHorizon(remote.data),
+          role: session.role,
+          cleanerId: session.cleanerId,
+        });
         return;
       }
-      const parsed = JSON.parse(raw) as HubState;
-      if (!parsed.cleaners || !parsed.jobs || !parsed.assignments || !parsed.properties) {
-        setState(createState());
-        return;
-      }
-      setState({ ...parsed, today: todayInBusinessZone() });
-    } catch {
-      setState(createState());
+      sourceRef.current = "preview";
+      setState(readPreview());
     }
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!state) return;
+    if (!state || !sourceRef.current) return;
+    if (sourceRef.current === "dynamodb") {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, cleanerId: state.cleanerId }));
+      void persistHub({
+        today: state.today,
+        cleaners: state.cleaners,
+        customers: state.customers,
+        properties: state.properties,
+        series: state.series,
+        jobs: state.jobs,
+        assignments: state.assignments,
+        availability: state.availability,
+        submissions: state.submissions,
+      });
+      return;
+    }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
@@ -111,6 +171,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, message: "This invitation is no longer available." };
     }
     const jobAssignments = data.assignments.filter((item) => item.jobId === job.jobId);
+    const weekStart = mondayOf(assignment.serviceDate);
     const decision = validateInvitationAcceptance({
       assignment,
       job,
@@ -123,25 +184,37 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       availabilityWindows: data.availability
         .filter((window) => window.cleanerId === cleaner.cleanerId)
         .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+      availabilitySubmitted: data.submissions.some(
+        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
+      ),
     });
     if (!decision.ok) return decision;
     const now = new Date().toISOString();
-    const settled = expireRemainingInvitationsWhenFilled(
-      withAssignmentConfirmed(
-        jobAssignments,
-        assignmentId,
-        decision.confirmedCrewSize,
-        decision.confirmedTotalPayCents,
-        now,
-      ),
-      job.headcountNeeded,
-      now,
-    );
+    const updated =
+      decision.status === "PENDING_AVAILABILITY"
+        ? withAssignmentPendingAvailability(jobAssignments, assignmentId, decision.pendingCrewSize, now)
+        : expireRemainingInvitationsWhenFilled(
+            withAssignmentConfirmed(
+              jobAssignments,
+              assignmentId,
+              decision.confirmedCrewSize,
+              decision.confirmedTotalPayCents,
+              now,
+            ),
+            job.headcountNeeded,
+            now,
+          );
     setState({
       ...data,
-      assignments: [...data.assignments.filter((item) => item.jobId !== job.jobId), ...settled],
+      assignments: [...data.assignments.filter((item) => item.jobId !== job.jobId), ...updated],
     });
-    return { ok: true };
+    return {
+      ok: true,
+      message:
+        decision.status === "PENDING_AVAILABILITY"
+          ? "Saved. This cleaning is confirmed after your availability for that week fits."
+          : undefined,
+    };
   }
 
   function declineInvitation(assignmentId: string): ActionResult {
@@ -182,9 +255,24 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     const existing = data.submissions.find(
       (submission) => submission.cleanerId === cleanerId && submission.weekStart === weekStart,
     );
+    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
+    const assignments = cleaner
+      ? revalidatePendingAssignments({
+          assignments: data.assignments,
+          cleaner,
+          weekStart,
+          weekEnd,
+          windows: combined
+            .filter((window) => window.cleanerId === cleanerId)
+            .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+          jobs: data.jobs,
+          nowIso: now,
+        })
+      : data.assignments;
     setState({
       ...data,
       availability: combined,
+      assignments,
       submissions: [
         ...data.submissions.filter(
           (submission) => !(submission.cleanerId === cleanerId && submission.weekStart === weekStart),
@@ -318,7 +406,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   function updateCleanerAdmin(
     cleanerId: string,
-    input: { helpersApproved: boolean; typicalHelperCount: number; status: CleanerStatus },
+    input: { typicalHelperCount: number; maxHelperCount: number; status: CleanerStatus },
   ): ActionResult {
     const crew = deriveCrewSettings(input);
     if (!crew.ok) return crew;
@@ -330,9 +418,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
           ? {
               ...cleaner,
               status: input.status,
-              helpersApproved: crew.helpersApproved,
               typicalHelperCount: crew.typicalHelperCount,
-              typicalCrewSize: crew.typicalCrewSize,
+              maxHelperCount: crew.maxHelperCount,
               updatedAt: now,
               updatedBy: "kelsey",
             }

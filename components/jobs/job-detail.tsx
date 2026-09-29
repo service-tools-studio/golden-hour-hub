@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, Screen } from "@/components/ui";
+import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
 import { calculateConfirmedHeadcount } from "@/lib/domain/scheduling";
 import { seriesSummary } from "@/lib/mock/seed";
@@ -74,7 +75,7 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
                 {cleaner.firstName} {cleaner.lastName}
                 <span className={`text-sm font-normal ${declined ? "" : "text-ink/60"}`}>
                   {" · "}
-                  {cleaner.helpersApproved ? "Helper-approved" : "Solo cleaner"}
+                  {helpersApproved(cleaner.maxHelperCount) ? "Helper-approved" : "Solo cleaner"}
                 </span>
               </p>
               <p className="mt-2 text-sm">
@@ -82,8 +83,14 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
                   ? `# of cleaners confirmed: ${assignment.confirmedCrewSize}`
                   : crewLine(cleaner, assignment)}
               </p>
-              {assignment.status === "INVITED" && cleaner.helpersApproved ? (
+              {assignment.attentionReason ? <p className="mt-1 text-sm">{assignment.attentionReason}</p> : null}
+              {assignment.status === "INVITED" && helpersApproved(cleaner.maxHelperCount) ? (
                 <p className="mt-1 text-sm"># of cleaners invited: {assignment.proposedCrewSize}</p>
+              ) : null}
+              {assignment.status === "PENDING_AVAILABILITY" ? (
+                <p className="mt-1 text-sm">
+                  Intended crew: {assignment.pendingCrewSize ?? assignment.proposedCrewSize}. Waiting on availability before this is confirmed.
+                </p>
               ) : null}
               <ScheduleFacts
                 muted={declined}
@@ -150,7 +157,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
         </Card>
         <Card>
-          {cleaner.helpersApproved ? (
+          {helpersApproved(cleaner.maxHelperCount) ? (
             <>
               <p className="text-base">Confirmed crew size: {assignment.confirmedCrewSize}</p>
               <p className="mt-1 text-sm text-ink/70">
@@ -160,7 +167,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           ) : null}
           <p className="mt-2 text-xl font-semibold">{payLine(assignment, true)}</p>
           <p className="mt-4 text-sm leading-5 text-ink/70">
-            {cleaner.helpersApproved
+            {helpersApproved(cleaner.maxHelperCount)
               ? "Need to change your schedule or crew? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."
               : "Need to change your schedule? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."}
           </p>

@@ -1,5 +1,5 @@
 import { snapshotVisit } from "../domain/customers.ts";
-import { recurrenceSummary } from "../domain/recurrence.ts";
+import { mergeRecurringHorizon, recurrenceSummary } from "../domain/recurrence.ts";
 import {
   addDays,
   dayOfWeek,
@@ -80,11 +80,11 @@ export function buildSeed(today: string): HubData {
   const pastDate = nextWeekdayOnOrAfter(addDays(today, -12));
 
   const cleaners: CleanerProfile[] = [
-    cleaner("claudia", "Claudia", "Ramos", "5035550101", "claudia@example.com", true, 1),
-    cleaner("kat", "Kat", "Reyes", "5035550102", "kat@example.com", false, 0),
-    cleaner("mariana", "Mariana", "Moreno", "5035550103", "mari@example.com", true, 1),
-    cleaner("shariese", "Shariese", "Miles", "5035550104", "shariese@example.com", false, 0),
-    cleaner("ashley", "Ashley", "Smith", "5035550105", "ashley@example.com", false, 0),
+    cleaner("claudia", "Claudia", "Ramos", "5035550101", "claudia@example.com", 1, 2),
+    cleaner("kat", "Kat", "Reyes", "5035550102", "kat@example.com", 0, 0),
+    cleaner("mariana", "Mariana", "Moreno", "5035550103", "mari@example.com", 1, 1),
+    cleaner("shariese", "Shariese", "Miles", "5035550104", "shariese@example.com", 0, 0),
+    cleaner("ashley", "Ashley", "Smith", "5035550105", "ashley@example.com", 0, 0),
   ];
 
   const customers: Customer[] = [
@@ -190,7 +190,29 @@ export function buildSeed(today: string): HubData {
     },
   ];
 
-  return { today, cleaners, customers, properties, series, jobs, assignments, availability, submissions };
+  const generated = mergeRecurringHorizon({
+    today,
+    series,
+    jobs,
+    customers,
+    properties,
+    cleaners,
+    availability,
+    submissions,
+    assignments,
+    nowIso: STAMP,
+  });
+  return {
+    today,
+    cleaners,
+    customers,
+    properties,
+    availability,
+    submissions,
+    series: generated.series,
+    jobs: generated.jobs,
+    assignments: generated.assignments,
+  };
 }
 
 export function seriesSummary(series: RecurringSeries): string {
@@ -203,8 +225,8 @@ function cleaner(
   lastName: string,
   mobilePhone: string,
   email: string,
-  helpersApproved: boolean,
   typicalHelperCount: number,
+  maxHelperCount: number,
 ): CleanerProfile {
   return {
     cleanerId,
@@ -213,9 +235,8 @@ function cleaner(
     email,
     mobilePhone,
     status: "ACTIVE",
-    helpersApproved,
-    typicalHelperCount: helpersApproved ? typicalHelperCount : 0,
-    typicalCrewSize: helpersApproved ? 1 + typicalHelperCount : 1,
+    typicalHelperCount,
+    maxHelperCount,
     createdAt: STAMP,
     createdBy: "kelsey",
     updatedAt: STAMP,

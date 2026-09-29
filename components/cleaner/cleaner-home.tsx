@@ -18,6 +18,12 @@ export function CleanerHome() {
   const invitations = hub.assignments.filter(
     (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "INVITED",
   );
+  const waiting = hub.assignments.filter(
+    (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "PENDING_AVAILABILITY",
+  );
+  const flagged = hub.assignments.filter(
+    (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "NEEDS_ATTENTION",
+  );
   const upcoming = hub.assignments
     .filter((assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "CONFIRMED")
     .map((assignment) => ({ assignment, job: hub.jobs.find((job) => job.jobId === assignment.jobId) }))
@@ -38,6 +44,45 @@ export function CleanerHome() {
               const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
               if (!job) return null;
               return <InvitationCard key={assignment.assignmentId} assignment={assignment} job={job} cleaner={cleaner} />;
+            })}
+          </section>
+        ) : null}
+
+        {waiting.length > 0 ? (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Waiting on availability</h2>
+            {waiting.map((assignment) => {
+              const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
+              if (!job) return null;
+              return (
+                <Card key={assignment.assignmentId}>
+                  <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
+                  <p className="text-sm text-ink/70">
+                    {formatLongDate(job.date)} · {assignment.pendingCrewSize ?? assignment.proposedCrewSize}{" "}
+                    {(assignment.pendingCrewSize ?? assignment.proposedCrewSize) === 1 ? "person" : "people"}
+                  </p>
+                  <p className="mt-2 text-sm">
+                    You said you will take this cleaning. It is confirmed after your availability for that week fits the schedule.
+                  </p>
+                </Card>
+              );
+            })}
+          </section>
+        ) : null}
+
+        {flagged.length > 0 ? (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Needs attention</h2>
+            {flagged.map((assignment) => {
+              const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
+              if (!job) return null;
+              return (
+                <Card key={assignment.assignmentId}>
+                  <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
+                  <p className="text-sm text-ink/70">{formatLongDate(job.date)}</p>
+                  <p className="mt-2 text-sm">{assignment.attentionReason ?? "This cleaning needs a schedule change before it can be confirmed."}</p>
+                </Card>
+              );
             })}
           </section>
         ) : null}

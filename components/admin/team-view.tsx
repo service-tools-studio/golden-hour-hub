@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { Card, Notice, PageHeader, Screen } from "@/components/ui";
-import { formatPhone } from "@/lib/format";
+import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
+import { cleanerCrewSummary, formatPhone } from "@/lib/format";
 import type { CleanerStatus } from "@/lib/domain/types";
 
 export function TeamView() {
@@ -27,11 +28,7 @@ export function TeamView() {
                   {cleaner.status === "ACTIVE" ? "Active" : "Inactive"}
                 </span>
               </div>
-              <p className="mt-3 text-sm">
-                {cleaner.helpersApproved
-                  ? `Approved for helpers · usual crew ${cleaner.typicalCrewSize}`
-                  : "Works alone · crew of 1"}
-              </p>
+              <p className="mt-3 text-sm">{cleanerCrewSummary(cleaner)}</p>
             </Card>
           </Link>
         ))}
@@ -43,8 +40,9 @@ export function TeamView() {
 export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   const hub = useHub();
   const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
-  const [helpersApproved, setHelpersApproved] = useState(cleaner?.helpersApproved ?? false);
+  const [helpersOn, setHelpersOn] = useState(cleaner ? helpersApproved(cleaner.maxHelperCount) : false);
   const [typicalHelperCount, setTypicalHelperCount] = useState(cleaner?.typicalHelperCount ?? 0);
+  const [maxHelperCount, setMaxHelperCount] = useState(cleaner?.maxHelperCount ?? 0);
   const [status, setStatus] = useState<CleanerStatus>(cleaner?.status ?? "ACTIVE");
   const [message, setMessage] = useState<string | null>(null);
   if (!cleaner) {
@@ -56,12 +54,15 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
     );
   }
   const profile = cleaner;
-  const crewSize = helpersApproved ? 1 + typicalHelperCount : 1;
+  const typical = helpersOn ? typicalHelperCount : 0;
+  const maximum = helpersOn ? Math.max(maxHelperCount, 1) : 0;
+  const usualCrew = typicalCrewSize(typical);
+  const approvedCrew = maxCrewSize(maximum);
 
   function save() {
     const result = hub.updateCleanerAdmin(profile.cleanerId, {
-      helpersApproved,
-      typicalHelperCount: helpersApproved ? typicalHelperCount : 0,
+      typicalHelperCount: typical,
+      maxHelperCount: maximum,
       status,
     });
     setMessage(result.ok ? "Saved." : result.message);
@@ -92,39 +93,50 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
           </div>
         </Card>
         <Card>
-          <p className="text-base font-semibold">Approved to bring helpers?</p>
+          <p className="text-base font-semibold">Helpers approved?</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setHelpersApproved(false)}
-              className={`min-h-12 rounded-2xl text-sm font-semibold ${!helpersApproved ? "bg-ink text-cream" : "bg-cream"}`}
+              onClick={() => setHelpersOn(false)}
+              className={`min-h-12 rounded-2xl text-sm font-semibold ${!helpersOn ? "bg-ink text-cream" : "bg-cream"}`}
             >
               No
             </button>
             <button
               type="button"
-              onClick={() => setHelpersApproved(true)}
-              className={`min-h-12 rounded-2xl text-sm font-semibold ${helpersApproved ? "bg-ink text-cream" : "bg-cream"}`}
+              onClick={() => {
+                setHelpersOn(true);
+                setMaxHelperCount((value) => Math.max(value, 1));
+              }}
+              className={`min-h-12 rounded-2xl text-sm font-semibold ${helpersOn ? "bg-ink text-cream" : "bg-cream"}`}
             >
               Yes
             </button>
           </div>
-          {helpersApproved ? (
-            <div className="mt-4">
-              <p className="text-sm font-medium">Typical number of helpers</p>
-              <div className="mt-2 flex items-center justify-between rounded-2xl bg-cream px-3 py-2">
-                <button type="button" className="min-h-12 min-w-12 text-2xl" onClick={() => setTypicalHelperCount((value) => Math.max(0, value - 1))}>
-                  −
-                </button>
-                <span className="text-2xl font-semibold">{typicalHelperCount}</span>
-                <button type="button" className="min-h-12 min-w-12 text-2xl" onClick={() => setTypicalHelperCount((value) => Math.min(8, value + 1))}>
-                  +
-                </button>
-              </div>
+          {helpersOn ? (
+            <div className="mt-4 space-y-4">
+              <HelperCount
+                label="Typical number of helpers"
+                value={typicalHelperCount}
+                onChange={(value) => {
+                  setTypicalHelperCount(value);
+                  setMaxHelperCount((current) => Math.max(current, value));
+                }}
+              />
+              <HelperCount
+                label="Maximum number of helpers approved"
+                value={Math.max(maxHelperCount, 1)}
+                min={1}
+                onChange={(value) => {
+                  setMaxHelperCount(value);
+                  setTypicalHelperCount((current) => Math.min(current, value));
+                }}
+              />
             </div>
           ) : null}
-          <p className="mt-4 text-base">Typical crew size: {crewSize}</p>
-          <p className="mt-1 text-sm text-ink/60">Typical crew size = primary cleaner + helpers.</p>
+          <p className="mt-4 text-base">Typical crew size: {usualCrew}</p>
+          <p className="mt-1 text-base">Maximum approved crew size: {approvedCrew}</p>
+          <p className="mt-1 text-sm text-ink/60">Crew size is the cleaner plus their helpers. Only admins can change these limits.</p>
           {message ? (
             <div className="mt-3">
               <Notice tone={message === "Saved." ? "ok" : "error"}>{message}</Notice>
@@ -136,5 +148,32 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
         </Card>
       </div>
     </Screen>
+  );
+}
+
+function HelperCount({
+  label,
+  value,
+  min = 0,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min?: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-medium">{label}</p>
+      <div className="mt-2 flex items-center justify-between rounded-2xl bg-cream px-3 py-2">
+        <button type="button" className="min-h-12 min-w-12 text-2xl" onClick={() => onChange(Math.max(min, value - 1))} aria-label={`Decrease ${label}`}>
+          −
+        </button>
+        <span className="text-2xl font-semibold">{value}</span>
+        <button type="button" className="min-h-12 min-w-12 text-2xl" onClick={() => onChange(value + 1)} aria-label={`Increase ${label}`}>
+          +
+        </button>
+      </div>
+    </div>
   );
 }

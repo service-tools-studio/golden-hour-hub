@@ -40,9 +40,13 @@ export type CleanerProfile = {
   email: string;
   mobilePhone: string;
   status: CleanerStatus;
-  helpersApproved: boolean;
+  /** Usual helpers this cleaner brings. Must be <= maxHelperCount. */
   typicalHelperCount: number;
-  typicalCrewSize: number;
+  /**
+   * Authorization ceiling. 0 means this cleaner works alone.
+   * Helper approval is derived: maxHelperCount > 0.
+   */
+  maxHelperCount: number;
   createdAt: string;
   createdBy: string;
   updatedAt: string;
@@ -151,7 +155,9 @@ export type Job = {
 
 export type AssignmentStatus =
   | "INVITED"
+  | "PENDING_AVAILABILITY"
   | "CONFIRMED"
+  | "NEEDS_ATTENTION"
   | "DECLINED"
   | "CANCELED"
   | "EXPIRED_JOB_FILLED";
@@ -166,7 +172,11 @@ export type JobAssignment = {
   serviceDate: string;
   status: AssignmentStatus;
   proposedCrewSize: number;
+  /** Crew size the cleaner or admin committed before availability could be checked. */
+  pendingCrewSize?: number;
   confirmedCrewSize?: number;
+  /** Why a recurring assignment could not be schedule-confirmed. */
+  attentionReason?: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
   expectedDurationMinutes: number;

@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { Card, Notice, PrimaryButton, SecondaryButton } from "@/components/ui";
+import { helpersApproved, maxCrewSize } from "@/lib/domain/cleaners";
 import { confirmedCompensationCents, formatMoney } from "@/lib/domain/compensation";
 import { calculateRemainingHeadcount } from "@/lib/domain/scheduling";
+import { mondayOf } from "@/lib/domain/time";
 import { formatArrival, formatDuration, formatLongDate, serviceLabel } from "@/lib/format";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
@@ -22,18 +24,24 @@ export function InvitationCard({
     job.headcountNeeded,
     hub.assignments.filter((item) => item.jobId === job.jobId),
   );
-  const [crew, setCrew] = useState(Math.min(assignment.proposedCrewSize, Math.max(remaining, 1)));
+  const bringsHelpers = helpersApproved(cleaner.maxHelperCount);
+  const weekSubmitted = hub.submissions.some(
+    (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === mondayOf(job.date),
+  );
+  const ceiling = Math.min(maxCrewSize(cleaner.maxHelperCount), Math.max(remaining, 0));
+  const initialCrew = bringsHelpers ? Math.min(assignment.proposedCrewSize, Math.max(ceiling, 1)) : 1;
+  const [crew, setCrew] = useState(initialCrew);
   const [message, setMessage] = useState<string | null>(null);
+  const attending = bringsHelpers ? crew : 1;
   const pay = confirmedCompensationCents({
     payType: assignment.payType,
     payPerPersonCents: assignment.payPerPersonCents,
-    confirmedCrewSize: cleaner.helpersApproved ? crew : 1,
+    confirmedCrewSize: attending,
   });
-  const maxCrew = Math.max(remaining, 1);
 
   function accept() {
-    const result = hub.acceptInvitation(assignment.assignmentId, cleaner.helpersApproved ? crew : 1);
-    if (!result.ok) setMessage(result.message);
+    const result = hub.acceptInvitation(assignment.assignmentId, attending);
+    setMessage(result.ok ? result.message ?? null : result.message);
   }
 
   function decline() {
@@ -61,7 +69,7 @@ export function InvitationCard({
           <dd>{formatDuration(assignment.expectedDurationMinutes)}</dd>
         </div>
       </dl>
-      {cleaner.helpersApproved ? (
+      {bringsHelpers ? (
         <div className="mt-4">
           <p className="text-sm text-ink/70">Number from your crew expected: {assignment.proposedCrewSize} people</p>
           <p className="mt-3 text-base font-medium">How many people from your crew can attend?</p>
@@ -78,13 +86,14 @@ export function InvitationCard({
             <button
               type="button"
               className="min-h-12 min-w-12 rounded-xl bg-white text-2xl"
-              onClick={() => setCrew((value) => Math.min(maxCrew, value + 1))}
+              onClick={() => setCrew((value) => Math.min(Math.max(ceiling, 1), value + 1))}
               aria-label="More people"
+              disabled={ceiling < 1}
             >
               +
             </button>
           </div>
-          <p className="mt-2 text-sm text-ink/60">This number includes you.</p>
+          <p className="mt-2 text-sm text-ink/60">This number includes you. The most you can bring is {maxCrewSize(cleaner.maxHelperCount)}.</p>
           <p className="mt-3 text-base">
             Rate: {formatMoney(assignment.payPerPersonCents)} per person
             <br />
@@ -95,16 +104,23 @@ export function InvitationCard({
       ) : (
         <div className="mt-4 space-y-2">
           <p className="text-base">You will be attending this job.</p>
-          <p className="text-base font-medium">Your pay: {formatMoney(pay)} flat</p>
+          <p className="text-base font-medium">Your pay: {formatMoney(pay)}{assignment.payType === "HOURLY" ? "/hour" : ""}</p>
         </div>
       )}
+      {!weekSubmitted ? (
+        <p className="mt-3 text-sm text-ink/70">
+          Availability for this week is not in yet. Accepting saves your intent. The cleaning is confirmed once that week fits this schedule.
+        </p>
+      ) : null}
       {message ? (
         <div className="mt-3">
           <Notice>{message}</Notice>
         </div>
       ) : null}
       <div className="mt-4 space-y-2">
-        <PrimaryButton onClick={accept}>{cleaner.helpersApproved ? "Confirm & Accept Job" : "Accept Job"}</PrimaryButton>
+        <PrimaryButton onClick={accept}>
+          {weekSubmitted ? (bringsHelpers ? "Confirm & Accept Job" : "Accept Job") : "I'll take this cleaning"}
+        </PrimaryButton>
         <SecondaryButton onClick={decline}>Decline</SecondaryButton>
       </div>
     </Card>
