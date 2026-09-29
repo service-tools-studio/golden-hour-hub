@@ -105,6 +105,7 @@ function DayView({
   onMonth: () => void;
 }) {
   const hub = useHub();
+  const openings = useDatesWithCleanerOpenings(cleanerIds);
   const week = eachDate(sundayOf(date), addDays(sundayOf(date), 6));
   return (
     <div className="space-y-4">
@@ -133,6 +134,7 @@ function DayView({
                 >
                   {Number(day.slice(8))}
                 </span>
+                {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" aria-hidden="true" /> : <span className="size-1.5" />}
               </button>
             );
           })}
