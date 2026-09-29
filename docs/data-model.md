@@ -8,15 +8,19 @@ A customer is the person. A property is one house that person owns. A recurring 
 
 ## Keys
 
-| | |
-| --- | --- |
-| Table | `pk`, `sk` |
+
+|                      |                    |
+| -------------------- | ------------------ |
+| Table                | `pk`, `sk`         |
 | GSI1 `ScheduleIndex` | `gsi1pk`, `gsi1sk` |
 | GSI2 `RelationIndex` | `gsi2pk`, `gsi2sk` |
+
 
 GSI1 answers “what is on this date / in this status.” GSI2 answers “what belongs to this customer or cleaner.” A customer’s properties live in the customer partition, so the profile and the property list are one query.
 
 ## Items
+
+
 
 ### Cleaner profile
 
@@ -207,42 +211,48 @@ The blocked range is not stored. It starts at `arrivalWindowStart`. It ends at `
 
 ## Access patterns
 
-| Need | How |
-| --- | --- |
-| Cleaner by id | Get `CLEANER#id` / `PROFILE` |
-| Active cleaners | Query GSI1 `CLEANER_STATUS#ACTIVE` |
-| One cleaner’s week of availability | Query `CLEANER#id`, `sk` between `AVAIL#weekStart` and `AVAIL#weekEnd` |
-| Everyone’s availability on a date | Query GSI1 `AVAIL#date` |
-| Submission for a week | Get `SUBMISSION#weekStart`, or query GSI1 `SUBMISSION#weekStart` |
-| Customer by id, with properties | Query `CUSTOMER#id` |
-| One property | Get `CUSTOMER#id` / `PROPERTY#id` |
-| Customer search | Match name, phone, street, city, and property label as above |
-| Jobs for a customer | Query GSI2 `CUSTOMER#id`, `sk begins_with JOB#`, then group by `propertyId` |
-| Series for a customer | Query GSI2 `CUSTOMER#id`, `sk begins_with SERIES#` |
-| Series by id | Get `SERIES#id` / `PROFILE` |
-| Active series to generate | Query GSI1 `SERIES#ACTIVE` |
-| Jobs on a date | Query GSI1 `JOBDATE#date` |
-| Assignments on a job | Query `JOB#id`, `sk begins_with ASSIGN#` |
-| One cleaner’s assignments | Query GSI1 `CLEANER#id`, `sk begins_with` the date |
-| Confirmed conflicts | That cleaner query, keep `CONFIRMED`, compare blocked ranges |
+
+| Need                               | How                                                                         |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| Cleaner by id                      | Get `CLEANER#id` / `PROFILE`                                                |
+| Active cleaners                    | Query GSI1 `CLEANER_STATUS#ACTIVE`                                          |
+| One cleaner’s week of availability | Query `CLEANER#id`, `sk` between `AVAIL#weekStart` and `AVAIL#weekEnd`      |
+| Everyone’s availability on a date  | Query GSI1 `AVAIL#date`                                                     |
+| Submission for a week              | Get `SUBMISSION#weekStart`, or query GSI1 `SUBMISSION#weekStart`            |
+| Customer by id, with properties    | Query `CUSTOMER#id`                                                         |
+| One property                       | Get `CUSTOMER#id` / `PROPERTY#id`                                           |
+| Customer search                    | Match name, phone, street, city, and property label as above                |
+| Jobs for a customer                | Query GSI2 `CUSTOMER#id`, `sk begins_with JOB#`, then group by `propertyId` |
+| Series for a customer              | Query GSI2 `CUSTOMER#id`, `sk begins_with SERIES#`                          |
+| Series by id                       | Get `SERIES#id` / `PROFILE`                                                 |
+| Active series to generate          | Query GSI1 `SERIES#ACTIVE`                                                  |
+| Jobs on a date                     | Query GSI1 `JOBDATE#date`                                                   |
+| Assignments on a job               | Query `JOB#id`, `sk begins_with ASSIGN#`                                    |
+| One cleaner’s assignments          | Query GSI1 `CLEANER#id`, `sk begins_with` the date                          |
+| Confirmed conflicts                | That cleaner query, keep `CONFIRMED`, compare blocked ranges                |
+
+
+
 
 ## Assignment states
 
 These are separate steps: create the job occurrence, create the invitation or intended assignment, record the cleaner’s intent, validate the schedule, then confirm.
 
-| From | When | To |
-| --- | --- | --- |
-| `INVITED` | Cleaner accepts, that week is already submitted, and crew, headcount, availability, conflicts, and pay all pass | `CONFIRMED` |
-| `INVITED` | Cleaner accepts, that week is not submitted yet, and the current crew ceiling and remaining headcount pass | `PENDING_AVAILABILITY` |
-| `INVITED` | Cleaner accepts, that week is submitted, and a check fails | stays `INVITED`; the cleaner sees the reason |
-| `INVITED` | Cleaner declines | `DECLINED` |
-| `PENDING_AVAILABILITY` | That week is submitted and every check passes | `CONFIRMED` |
-| `PENDING_AVAILABILITY` | That week is submitted and a check fails | `NEEDS_ATTENTION` |
-| `INVITED` or `PENDING_AVAILABILITY` | Confirmed people reach `headcountNeeded` | `EXPIRED_JOB_FILLED` |
-| Direct template, week already submitted and valid | Generation | `CONFIRMED` |
-| Direct template, week not submitted | Generation | `PENDING_AVAILABILITY` |
-| Direct or invite template, cleaner inactive or crew above the current maximum | Generation | `NEEDS_ATTENTION` |
-| Direct template, week submitted but headcount, availability, or a confirmed conflict fails | Generation | `NEEDS_ATTENTION` |
+
+| From                                                                                       | When                                                                                                            | To                                           |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `INVITED`                                                                                  | Cleaner accepts, that week is already submitted, and crew, headcount, availability, conflicts, and pay all pass | `CONFIRMED`                                  |
+| `INVITED`                                                                                  | Cleaner accepts, that week is not submitted yet, and the current crew ceiling and remaining headcount pass      | `PENDING_AVAILABILITY`                       |
+| `INVITED`                                                                                  | Cleaner accepts, that week is submitted, and a check fails                                                      | stays `INVITED`; the cleaner sees the reason |
+| `INVITED`                                                                                  | Cleaner declines                                                                                                | `DECLINED`                                   |
+| `PENDING_AVAILABILITY`                                                                     | That week is submitted and every check passes                                                                   | `CONFIRMED`                                  |
+| `PENDING_AVAILABILITY`                                                                     | That week is submitted and a check fails                                                                        | `NEEDS_ATTENTION`                            |
+| `INVITED` or `PENDING_AVAILABILITY`                                                        | Confirmed people reach `headcountNeeded`                                                                        | `EXPIRED_JOB_FILLED`                         |
+| Direct template, week already submitted and valid                                          | Generation                                                                                                      | `CONFIRMED`                                  |
+| Direct template, week not submitted                                                        | Generation                                                                                                      | `PENDING_AVAILABILITY`                       |
+| Direct or invite template, cleaner inactive or crew above the current maximum              | Generation                                                                                                      | `NEEDS_ATTENTION`                            |
+| Direct template, week submitted but headcount, availability, or a confirmed conflict fails | Generation                                                                                                      | `NEEDS_ATTENTION`                            |
+
 
 `NEEDS_ATTENTION` is the flag for admin and cleaner. The app does not confirm it, does not change the cleaner’s availability, and does not double-book. A confirmed row stays confirmed when `maxHelperCount` later changes.
 

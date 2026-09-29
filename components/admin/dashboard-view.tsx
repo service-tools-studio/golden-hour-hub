@@ -20,9 +20,10 @@ export function DashboardView() {
   const [sending, setSending] = useState(false);
 
   const upcoming = hub.jobs
-    .filter((job) => job.status === "SCHEDULED" && job.date >= hub.today)
+    .filter((job) => (job.status === "SCHEDULED" || job.status === "DRAFT") && job.date >= hub.today)
     .sort((a, b) => a.date.localeCompare(b.date));
   const needsAttention = upcoming.filter((job) => {
+    if (job.status === "DRAFT" || job.headcountNeeded < 1) return true;
     const people = calculateConfirmedHeadcount(hub.assignments.filter((item) => item.jobId === job.jobId));
     return people < job.headcountNeeded;
   });
@@ -111,9 +112,17 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
   const hub = useHub();
   const job = hub.jobs.find((item) => item.jobId === jobId);
   if (!job) return null;
-  const assignments = hub.assignments.filter((item) => item.jobId === job.jobId);
+  const assignments = hub.assignments.filter(
+    (item) => item.jobId === job.jobId && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED",
+  );
+  const assignedIds = new Set(assignments.map((item) => item.cleanerId));
+  const pendingCleaners = (job.draftCleanerIds ?? [])
+    .filter((id) => !assignedIds.has(id))
+    .map((id) => hub.cleaners.find((item) => item.cleanerId === id))
+    .filter((item) => item !== undefined);
   const confirmed = calculateConfirmedHeadcount(assignments);
-  const full = confirmed >= job.headcountNeeded;
+  const draft = job.status === "DRAFT";
+  const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   return (
     <Link href={`/admin/jobs/${job.jobId}`} className="block">
       <Card className={full ? "ring-2 ring-mint" : ""}>
@@ -129,10 +138,13 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
           ) : null}
         </div>
         <p className="mt-3 text-base font-medium">
-          Headcount: {confirmed} / {job.headcountNeeded} confirmed
+          {draft ? "Draft" : `Headcount: ${confirmed} / ${job.headcountNeeded} confirmed`}
         </p>
         <ul className="mt-2 space-y-1 text-sm text-ink/80">
-          {assignments.length === 0 ? <li>No cleaners assigned yet</li> : null}
+          {assignments.length === 0 && pendingCleaners.length === 0 ? <li>No cleaners assigned yet</li> : null}
+          {pendingCleaners.map((cleaner) => (
+            <li key={cleaner.cleanerId}>{cleaner.firstName}</li>
+          ))}
           {assignments.map((assignment) => {
             const cleaner = hub.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
             if (!cleaner) return null;

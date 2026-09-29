@@ -134,7 +134,7 @@ export function CustomerForm({
   customer?: Customer;
   scrollToPropertyId?: string | null;
   onCancel?: () => void;
-  onSaved?: () => void;
+  onSaved?: (customerId: string) => void;
   ref?: React.Ref<CustomerFormHandle>;
 }) {
   const hub = useHub();
@@ -256,7 +256,7 @@ export function CustomerForm({
         const customerId = persist();
         if (!customerId) return;
         hub.flash("changes saved");
-        if (onSaved) onSaved();
+        if (onSaved) onSaved(customerId);
         else router.push(`/admin/customers/${customerId}`);
       }}
     >

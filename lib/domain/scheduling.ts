@@ -86,6 +86,15 @@ export function cleaningCoverage(
   return startUtc && endUtc ? { startUtc, endUtc } : null;
 }
 
+export function calculateInvitedHeadcount(
+  assignments: Array<Pick<JobAssignment, "status" | "proposedCrewSize">>,
+): number {
+  return assignments.reduce((sum, assignment) => {
+    if (assignment.status !== "INVITED") return sum;
+    return sum + (assignment.proposedCrewSize ?? 0);
+  }, 0);
+}
+
 export function calculateConfirmedHeadcount(
   assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize">>,
 ): number {

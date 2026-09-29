@@ -1,11 +1,28 @@
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "./domain/cleaners";
-import type { AssignmentStatus, CleanerProfile, JobAssignment, ServiceType } from "./domain/types";
+import type { AssignmentNotice, AssignmentStatus, CleanerProfile, JobAssignment, ServiceType } from "./domain/types";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
-import { addDays, formatHm, formatLongDate, formatShortDate, formatTimeLabel, zonedParts } from "./domain/time";
+import { addDays, formatHm, formatLongDate, formatShortDate, formatTimeLabel, minutesFromTime, timeFromMinutes, zonedParts } from "./domain/time";
 import { formatMoney } from "./domain/compensation";
 import { formatPhone } from "./domain/customers";
 
 export { formatLongDate, formatMoney, formatPhone, formatShortDate, formatTimeLabel };
+
+export function hourWindows(start: string, end: string): { start: string; end: string }[] {
+  const first = Math.ceil(minutesFromTime(start) / 60) * 60;
+  const last = minutesFromTime(end);
+  const windows: { start: string; end: string }[] = [];
+  for (let minute = first; minute + 60 <= last && minute + 60 <= 24 * 60; minute += 60) {
+    windows.push({ start: timeFromMinutes(minute), end: timeFromMinutes(minute + 60) });
+  }
+  return windows;
+}
+
+export function hourWindowLabel(start: string, end: string): string {
+  const [startClock, startSuffix] = formatTimeLabel(start).replace(":00", "").split(" ");
+  const [endClock, endSuffix] = formatTimeLabel(end).replace(":00", "").split(" ");
+  if (startSuffix === endSuffix) return `${startClock}–${endClock} ${endSuffix}`;
+  return `${startClock} ${startSuffix}–${endClock} ${endSuffix}`;
+}
 
 export function serviceLabel(serviceType: ServiceType): string {
   switch (serviceType) {
@@ -139,7 +156,7 @@ export function assignmentStatusLabel(status: AssignmentStatus): string {
 
 export function crewLine(cleaner: CleanerProfile, assignment: JobAssignment): string {
   if (assignment.status === "INVITED") return `${cleaner.firstName} — Awaiting`;
-  if (assignment.status === "PENDING_AVAILABILITY") return `${cleaner.firstName} — Waiting on availability`;
+  if (assignment.status === "PENDING_AVAILABILITY") return `${cleaner.firstName} — Awaiting`;
   if (assignment.status === "NEEDS_ATTENTION") return `${cleaner.firstName} — Needs attention`;
   if (assignment.status === "DECLINED") return `${cleaner.firstName} — Declined`;
   if (assignment.status === "EXPIRED_JOB_FILLED") return `${cleaner.firstName} — Job filled`;
@@ -157,12 +174,66 @@ export function cleanerCrewSummary(cleaner: CleanerProfile): string {
   return `Helpers approved · usual crew ${typicalCrewSize(cleaner.typicalHelperCount)} · max ${maxCrewSize(cleaner.maxHelperCount)}`;
 }
 
+export function noticeGap(draft: boolean, current: AssignmentNotice, lastNotified?: AssignmentNotice): "assignment" | "changes" | null {
+  if (draft) return "assignment";
+  if (!lastNotified) return null;
+  const same =
+    lastNotified.arrivalWindowStart === current.arrivalWindowStart &&
+    lastNotified.arrivalWindowEnd === current.arrivalWindowEnd &&
+    lastNotified.expectedDurationMinutes === current.expectedDurationMinutes &&
+    lastNotified.proposedCrewSize === current.proposedCrewSize &&
+    lastNotified.payType === current.payType &&
+    lastNotified.payPerPersonCents === current.payPerPersonCents;
+  return same ? null : "changes";
+}
+
+export function dateReinviteNeeded(
+  assignment: Pick<JobAssignment, "status" | "serviceDate" | "notifiedServiceDate">,
+  date: string,
+): boolean {
+  if (assignment.status !== "INVITED" && assignment.status !== "CONFIRMED") return false;
+  return date !== (assignment.notifiedServiceDate ?? assignment.serviceDate);
+}
+
+export function reinviteFlagText(firstNames: string[]): string | null {
+  if (firstNames.length === 0) return null;
+  const list =
+    firstNames.length === 1
+      ? firstNames[0]
+      : firstNames.length === 2
+        ? `${firstNames[0]} and ${firstNames[1]}`
+        : `${firstNames.slice(0, -1).join(", ")}, and ${firstNames[firstNames.length - 1]}`;
+  return `${list} ${firstNames.length === 1 ? "needs" : "need"} to be reinvited for the new date.`;
+}
+
+export function arrivalMismatchText(firstName: string, arrivalLabel: string): string {
+  return `This does not match the earliest cleaner. ${firstName} arrives ${arrivalLabel}.`;
+}
+
+export function earliestCleanerArrival<T extends { start: string }>(windows: T[]): T | null {
+  let earliest: T | null = null;
+  for (const window of windows) {
+    if (!earliest || minutesFromTime(window.start) < minutesFromTime(earliest.start)) earliest = window;
+  }
+  return earliest;
+}
+
+export function noticeFlagText(firstName: string, gap: "assignment" | "changes"): string {
+  return gap === "assignment"
+    ? `${firstName} has not been notified of this assignment.`
+    : `${firstName} has not been notified of these changes.`;
+}
+
+export function assignmentFormStatus(status: JobAssignment["status"] | "DRAFT"): string {
+  if (status === "INVITED" || status === "DECLINED") return "Invite sent";
+  if (status === "CONFIRMED" || status === "PENDING_AVAILABILITY") return "Assignment confirmed";
+  return "Draft assignment";
+}
+
 export function payLine(assignment: JobAssignment, confirmed: boolean): string {
   const cents = confirmed
     ? (assignment.confirmedTotalPayCents ?? assignment.proposedTotalPayCents)
     : assignment.proposedTotalPayCents;
-  if (assignment.payType === "HOURLY") {
-    return `${formatMoney(cents)}/hour`;
-  }
-  return formatMoney(cents);
+  if (assignment.payType === "HOURLY") return `${formatMoney(cents)}/hour`;
+  return `${formatMoney(cents)} flat`;
 }

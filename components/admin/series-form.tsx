@@ -138,9 +138,7 @@ export function SeriesForm({
             </div>
           </div>
           <div>
-            <p className={`mb-1.5 text-sm font-medium ${message && form.days.length === 0 ? "text-red-700" : "text-ink/80"}`}>
-              Days
-            </p>
+            <p className="mb-1.5 text-sm font-medium text-ink/80">Days</p>
             <div className="grid grid-cols-7 gap-1">
               {DAYS.map((day) => {
                 const selected = form.days.includes(day.id);
@@ -156,6 +154,7 @@ export function SeriesForm({
                 );
               })}
             </div>
+            <p className="mt-1.5 text-sm text-ink/60">Optional. With none selected, new cleanings follow the weekday of the last one.</p>
           </div>
         </>
       ) : null}

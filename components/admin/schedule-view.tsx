@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { personName } from "@/lib/domain/cleaners";
@@ -106,9 +106,59 @@ function DayView({
 }) {
   const hub = useHub();
   const openings = useDatesWithCleanerOpenings(cleanerIds);
-  const week = eachDate(sundayOf(date), addDays(sundayOf(date), 6));
+  const scroller = useRef<HTMLDivElement>(null);
+  const ready = useRef(false);
+  const lock = useRef(false);
+  const pendingWidth = useRef<number | null>(null);
+  const [weeks, setWeeks] = useState(() => weekRange(sundayOf(date), 8, 10));
+
+  useLayoutEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    if (pendingWidth.current != null) {
+      node.scrollLeft += node.scrollWidth - pendingWidth.current;
+      pendingWidth.current = null;
+      lock.current = false;
+      return;
+    }
+    if (!ready.current) {
+      const index = weeks.findIndex((start) => start === sundayOf(date));
+      if (index >= 0) node.scrollLeft = index * node.clientWidth;
+      ready.current = true;
+    }
+  });
+
+  function settleWeek() {
+    const node = scroller.current;
+    if (!node || !ready.current || lock.current || node.clientWidth === 0) return;
+    const index = Math.round(node.scrollLeft / node.clientWidth);
+    const start = weeks[index];
+    if (!start) return;
+    const offset = eachDate(sundayOf(date), date).length - 1;
+    const next = addDays(start, offset);
+    if (next !== date) onDate(next);
+    if (index <= 1) {
+      lock.current = true;
+      pendingWidth.current = node.scrollWidth;
+      setWeeks((current) => [...weekRange(current[0], 3, 0).slice(0, 3), ...current]);
+      return;
+    }
+    if (index >= weeks.length - 2) {
+      lock.current = true;
+      const last = weeks[weeks.length - 1];
+      setWeeks((current) => [...current, ...weekRange(addDays(last, 7), 0, 2)]);
+    }
+  }
+
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    node.addEventListener("scrollend", settleWeek);
+    return () => node.removeEventListener("scrollend", settleWeek);
+  });
+
   return (
-    <div className="space-y-4">
+    <div>
       <div className="rounded-3xl bg-white px-3 pb-4 pt-3">
         <button
           type="button"
@@ -120,30 +170,40 @@ function DayView({
           </svg>
           {monthTitle(date)}
         </button>
-        <div className="mt-3 grid grid-cols-7">
-          {week.map((day, index) => {
-            const today = day === hub.today;
-            const selected = day === date;
-            return (
-              <button key={day} type="button" onClick={() => onDate(day)} className="flex flex-col items-center gap-1 py-1" aria-current={today ? "date" : undefined}>
-                <span className="text-[11px] font-semibold text-ink/40">{WEEKDAY_LETTERS[index]}</span>
-                <span
-                  className={`flex size-9 items-center justify-center rounded-full text-base ${
-                    today ? "bg-mint font-semibold text-ink" : selected ? "bg-ink/10 font-semibold text-ink" : "text-ink"
-                  }`}
-                >
-                  {Number(day.slice(8))}
-                </span>
-                {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" aria-hidden="true" /> : <span className="size-1.5" />}
-              </button>
-            );
-          })}
+        <div
+          ref={scroller}
+          aria-label="Weeks"
+          className="mt-3 flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {weeks.map((start) => (
+            <div key={start} className="grid min-w-full shrink-0 snap-start grid-cols-7">
+              {eachDate(start, addDays(start, 6)).map((day, index) => {
+                const today = day === hub.today;
+                const selected = day === date;
+                return (
+                  <button key={day} type="button" onClick={() => onDate(day)} className="flex flex-col items-center gap-1 py-1" aria-current={today ? "date" : undefined}>
+                    <span className="text-[11px] font-semibold text-ink/40">{WEEKDAY_LETTERS[index]}</span>
+                    <span
+                      className={`flex size-9 items-center justify-center rounded-full text-base ${
+                        today ? "bg-mint font-semibold text-ink" : selected ? "bg-ink/10 font-semibold text-ink" : "text-ink"
+                      }`}
+                    >
+                      {Number(day.slice(8))}
+                    </span>
+                    {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" aria-hidden="true" /> : <span className="size-1.5" />}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
-      <p className="text-center text-base font-semibold">{dayHeading(date)}</p>
-      {cleanerIds.map((cleanerId) => (
-        <CleanerDay key={cleanerId} cleanerId={cleanerId} date={date} />
-      ))}
+      <p className="sticky top-0 z-10 -mx-5 bg-cream px-5 pb-3 pt-4 text-center text-base font-semibold">{dayHeading(date)}</p>
+      <div className="space-y-4">
+        {cleanerIds.map((cleanerId) => (
+          <CleanerDay key={cleanerId} cleanerId={cleanerId} date={date} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -163,11 +223,23 @@ function CleanerDay({ cleanerId, date }: { cleanerId: string; date: string }) {
         <p className="mt-2 text-sm text-ink/60">No availability submitted for this day.</p>
       ) : null}
       <div className="mt-3 space-y-2">
-        {windows.map((window) => (
-          <div key={`${window.start}-${window.end}`} className="rounded-2xl bg-mint/70 px-3 py-3 text-sm">
-            Available {formatTimeLabel(window.start)} – {formatTimeLabel(window.end)}
-          </div>
-        ))}
+        {windows.map((window) => {
+          const params = new URLSearchParams({
+            cleanerId,
+            date,
+            start: window.start,
+            end: window.end,
+          });
+          return (
+            <Link
+              key={`${window.start}-${window.end}`}
+              href={`/admin/jobs/new?${params}`}
+              className="block rounded-2xl bg-mint/70 px-3 py-3 text-sm"
+            >
+              Available {formatTimeLabel(window.start)} – {formatTimeLabel(window.end)}
+            </Link>
+          );
+        })}
         {confirmed.map((assignment) => {
           const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
           if (!job) return null;
@@ -190,9 +262,13 @@ function CleanerDay({ cleanerId, date }: { cleanerId: string; date: string }) {
           const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
           if (!job) return null;
           return (
-            <p key={assignment.assignmentId} className="rounded-2xl border border-dashed border-ink/20 px-3 py-3 text-sm text-ink/70">
+            <Link
+              key={assignment.assignmentId}
+              href={`/admin/jobs/${job.jobId}`}
+              className="block rounded-2xl border border-dashed border-ink/20 px-3 py-3 text-sm text-ink/70"
+            >
               {assignment.status === "PENDING_AVAILABILITY"
-                ? "Waiting on availability"
+                ? `Waiting for ${cleaner.firstName} to confirm`
                 : assignment.status === "NEEDS_ATTENTION"
                   ? "Needs attention"
                   : "Invitation pending"}
@@ -207,7 +283,7 @@ function CleanerDay({ cleanerId, date }: { cleanerId: string; date: string }) {
                 })}
               </span>
               {assignment.attentionReason ? <span className="mt-1 block">{assignment.attentionReason}</span> : null}
-            </p>
+            </Link>
           );
         })}
       </div>
@@ -216,6 +292,11 @@ function CleanerDay({ cleanerId, date }: { cleanerId: string; date: string }) {
 }
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
+
+function weekRange(sunday: string, before: number, after: number): string[] {
+  const first = addDays(sunday, -7 * before);
+  return Array.from({ length: before + after + 1 }, (_, index) => addDays(first, index * 7));
+}
 
 function monthTitle(date: string): string {
   const { year, month, day } = { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)), day: Number(date.slice(8, 10)) };

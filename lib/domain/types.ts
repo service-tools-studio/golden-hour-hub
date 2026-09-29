@@ -116,7 +116,7 @@ export type ServiceType =
   | "POST_CONSTRUCTION"
   | "OTHER";
 
-export type JobStatus = "SCHEDULED" | "CANCELED";
+export type JobStatus = "DRAFT" | "SCHEDULED" | "CANCELED";
 
 export type JobCustomerSnapshot = {
   customerDisplayName: string;
@@ -143,7 +143,17 @@ export type Job = {
   serviceType: ServiceType;
   /** YYYY-MM-DD */
   date: string;
+  /** 0 on a draft means headcount has not been chosen yet. */
   headcountNeeded: number;
+  /** Arrival chosen for the visit. Cleaner assignments can use the same window. */
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
+  /** Length of the cleaning, starting after the arrival window. */
+  expectedDurationMinutes?: number;
+  /** Cleaners named on the visit before they are invited or assigned directly. */
+  draftCleanerIds?: string[];
+  /** Length, crew, and pay saved for a named cleaner before they are staffed. */
+  draftCleanerDetails?: DraftCleanerDetail[];
   snapshot: JobCustomerSnapshot;
   specialInstructions: string;
   status: JobStatus;
@@ -151,6 +161,25 @@ export type Job = {
   createdBy: string;
   updatedAt: string;
   updatedBy: string;
+};
+
+export type DraftCleanerDetail = {
+  cleanerId: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+  proposedCrewSize: number;
+  payType: PayType;
+  payPerPersonCents: number;
+};
+
+export type AssignmentNotice = {
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+  proposedCrewSize: number;
+  payType: PayType;
+  payPerPersonCents: number;
 };
 
 export type AssignmentStatus =
@@ -189,6 +218,12 @@ export type JobAssignment = {
    * Hourly: confirmed crew rate per hour, not a finished job total.
    */
   confirmedTotalPayCents?: number;
+  /** Details last sent to the cleaner. Differs from the current details when a later edit was saved as a draft. */
+  lastNotified?: AssignmentNotice;
+  /** Service date this cleaner was last invited or confirmed for. */
+  notifiedServiceDate?: string;
+  /** The cleaning date changed after this cleaner was invited or confirmed. */
+  needsDateReinvite?: boolean;
   invitedAt?: string;
   respondedAt?: string;
   createdAt: string;
@@ -226,6 +261,8 @@ export type RecurringSeries = {
   staffingTemplateMode: StaffingTemplateMode;
   staffingTemplate: StaffingTemplateEntry[];
   status: SeriesStatus;
+  /** Dates that were deleted and must not be generated again. */
+  skippedDates?: string[];
   generatedThroughDate?: string;
   createdAt: string;
   createdBy: string;

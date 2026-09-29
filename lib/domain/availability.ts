@@ -1,5 +1,5 @@
 import type { AvailabilitySubmission, AvailabilityWindow, CleanerProfile } from "./types.ts";
-import { addDays, daysBetween, isValidLocalTime, minutesFromTime } from "./time.ts";
+import { addDays, daysBetween, isValidLocalTime, minutesFromTime, timeFromMinutes } from "./time.ts";
 
 export function listSubmissionStatus(
   cleaners: Array<Pick<CleanerProfile, "cleanerId" | "firstName" | "lastName" | "status">>,
@@ -48,6 +48,65 @@ export function mergeAdjacentWindows(windows: AvailabilityWindow[]): Availabilit
     if (current) merged.push(current);
   }
   return merged.sort((a, b) => (a.date === b.date ? a.start.localeCompare(b.start) : a.date.localeCompare(b.date)));
+}
+
+/** Arrival-window start through the window end plus the cleaning length. 8–9 AM and 4 hours is 8 AM–1 PM. */
+export function cleaningTimeSpan(
+  arrivalStart: string,
+  arrivalEnd: string,
+  durationMinutes: number,
+): { start: string; end: string } | null {
+  if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) return null;
+  const start = minutesFromTime(arrivalStart);
+  const windowEnd = minutesFromTime(arrivalEnd);
+  if (!(windowEnd > start)) return null;
+  const end = Math.min(windowEnd + durationMinutes, 24 * 60);
+  if (!(end > start)) return null;
+  return { start: timeFromMinutes(start), end: timeFromMinutes(end) };
+}
+
+export type AvailabilityFit = { start: string; end: string; fits: boolean };
+
+/** Split a cleaner's windows into the part inside a cleaning span and the parts outside it. */
+export function availabilityAgainstSpan(
+  windows: { start: string; end: string }[],
+  span: { start: string; end: string } | null,
+): AvailabilityFit[] {
+  const merged: { start: number; end: number }[] = [];
+  const ordered = windows
+    .map((window) => ({ start: minutesFromTime(window.start), end: minutesFromTime(window.end) }))
+    .filter((window) => window.end > window.start)
+    .sort((a, b) => a.start - b.start);
+  for (const window of ordered) {
+    const last = merged[merged.length - 1];
+    if (last && window.start <= last.end) {
+      if (window.end > last.end) last.end = window.end;
+      continue;
+    }
+    merged.push({ ...window });
+  }
+  const spanStart = span ? minutesFromTime(span.start) : Number.NaN;
+  const spanEnd = span ? minutesFromTime(span.end) : Number.NaN;
+  const hasSpan = spanEnd > spanStart;
+  const fits: AvailabilityFit[] = [];
+  for (const window of merged) {
+    if (!hasSpan || window.end <= spanStart || window.start >= spanEnd) {
+      fits.push({ start: timeFromMinutes(window.start), end: timeFromMinutes(window.end), fits: false });
+      continue;
+    }
+    if (window.start < spanStart) {
+      fits.push({ start: timeFromMinutes(window.start), end: timeFromMinutes(spanStart), fits: false });
+    }
+    fits.push({
+      start: timeFromMinutes(Math.max(window.start, spanStart)),
+      end: timeFromMinutes(Math.min(window.end, spanEnd)),
+      fits: true,
+    });
+    if (window.end > spanEnd) {
+      fits.push({ start: timeFromMinutes(spanEnd), end: timeFromMinutes(window.end), fits: false });
+    }
+  }
+  return fits;
 }
 
 export function windowsInWeek(

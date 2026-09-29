@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
@@ -10,39 +11,6 @@ import { toAssignmentSchedule, validateAvailabilityEdit, validateAvailabilityWin
 import { addDays, dayOfWeek, eachDate, formatHm, formatTimeLabel, formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
 import { formatArrival, formatLongDate } from "@/lib/format";
 import type { AvailabilityWindow } from "@/lib/domain/types";
-
-function useUnsavedNavigation(active: boolean, blocked: () => boolean, onBlock: (href: string) => void) {
-  const activeRef = useRef(active);
-  const blockedRef = useRef(blocked);
-  const onBlockRef = useRef(onBlock);
-  activeRef.current = active;
-  blockedRef.current = blocked;
-  onBlockRef.current = onBlock;
-
-  useEffect(() => {
-    function onClick(event: MouseEvent) {
-      if (!activeRef.current || !blockedRef.current()) return;
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const anchor = target.closest("a[href]");
-      if (!(anchor instanceof HTMLAnchorElement)) return;
-      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
-      const raw = anchor.getAttribute("href");
-      if (!raw || raw.startsWith("#")) return;
-      const url = new URL(anchor.href, window.location.href);
-      if (url.origin !== window.location.origin) return;
-      const next = `${url.pathname}${url.search}`;
-      if (next === `${window.location.pathname}${window.location.search}`) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onBlockRef.current(next);
-    }
-    document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
-  }, []);
-}
 
 function windowSignature(windows: AvailabilityWindow[]): string {
   return [...windows]
@@ -256,6 +224,24 @@ export function AvailabilityEditor() {
     );
   }
 
+  function copyDayForward(date: string) {
+    const later = days.filter((day) => day > date);
+    if (later.length === 0) return;
+    setDraft((current) => {
+      const source = current.filter((window) => window.date === date);
+      const rest = current.filter((window) => window.date <= date);
+      const copied = later.flatMap((day) =>
+        source.map((window, index) => ({
+          ...window,
+          availabilityId: `copy-${day}-${index}-${current.length}`,
+          date: day,
+        })),
+      );
+      return mergeAdjacentWindows([...rest, ...copied]);
+    });
+    setMessage(null);
+  }
+
   function copyLastWeek() {
     let nextId = 0;
     const copied = copyWeekWindows(
@@ -359,9 +345,16 @@ export function AvailabilityEditor() {
                 </div>
               ))}
               {available ? (
-                <button type="button" onClick={() => addWindow(date)} className="mt-3 min-h-11 text-sm font-semibold text-ink">
-                  + Add Another Time
-                </button>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button type="button" onClick={() => addWindow(date)} className="min-h-11 text-sm font-semibold text-ink">
+                    + Add Another Time
+                  </button>
+                  {date < week.weekEnd ? (
+                    <button type="button" onClick={() => copyDayForward(date)} className="min-h-11 text-sm font-semibold text-ink">
+                      copy thru end of week
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </Card>
           );
@@ -371,41 +364,16 @@ export function AvailabilityEditor() {
           Submit Availability
         </button>
       </div>
-      {leaveHref ? (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28" onClick={() => setLeaveHref(null)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="availability-leave-title"
-            className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2 id="availability-leave-title" className="text-lg font-semibold">
-              Submit availability?
-            </h2>
-            <p className="mt-1 text-sm leading-5 text-ink/70">This week has changes that are not submitted yet.</p>
-            <div className="mt-4 space-y-2">
-              <button type="button" onClick={submitAndLeave} className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
-                Submit availability
-              </button>
-              <button type="button" onClick={() => setLeaveHref(null)} className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink">
-                Keep editing
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const href = leaveHref;
-                  setLeaveHref(null);
-                  if (href) router.push(href);
-                }}
-                className="min-h-12 w-full text-base font-semibold text-ink/70"
-              >
-                Throw away changes
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <UnsavedChangesDialog
+        open={leaveHref !== null}
+        onSave={submitAndLeave}
+        onDiscard={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (href) router.push(href);
+        }}
+        onDismiss={() => setLeaveHref(null)}
+      />
     </Screen>
   );
 }

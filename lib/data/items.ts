@@ -1,10 +1,12 @@
 import { buildCustomerSearchKeys } from "../domain/customers.ts";
 import type { HubData } from "../mock/seed.ts";
 import type {
+  AssignmentNotice,
   AvailabilitySubmission,
   AvailabilityWindow,
   CleanerProfile,
   Customer,
+  DraftCleanerDetail,
   Job,
   JobAssignment,
   Property,
@@ -294,6 +296,9 @@ function readSeries(item: DynamoItem): RecurringSeries {
     staffingTemplateMode: item.staffingTemplateMode as RecurringSeries["staffingTemplateMode"],
     staffingTemplate: (item.staffingTemplate as RecurringSeries["staffingTemplate"]) ?? [],
     status: item.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+    skippedDates: Array.isArray(item.skippedDates)
+      ? item.skippedDates.filter((date): date is string => typeof date === "string")
+      : undefined,
     generatedThroughDate: optionalString(item, "generatedThroughDate"),
     createdAt: stringField(item, "createdAt"),
     createdBy: stringField(item, "createdBy"),
@@ -313,7 +318,14 @@ function readJob(item: DynamoItem): Job {
     headcountNeeded: numberField(item, "headcountNeeded"),
     snapshot: item.snapshot as Job["snapshot"],
     specialInstructions: stringField(item, "specialInstructions"),
-    status: item.status === "CANCELED" ? "CANCELED" : "SCHEDULED",
+    arrivalWindowStart: optionalString(item, "arrivalWindowStart"),
+    arrivalWindowEnd: optionalString(item, "arrivalWindowEnd"),
+    expectedDurationMinutes: optionalNumber(item, "expectedDurationMinutes"),
+    draftCleanerIds: Array.isArray(item.draftCleanerIds)
+      ? item.draftCleanerIds.filter((id): id is string => typeof id === "string")
+      : undefined,
+    draftCleanerDetails: readDraftCleanerDetails(item.draftCleanerDetails),
+    status: item.status === "CANCELED" ? "CANCELED" : item.status === "DRAFT" ? "DRAFT" : "SCHEDULED",
     createdAt: stringField(item, "createdAt"),
     createdBy: stringField(item, "createdBy"),
     updatedAt: stringField(item, "updatedAt"),
@@ -339,6 +351,9 @@ function readAssignment(item: DynamoItem): JobAssignment {
     payPerPersonCents: numberField(item, "payPerPersonCents"),
     proposedTotalPayCents: numberField(item, "proposedTotalPayCents"),
     confirmedTotalPayCents: optionalNumber(item, "confirmedTotalPayCents"),
+    lastNotified: readAssignmentNotice(item.lastNotified),
+    notifiedServiceDate: optionalString(item, "notifiedServiceDate"),
+    needsDateReinvite: item.needsDateReinvite === true ? true : undefined,
     invitedAt: optionalString(item, "invitedAt"),
     respondedAt: optionalString(item, "respondedAt"),
     createdAt: stringField(item, "createdAt"),
@@ -364,6 +379,51 @@ function readSubmission(item: DynamoItem): AvailabilitySubmission {
     submittedAt: stringField(item, "submittedAt"),
     updatedAt: stringField(item, "updatedAt"),
   };
+}
+
+function readAssignmentNotice(value: unknown): AssignmentNotice | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.arrivalWindowStart !== "string" || typeof record.arrivalWindowEnd !== "string") return undefined;
+  if (typeof record.expectedDurationMinutes !== "number" || typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
+    return undefined;
+  }
+  if (record.payType !== "FLAT" && record.payType !== "HOURLY") return undefined;
+  return {
+    arrivalWindowStart: record.arrivalWindowStart,
+    arrivalWindowEnd: record.arrivalWindowEnd,
+    expectedDurationMinutes: record.expectedDurationMinutes,
+    proposedCrewSize: record.proposedCrewSize,
+    payType: record.payType,
+    payPerPersonCents: record.payPerPersonCents,
+  };
+}
+
+function readDraftCleanerDetails(value: unknown): DraftCleanerDetail[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const details = value.flatMap((item): DraftCleanerDetail[] => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.cleanerId !== "string" || typeof record.arrivalWindowStart !== "string" || typeof record.arrivalWindowEnd !== "string") {
+      return [];
+    }
+    if (record.payType !== "FLAT" && record.payType !== "HOURLY") return [];
+    if (typeof record.expectedDurationMinutes !== "number" || typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
+      return [];
+    }
+    return [
+      {
+        cleanerId: record.cleanerId,
+        arrivalWindowStart: record.arrivalWindowStart,
+        arrivalWindowEnd: record.arrivalWindowEnd,
+        expectedDurationMinutes: record.expectedDurationMinutes,
+        proposedCrewSize: record.proposedCrewSize,
+        payType: record.payType,
+        payPerPersonCents: record.payPerPersonCents,
+      },
+    ];
+  });
+  return details.length > 0 ? details : undefined;
 }
 
 function stringField(item: DynamoItem, key: string): string {

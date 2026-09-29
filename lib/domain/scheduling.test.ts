@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { copyWeekWindows, listSubmissionStatus, mergeAdjacentWindows } from "./availability.ts";
+import { availabilityAgainstSpan, cleaningTimeSpan, copyWeekWindows, listSubmissionStatus, mergeAdjacentWindows } from "./availability.ts";
 import {
   calculateConfirmedFlatPay,
   calculateConfirmedHourlyCrewRate,
@@ -16,6 +16,7 @@ import {
 import {
   calculateBlockedRange,
   calculateConfirmedHeadcount,
+  calculateInvitedHeadcount,
   cleaningCoverage,
   calculateRemainingHeadcount,
   claimHeadcount,
@@ -201,11 +202,12 @@ describe("headcount and helper approval", () => {
     const assignments = [
       { status: "CONFIRMED" as const, confirmedCrewSize: 2 },
       { status: "CONFIRMED" as const, confirmedCrewSize: 1 },
-      { status: "INVITED" as const, confirmedCrewSize: 4 },
+      { status: "INVITED" as const, confirmedCrewSize: 4, proposedCrewSize: 4 },
       { status: "PENDING_AVAILABILITY" as const, pendingCrewSize: 2 },
       { status: "DECLINED" as const, confirmedCrewSize: 1 },
     ];
     assert.equal(calculateConfirmedHeadcount(assignments), 3);
+    assert.equal(calculateInvitedHeadcount(assignments), 4);
     assert.equal(calculateRemainingHeadcount(3, assignments), 0);
   });
 
@@ -473,5 +475,36 @@ describe("customers", () => {
     });
     assert.equal(address.ok, false);
     if (!address.ok) assert.equal(address.field, "properties.0.streetAddress");
+  });
+});
+
+describe("availability against a cleaning span", () => {
+  it("extends an 8–9 AM arrival by a 4-hour length through 1 PM", () => {
+    const span = cleaningTimeSpan("08:00", "09:00", 240);
+    assert.deepEqual(span, { start: "08:00", end: "13:00" });
+    assert.deepEqual(availabilityAgainstSpan([{ start: "08:00", end: "23:00" }], span), [
+      { start: "08:00", end: "13:00", fits: true },
+      { start: "13:00", end: "23:00", fits: false },
+    ]);
+    assert.deepEqual(availabilityAgainstSpan([{ start: "17:00", end: "21:00" }], span), [
+      { start: "17:00", end: "21:00", fits: false },
+    ]);
+  });
+
+  it("marks the overlap mint-worthy and the rest of the day outside", () => {
+    assert.deepEqual(availabilityAgainstSpan([{ start: "08:00", end: "17:00" }], { start: "08:00", end: "09:00" }), [
+      { start: "08:00", end: "09:00", fits: true },
+      { start: "09:00", end: "17:00", fits: false },
+    ]);
+  });
+
+  it("keeps a window that misses the cleaning outside the span", () => {
+    assert.deepEqual(availabilityAgainstSpan([{ start: "10:00", end: "14:00" }], { start: "08:00", end: "09:00" }), [
+      { start: "10:00", end: "14:00", fits: false },
+    ]);
+  });
+
+  it("returns nothing when the cleaner has no windows that day", () => {
+    assert.deepEqual(availabilityAgainstSpan([], { start: "08:00", end: "09:00" }), []);
   });
 });

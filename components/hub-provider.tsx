@@ -3,8 +3,9 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { bootstrapHub, persistHub } from "@/app/actions/hub-data";
 import { mergeAdjacentWindows } from "@/lib/domain/availability";
-import { deriveCrewSettings } from "@/lib/domain/cleaners";
-import { validateCustomerInput, type CustomerInput } from "@/lib/domain/customers";
+import { confirmedCompensationCents } from "@/lib/domain/compensation";
+import { deriveCrewSettings, validateProposedCrewSize } from "@/lib/domain/cleaners";
+import { snapshotVisit, validateCustomerInput, type CustomerInput } from "@/lib/domain/customers";
 import {
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
@@ -13,18 +14,30 @@ import {
   withAssignmentDeclined,
   withAssignmentPendingAvailability,
 } from "@/lib/domain/invitations";
-import { dateMatchesRule, mergeRecurringHorizon, validateRecurrenceRule } from "@/lib/domain/recurrence";
-import { toAssignmentSchedule, validateAvailabilityEdit } from "@/lib/domain/scheduling";
-import { addDays, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
+import { dateMatchesRule, mergeRecurringHorizon, planOccurrenceStaffing, validateRecurrenceRule } from "@/lib/domain/recurrence";
+import {
+  availabilityCoversBlockedRange,
+  calculateBlockedRange,
+  calculateConfirmedHeadcount,
+  detectConfirmedAssignmentConflict,
+  toAssignmentSchedule,
+  validateAvailabilityEdit,
+} from "@/lib/domain/scheduling";
+import { addDays, isValidDate, isValidLocalTime, minutesFromTime, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
 import { buildSeed, type HubData } from "@/lib/mock/seed";
 import type {
   AppRole,
   AvailabilityWindow,
   CleanerStatus,
   Customer,
+  AssignmentNotice,
+  Job,
+  JobAssignment,
+  PayType,
   Property,
   RecurrenceRule,
   SeriesStatus,
+  ServiceType,
 } from "@/lib/domain/types";
 
 const STORAGE_KEY = "ghh-preview-v2";
@@ -35,7 +48,70 @@ type HubState = HubData & {
   cleanerId: string | null;
 };
 
-type ActionResult = { ok: true; message?: string; customerId?: string } | { ok: false; message: string };
+type ActionResult = { ok: true; message?: string; customerId?: string; jobId?: string } | { ok: false; message: string };
+
+export type CreateJobInput = {
+  date: string;
+  customerId: string;
+  propertyId: string;
+  serviceType: ServiceType;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  headcountNeeded: number;
+  expectedDurationMinutes: number;
+  cleanerIds: string[];
+  specialInstructions: string;
+};
+
+export type SaveCleanerDetailsInput = {
+  jobId: string;
+  cleanerId: string;
+  propertyId: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+  proposedCrewSize: number;
+  payType: PayType;
+  payPerPersonCents: number;
+  specialInstructions: string;
+};
+
+export type StaffCleanerInput = {
+  jobId: string;
+  cleanerId: string;
+  mode: "INVITE" | "DIRECT";
+};
+
+export type CompleteAssignmentInput = SaveCleanerDetailsInput & {
+  assignmentId?: string;
+  mode: "DRAFT" | "INVITE" | "DIRECT";
+};
+
+export type UpdateVisitInput = {
+  jobId: string;
+  date: string;
+  propertyId: string;
+  serviceType: ServiceType;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+  headcountNeeded: number;
+  specialInstructions: string;
+};
+
+export type UpdateJobInput = {
+  jobId: string;
+  assignmentId: string;
+  propertyId: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+  headcountNeeded: number;
+  proposedCrewSize: number;
+  payType: PayType;
+  payPerPersonCents: number;
+  specialInstructions: string;
+};
 
 type HubContextValue = HubState & {
   ready: boolean;
@@ -60,9 +136,41 @@ type HubContextValue = HubState & {
     cleanerId: string,
     input: { typicalHelperCount: number; maxHelperCount: number; status: CleanerStatus },
   ) => ActionResult;
+  createJob: (input: CreateJobInput) => ActionResult;
+  saveCleanerDetails: (input: SaveCleanerDetailsInput) => ActionResult;
+  staffCleaner: (input: StaffCleanerInput) => ActionResult;
+  completeAssignment: (input: CompleteAssignmentInput) => ActionResult;
+  addJobCleaner: (jobId: string, cleanerId: string) => ActionResult;
+  removeJobCleaner: (jobId: string, cleanerId: string) => ActionResult;
+  updateVisit: (input: UpdateVisitInput) => ActionResult;
+  updateJob: (input: UpdateJobInput) => ActionResult;
+  deleteJob: (jobId: string) => ActionResult;
+  deleteSeries: (seriesId: string) => ActionResult;
 };
 
 const HubContext = createContext<HubContextValue | null>(null);
+
+function assignmentNotice(input: {
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+  proposedCrewSize: number;
+  payType: PayType;
+  payPerPersonCents: number;
+}): AssignmentNotice {
+  return {
+    arrivalWindowStart: input.arrivalWindowStart,
+    arrivalWindowEnd: input.arrivalWindowEnd,
+    expectedDurationMinutes: input.expectedDurationMinutes,
+    proposedCrewSize: input.proposedCrewSize,
+    payType: input.payType,
+    payPerPersonCents: input.payPerPersonCents,
+  };
+}
+
+function withEarliestArrival(job: Job, _assignments: JobAssignment[]): Job {
+  return job;
+}
 
 function readSession(): { role: AppRole | null; cleanerId: string | null } {
   try {
@@ -429,6 +537,691 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   }
 
+  function createJob(input: CreateJobInput): ActionResult {
+    const cleanerIds = [...new Set(input.cleanerIds)];
+    const cleaners = cleanerIds.map((cleanerId) => data.cleaners.find((item) => item.cleanerId === cleanerId));
+    if (cleanerIds.length === 0 || cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
+      return { ok: false, message: "Choose at least one active cleaner." };
+    }
+    if (!isValidDate(input.date)) return { ok: false, message: "Choose a valid date." };
+    const customer = data.customers.find((item) => item.customerId === input.customerId && item.status === "ACTIVE");
+    if (!customer) return { ok: false, message: "Choose a customer." };
+    const property = data.properties.find(
+      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
+    );
+    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
+    if (!isValidLocalTime(input.arrivalWindowStart) || !isValidLocalTime(input.arrivalWindowEnd)) {
+      return { ok: false, message: "Enter a valid arrival window." };
+    }
+    if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
+      return { ok: false, message: "The arrival window must end after it starts." };
+    }
+    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
+      return { ok: false, message: "Enter how many cleaners are needed." };
+    }
+    if (
+      !Number.isInteger(input.expectedDurationMinutes) ||
+      input.expectedDurationMinutes < 30 ||
+      input.expectedDurationMinutes > 12 * 60
+    ) {
+      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
+    }
+    const now = new Date().toISOString();
+    const jobId = `job-${Date.now()}`;
+    const job: Job = {
+      jobId,
+      customerId: customer.customerId,
+      propertyId: property.propertyId,
+      serviceType: input.serviceType,
+      date: input.date,
+      headcountNeeded: input.headcountNeeded,
+      expectedDurationMinutes: input.expectedDurationMinutes,
+      arrivalWindowStart: input.arrivalWindowStart,
+      arrivalWindowEnd: input.arrivalWindowEnd,
+      draftCleanerIds: cleanerIds,
+      snapshot: snapshotVisit(customer, property),
+      specialInstructions: input.specialInstructions.trim(),
+      status: "DRAFT",
+      createdAt: now,
+      createdBy: "kelsey",
+      updatedAt: now,
+      updatedBy: "kelsey",
+    };
+    setState({ ...data, jobs: [job, ...data.jobs] });
+    return { ok: true, jobId, message: "Cleaning saved." };
+  }
+
+  function saveCleanerDetails(input: SaveCleanerDetailsInput): ActionResult {
+    const job = data.jobs.find((item) => item.jobId === input.jobId);
+    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
+    if (!(job.draftCleanerIds ?? []).includes(input.cleanerId)) {
+      return { ok: false, message: "Add that cleaner to the cleaning before saving their details." };
+    }
+    const already = data.assignments.some(
+      (assignment) =>
+        assignment.jobId === job.jobId &&
+        assignment.cleanerId === input.cleanerId &&
+        assignment.status !== "CANCELED" &&
+        assignment.status !== "EXPIRED_JOB_FILLED",
+    );
+    if (already) return { ok: false, message: "That cleaner is already assigned on this cleaning." };
+    const cleaner = data.cleaners.find((item) => item.cleanerId === input.cleanerId);
+    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+    const customer = data.customers.find((item) => item.customerId === job.customerId && item.status === "ACTIVE");
+    if (!customer) return { ok: false, message: "Choose a customer." };
+    const property = data.properties.find(
+      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
+    );
+    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
+    if (!isValidLocalTime(input.arrivalWindowStart) || !isValidLocalTime(input.arrivalWindowEnd)) {
+      return { ok: false, message: "Enter a valid arrival window." };
+    }
+    if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
+      return { ok: false, message: "The arrival window must end after it starts." };
+    }
+    if (
+      !Number.isInteger(input.expectedDurationMinutes) ||
+      input.expectedDurationMinutes < 30 ||
+      input.expectedDurationMinutes > 12 * 60
+    ) {
+      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
+    }
+    if (job.headcountNeeded < 1) {
+      return { ok: false, message: "Set the headcount on this cleaning first." };
+    }
+    const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
+    if (!crew.ok) return crew;
+    if (input.proposedCrewSize > job.headcountNeeded) {
+      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
+    }
+    if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
+      return { ok: false, message: "Enter the pay per person." };
+    }
+    const now = new Date().toISOString();
+    const detail = {
+      cleanerId: cleaner.cleanerId,
+      arrivalWindowStart: input.arrivalWindowStart,
+      arrivalWindowEnd: input.arrivalWindowEnd,
+      expectedDurationMinutes: input.expectedDurationMinutes,
+      proposedCrewSize: input.proposedCrewSize,
+      payType: input.payType,
+      payPerPersonCents: input.payPerPersonCents,
+    };
+    const details = job.draftCleanerDetails ?? [];
+    const next = withEarliestArrival(
+      {
+        ...job,
+        draftCleanerDetails: [...details.filter((item) => item.cleanerId !== cleaner.cleanerId), detail],
+        updatedAt: now,
+        updatedBy: "kelsey",
+      },
+      data.assignments,
+    );
+    setState({
+      ...data,
+      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
+    });
+    return { ok: true, jobId: job.jobId, message: "Details saved." };
+  }
+
+  function staffCleaner(input: StaffCleanerInput): ActionResult {
+    const job = data.jobs.find((item) => item.jobId === input.jobId);
+    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
+    const detail = job.draftCleanerDetails?.find((item) => item.cleanerId === input.cleanerId);
+    if (!detail) return { ok: false, message: "Save this cleaner's details before staffing them." };
+    const cleaner = data.cleaners.find((item) => item.cleanerId === input.cleanerId);
+    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+    const already = data.assignments.some(
+      (assignment) =>
+        assignment.jobId === job.jobId &&
+        assignment.cleanerId === cleaner.cleanerId &&
+        assignment.status !== "CANCELED" &&
+        assignment.status !== "EXPIRED_JOB_FILLED",
+    );
+    if (already) return { ok: false, message: "That cleaner is already assigned on this cleaning." };
+    if (detail.proposedCrewSize > job.headcountNeeded) {
+      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
+    }
+    const now = new Date().toISOString();
+    const weekStart = mondayOf(job.date);
+    const availabilityByCleaner: Record<string, { submitted: boolean; windows: { date: string; start: string; end: string }[] }> = {};
+    for (const candidate of data.cleaners) {
+      availabilityByCleaner[candidate.cleanerId] = {
+        submitted: data.submissions.some(
+          (submission) => submission.cleanerId === candidate.cleanerId && submission.weekStart === weekStart,
+        ),
+        windows: data.availability
+          .filter((window) => window.cleanerId === candidate.cleanerId)
+          .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+      };
+    }
+    const plan = planOccurrenceStaffing({
+      jobId: job.jobId,
+      serviceDate: job.date,
+      headcountNeeded: job.headcountNeeded,
+      mode: input.mode,
+      template: [
+        {
+          cleanerId: cleaner.cleanerId,
+          proposedCrewSize: detail.proposedCrewSize,
+          arrivalWindowStart: detail.arrivalWindowStart,
+          arrivalWindowEnd: detail.arrivalWindowEnd,
+          expectedDurationMinutes: detail.expectedDurationMinutes,
+          payType: detail.payType,
+          payPerPersonCents: detail.payPerPersonCents,
+        },
+      ],
+      cleaners: data.cleaners,
+      availabilityByCleaner,
+      confirmedAssignments: data.assignments.filter((assignment) => assignment.status === "CONFIRMED"),
+      nowIso: now,
+      newId: () => `as-${Date.now()}`,
+    });
+    if (plan.attention.length > 0) return { ok: false, message: plan.attention[0].reason };
+    const assignment = plan.assignments[0];
+    if (!assignment) return { ok: false, message: "The cleaning could not be assigned." };
+    const nextAssignments = [...data.assignments, assignment];
+    const next = withEarliestArrival(
+      {
+        ...job,
+        draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
+        draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
+        status: "SCHEDULED" as const,
+        updatedAt: now,
+        updatedBy: "kelsey",
+      },
+      nextAssignments,
+    );
+    setState({
+      ...data,
+      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
+      assignments: nextAssignments,
+    });
+    const message =
+      assignment.status === "CONFIRMED"
+        ? "Cleaning assigned."
+        : assignment.status === "INVITED"
+          ? "Invitation sent."
+          : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
+    return { ok: true, jobId: job.jobId, message };
+  }
+
+  function completeAssignment(input: CompleteAssignmentInput): ActionResult {
+    if (input.mode === "DRAFT" && !input.assignmentId) {
+      const saved = saveCleanerDetails(input);
+      return saved.ok ? { ...saved, message: "Draft saved." } : saved;
+    }
+    const job = data.jobs.find((item) => item.jobId === input.jobId);
+    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
+    const existing = input.assignmentId
+      ? data.assignments.find((item) => item.assignmentId === input.assignmentId && item.jobId === job.jobId)
+      : undefined;
+    if (input.assignmentId && !existing) return { ok: false, message: "That cleaner assignment could not be found." };
+    const cleanerId = existing?.cleanerId ?? input.cleanerId;
+    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
+    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+    if (!existing && !(job.draftCleanerIds ?? []).includes(cleaner.cleanerId)) {
+      return { ok: false, message: "Add that cleaner to the cleaning before saving their details." };
+    }
+    if (!isValidLocalTime(input.arrivalWindowStart) || !isValidLocalTime(input.arrivalWindowEnd)) {
+      return { ok: false, message: "Enter a valid arrival window." };
+    }
+    if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
+      return { ok: false, message: "The arrival window must end after it starts." };
+    }
+    if (
+      !Number.isInteger(input.expectedDurationMinutes) ||
+      input.expectedDurationMinutes < 30 ||
+      input.expectedDurationMinutes > 12 * 60
+    ) {
+      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
+    }
+    if (job.headcountNeeded < 1) {
+      return { ok: false, message: "Set the headcount on this cleaning first." };
+    }
+    const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
+    if (!crew.ok) return crew;
+    if (input.proposedCrewSize > job.headcountNeeded) {
+      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
+    }
+    if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
+      return { ok: false, message: "Enter the pay per person." };
+    }
+    const now = new Date().toISOString();
+    const notice = assignmentNotice(input);
+    if (input.mode === "DRAFT" && existing) {
+      const pay = confirmedCompensationCents({
+        payType: input.payType,
+        payPerPersonCents: input.payPerPersonCents,
+        confirmedCrewSize: input.proposedCrewSize,
+      });
+      const nextAssignments = data.assignments.map((item) =>
+        item.assignmentId === existing.assignmentId
+          ? {
+              ...item,
+              proposedCrewSize: input.proposedCrewSize,
+              pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
+              confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
+              arrivalWindowStart: input.arrivalWindowStart,
+              arrivalWindowEnd: input.arrivalWindowEnd,
+              expectedDurationMinutes: input.expectedDurationMinutes,
+              payType: input.payType,
+              payPerPersonCents: input.payPerPersonCents,
+              proposedTotalPayCents: pay,
+              confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
+              lastNotified: item.lastNotified ?? assignmentNotice(item),
+              updatedAt: now,
+            }
+          : item,
+      );
+      const next = withEarliestArrival({ ...job, updatedAt: now, updatedBy: "kelsey" }, nextAssignments);
+      setState({
+        ...data,
+        jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
+        assignments: nextAssignments,
+      });
+      return { ok: true, jobId: job.jobId, message: "Draft saved." };
+    }
+    const weekStart = mondayOf(job.date);
+    const availabilityByCleaner: Record<string, { submitted: boolean; windows: { date: string; start: string; end: string }[] }> = {};
+    for (const candidate of data.cleaners) {
+      availabilityByCleaner[candidate.cleanerId] = {
+        submitted: data.submissions.some((submission) => submission.cleanerId === candidate.cleanerId && submission.weekStart === weekStart),
+        windows: data.availability
+          .filter((window) => window.cleanerId === candidate.cleanerId)
+          .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+      };
+    }
+    const plan = planOccurrenceStaffing({
+      jobId: job.jobId,
+      serviceDate: job.date,
+      headcountNeeded: job.headcountNeeded,
+      mode: input.mode === "INVITE" ? "INVITE" : "DIRECT",
+      template: [
+        {
+          cleanerId: cleaner.cleanerId,
+          proposedCrewSize: input.proposedCrewSize,
+          arrivalWindowStart: input.arrivalWindowStart,
+          arrivalWindowEnd: input.arrivalWindowEnd,
+          expectedDurationMinutes: input.expectedDurationMinutes,
+          payType: input.payType,
+          payPerPersonCents: input.payPerPersonCents,
+        },
+      ],
+      cleaners: data.cleaners,
+      availabilityByCleaner,
+      confirmedAssignments: data.assignments.filter(
+        (item) => item.status === "CONFIRMED" && item.assignmentId !== existing?.assignmentId,
+      ),
+      nowIso: now,
+      newId: () => existing?.assignmentId ?? `as-${Date.now()}`,
+    });
+    if (plan.attention.length > 0) return { ok: false, message: plan.attention[0].reason };
+    const planned = plan.assignments[0];
+    if (!planned) return { ok: false, message: "The cleaning could not be assigned." };
+    const savedAssignment: JobAssignment = {
+      ...planned,
+      assignmentId: existing?.assignmentId ?? planned.assignmentId,
+      createdAt: existing?.createdAt ?? planned.createdAt,
+      lastNotified: notice,
+      notifiedServiceDate: job.date,
+    };
+    const nextAssignments = existing
+      ? data.assignments.map((item) => (item.assignmentId === existing.assignmentId ? savedAssignment : item))
+      : [...data.assignments, savedAssignment];
+    const next = withEarliestArrival(
+      {
+        ...job,
+        draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
+        draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
+        status: "SCHEDULED",
+        updatedAt: now,
+        updatedBy: "kelsey",
+      },
+      nextAssignments,
+    );
+    setState({
+      ...data,
+      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
+      assignments: nextAssignments,
+    });
+    const message =
+      savedAssignment.status === "CONFIRMED"
+        ? "Cleaning assigned."
+        : savedAssignment.status === "INVITED"
+          ? "Invitation sent."
+          : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
+    return { ok: true, jobId: job.jobId, message };
+  }
+
+  function addJobCleaner(jobId: string, cleanerId: string): ActionResult {
+    const job = data.jobs.find((item) => item.jobId === jobId);
+    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
+    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
+    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+    const named = (job.draftCleanerIds ?? []).includes(cleaner.cleanerId);
+    const assigned = data.assignments.some(
+      (assignment) =>
+        assignment.jobId === job.jobId &&
+        assignment.cleanerId === cleaner.cleanerId &&
+        assignment.status !== "CANCELED" &&
+        assignment.status !== "EXPIRED_JOB_FILLED",
+    );
+    if (named || assigned) return { ok: false, message: `${cleaner.firstName} is already on this cleaning.` };
+    const now = new Date().toISOString();
+    setState({
+      ...data,
+      jobs: data.jobs.map((item) =>
+        item.jobId === job.jobId
+          ? {
+              ...item,
+              draftCleanerIds: [...(item.draftCleanerIds ?? []), cleaner.cleanerId],
+              updatedAt: now,
+              updatedBy: "kelsey",
+            }
+          : item,
+      ),
+    });
+    return { ok: true, message: `${cleaner.firstName} added.` };
+  }
+
+  function removeJobCleaner(jobId: string, cleanerId: string): ActionResult {
+    const job = data.jobs.find((item) => item.jobId === jobId);
+    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
+    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
+    const now = new Date().toISOString();
+    const nextAssignments = data.assignments.map((assignment) =>
+      assignment.jobId === job.jobId &&
+      assignment.cleanerId === cleanerId &&
+      assignment.status !== "CANCELED" &&
+      assignment.status !== "EXPIRED_JOB_FILLED"
+        ? { ...assignment, status: "CANCELED" as const, updatedAt: now }
+        : assignment,
+    );
+    const next = withEarliestArrival(
+      {
+        ...job,
+        draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleanerId),
+        draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleanerId),
+        updatedAt: now,
+        updatedBy: "kelsey",
+      },
+      nextAssignments,
+    );
+    setState({
+      ...data,
+      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
+      assignments: nextAssignments,
+    });
+    return { ok: true, message: cleaner ? `${cleaner.firstName} removed.` : "Cleaner removed." };
+  }
+
+  function updateVisit(input: UpdateVisitInput): ActionResult {
+    const job = data.jobs.find((item) => item.jobId === input.jobId);
+    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
+    const customer = data.customers.find((item) => item.customerId === job.customerId && item.status === "ACTIVE");
+    if (!customer) return { ok: false, message: "That customer could not be found." };
+    const property = data.properties.find(
+      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
+    );
+    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
+    if (!isValidDate(input.date)) return { ok: false, message: "Choose a date." };
+    if (!isValidLocalTime(input.arrivalWindowStart) || !isValidLocalTime(input.arrivalWindowEnd)) {
+      return { ok: false, message: "Enter a valid arrival window." };
+    }
+    if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
+      return { ok: false, message: "The arrival window must end after it starts." };
+    }
+    if (
+      !Number.isInteger(input.expectedDurationMinutes) ||
+      input.expectedDurationMinutes < 30 ||
+      input.expectedDurationMinutes > 12 * 60
+    ) {
+      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
+    }
+    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 1 || input.headcountNeeded > 12) {
+      return { ok: false, message: "Enter how many cleaners are needed." };
+    }
+    const activeAssignments = data.assignments.filter(
+      (assignment) =>
+        assignment.jobId === job.jobId &&
+        assignment.status !== "CANCELED" &&
+        assignment.status !== "EXPIRED_JOB_FILLED" &&
+        assignment.status !== "DECLINED",
+    );
+    const covered = new Set(activeAssignments.map((assignment) => assignment.cleanerId));
+    const crews = [
+      ...activeAssignments.map((assignment) => assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize),
+      ...(job.draftCleanerDetails ?? []).filter((detail) => !covered.has(detail.cleanerId)).map((detail) => detail.proposedCrewSize),
+    ];
+    if (crews.some((size) => size > input.headcountNeeded)) {
+      return { ok: false, message: "The headcount is smaller than a cleaner's crew on this cleaning." };
+    }
+    if (calculateConfirmedHeadcount(activeAssignments) > input.headcountNeeded) {
+      return { ok: false, message: "The headcount is smaller than the people already confirmed." };
+    }
+    const dateChanged = input.date !== job.date;
+    if (
+      dateChanged &&
+      job.seriesId &&
+      data.jobs.some(
+        (item) => item.seriesId === job.seriesId && item.jobId !== job.jobId && item.date === input.date && item.status !== "CANCELED",
+      )
+    ) {
+      return { ok: false, message: "This schedule already has a cleaning on that date." };
+    }
+    const now = new Date().toISOString();
+    const arrival = { start: input.arrivalWindowStart, end: input.arrivalWindowEnd };
+    setState({
+      ...data,
+      series:
+        dateChanged && job.seriesId
+          ? data.series.map((item) => {
+              if (item.seriesId !== job.seriesId) return item;
+              const skipped = new Set([...(item.skippedDates ?? []), job.date]);
+              skipped.delete(input.date);
+              return { ...item, skippedDates: [...skipped], updatedAt: now, updatedBy: "kelsey" };
+            })
+          : data.series,
+      jobs: data.jobs.map((item) =>
+        item.jobId === job.jobId
+          ? {
+              ...item,
+              date: input.date,
+              propertyId: property.propertyId,
+              serviceType: input.serviceType,
+              arrivalWindowStart: arrival.start,
+              arrivalWindowEnd: arrival.end,
+              expectedDurationMinutes: input.expectedDurationMinutes,
+              headcountNeeded: input.headcountNeeded,
+              snapshot: snapshotVisit(customer, property),
+              specialInstructions: input.specialInstructions.trim(),
+              updatedAt: now,
+              updatedBy: "kelsey",
+            }
+          : item,
+      ),
+      assignments: data.assignments.map((item) => {
+        if (item.jobId !== job.jobId) return item;
+        const tracksDate = item.status === "INVITED" || item.status === "CONFIRMED";
+        const baseline = item.notifiedServiceDate ?? item.serviceDate;
+        const needsReinvite = tracksDate && input.date !== baseline;
+        const notifiedServiceDate = tracksDate ? baseline : item.notifiedServiceDate;
+        if (
+          item.serviceDate === input.date &&
+          Boolean(item.needsDateReinvite) === needsReinvite &&
+          item.notifiedServiceDate === notifiedServiceDate
+        ) {
+          return item;
+        }
+        return {
+          ...item,
+          serviceDate: input.date,
+          notifiedServiceDate,
+          needsDateReinvite: needsReinvite ? true : undefined,
+          updatedAt: now,
+        };
+      }),
+    });
+    return { ok: true, message: "Cleaning updated." };
+  }
+
+  function updateJob(input: UpdateJobInput): ActionResult {
+    const job = data.jobs.find((item) => item.jobId === input.jobId);
+    if (!job || job.status !== "SCHEDULED") return { ok: false, message: "That cleaning could not be edited." };
+    const assignment = data.assignments.find(
+      (item) => item.assignmentId === input.assignmentId && item.jobId === job.jobId,
+    );
+    if (!assignment) return { ok: false, message: "That cleaner assignment could not be found." };
+    const cleaner = data.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
+    if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
+    const customer = data.customers.find((item) => item.customerId === job.customerId);
+    if (!customer) return { ok: false, message: "That customer could not be found." };
+    const property = data.properties.find(
+      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
+    );
+    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
+    if (!isValidLocalTime(input.arrivalWindowStart) || !isValidLocalTime(input.arrivalWindowEnd)) {
+      return { ok: false, message: "Enter a valid arrival window." };
+    }
+    if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
+      return { ok: false, message: "The arrival window must end after it starts." };
+    }
+    if (
+      !Number.isInteger(input.expectedDurationMinutes) ||
+      input.expectedDurationMinutes < 30 ||
+      input.expectedDurationMinutes > 12 * 60
+    ) {
+      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
+    }
+    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 1 || input.headcountNeeded > 12) {
+      return { ok: false, message: "Enter how many cleaners are needed." };
+    }
+    const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
+    if (!crew.ok) return crew;
+    if (input.proposedCrewSize > input.headcountNeeded) {
+      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
+    }
+    if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
+      return { ok: false, message: "Enter the pay per person." };
+    }
+    const others = data.assignments.filter(
+      (item) => item.jobId === job.jobId && item.assignmentId !== assignment.assignmentId,
+    );
+    if (
+      assignment.status === "CONFIRMED" &&
+      calculateConfirmedHeadcount(others) + input.proposedCrewSize > input.headcountNeeded
+    ) {
+      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
+    }
+    if (assignment.status === "CONFIRMED") {
+      const weekStart = mondayOf(job.date);
+      const submitted = data.submissions.some(
+        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
+      );
+      if (!submitted) return { ok: false, message: `${cleaner.firstName} has not submitted this week.` };
+      const blocked = calculateBlockedRange({
+        date: job.date,
+        arrivalWindowStart: input.arrivalWindowStart,
+        arrivalWindowEnd: input.arrivalWindowEnd,
+        expectedDurationMinutes: input.expectedDurationMinutes,
+      });
+      const windows = data.availability
+        .filter((window) => window.cleanerId === cleaner.cleanerId)
+        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
+      if (!availabilityCoversBlockedRange(windows, blocked)) {
+        return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
+      }
+      const conflict = detectConfirmedAssignmentConflict({
+        cleanerId: cleaner.cleanerId,
+        blocked,
+        confirmedAssignments: data.assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
+        ignoreAssignmentId: assignment.assignmentId,
+      });
+      if (conflict) {
+        return { ok: false, message: `This conflicts with another confirmed job for ${cleaner.firstName}.` };
+      }
+    }
+    const now = new Date().toISOString();
+    const pay = confirmedCompensationCents({
+      payType: input.payType,
+      payPerPersonCents: input.payPerPersonCents,
+      confirmedCrewSize: input.proposedCrewSize,
+    });
+    const nextAssignments = data.assignments.map((item) =>
+      item.assignmentId === assignment.assignmentId
+        ? {
+            ...item,
+            proposedCrewSize: input.proposedCrewSize,
+            pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
+            confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
+            arrivalWindowStart: input.arrivalWindowStart,
+            arrivalWindowEnd: input.arrivalWindowEnd,
+            expectedDurationMinutes: input.expectedDurationMinutes,
+            payType: input.payType,
+            payPerPersonCents: input.payPerPersonCents,
+            proposedTotalPayCents: pay,
+            confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
+            updatedAt: now,
+          }
+        : item,
+    );
+    const next = withEarliestArrival(
+      {
+        ...job,
+        headcountNeeded: input.headcountNeeded,
+        updatedAt: now,
+        updatedBy: "kelsey",
+      },
+      nextAssignments,
+    );
+    setState({
+      ...data,
+      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
+      assignments: nextAssignments,
+    });
+    return { ok: true, message: "Assignment saved." };
+  }
+
+  function deleteJob(jobId: string): ActionResult {
+    const job = data.jobs.find((item) => item.jobId === jobId);
+    if (!job) return { ok: false, message: "That cleaning could not be deleted." };
+    const now = new Date().toISOString();
+    setState({
+      ...data,
+      series: job.seriesId
+        ? data.series.map((item) =>
+            item.seriesId === job.seriesId
+              ? {
+                  ...item,
+                  skippedDates: [...new Set([...(item.skippedDates ?? []), job.date])],
+                  updatedAt: now,
+                  updatedBy: "kelsey",
+                }
+              : item,
+          )
+        : data.series,
+      jobs: data.jobs.filter((item) => item.jobId !== job.jobId),
+      assignments: data.assignments.filter((item) => item.jobId !== job.jobId),
+    });
+    return { ok: true, message: "Cleaning deleted." };
+  }
+
+  function deleteSeries(seriesId: string): ActionResult {
+    const series = data.series.find((item) => item.seriesId === seriesId);
+    if (!series) return { ok: false, message: "That recurring schedule could not be deleted." };
+    const removedJobIds = new Set(
+      data.jobs.filter((job) => job.seriesId === series.seriesId && job.date >= data.today).map((job) => job.jobId),
+    );
+    setState({
+      ...data,
+      series: data.series.filter((item) => item.seriesId !== series.seriesId),
+      jobs: data.jobs.filter((job) => !removedJobIds.has(job.jobId)),
+      assignments: data.assignments.filter((assignment) => !removedJobIds.has(assignment.jobId)),
+    });
+    return { ok: true, message: "Recurring schedule deleted." };
+  }
+
   const value: HubContextValue = {
     ...data,
     ready: true,
@@ -442,6 +1235,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     saveCustomer,
     saveSeries,
     updateCleanerAdmin,
+    createJob,
+    saveCleanerDetails,
+    staffCleaner,
+    completeAssignment,
+    addJobCleaner,
+    removeJobCleaner,
+    updateVisit,
+    updateJob,
+    deleteJob,
+    deleteSeries,
   };
 
   return (

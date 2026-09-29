@@ -7,6 +7,7 @@ import {
   copyStaffingTemplateToOccurrence,
   determineRecurringEditScope,
   generateOccurrenceDates,
+  occurrenceAnchor,
   mergeRecurringHorizon,
   planOccurrenceStaffing,
   RECURRING_HORIZON_DAYS,
@@ -169,6 +170,18 @@ describe("recurrence dates", () => {
   it("rejects a start date that is not on the pattern", () => {
     const result = validateRecurrenceRule(weeklyMonday, "2026-10-06");
     assert.equal(result.ok, false);
+  });
+
+  it("allows a weekly schedule with no weekday and follows the last cleaning", () => {
+    const rule: RecurrenceRule = { frequency: "WEEK", interval: 2, daysOfWeek: [] };
+    assert.equal(validateRecurrenceRule(rule).ok, true);
+    assert.equal(recurrenceSummary(rule), "Every 2 weeks");
+    assert.equal(occurrenceAnchor("2026-09-07", rule, ["2026-10-08", "2026-10-23"]), "2026-10-23");
+    assert.deepEqual(generateOccurrenceDates(rule, "2026-10-23", "2026-11-20"), [
+      "2026-10-23",
+      "2026-11-06",
+      "2026-11-20",
+    ]);
   });
 });
 
@@ -562,5 +575,47 @@ describe("rolling eight-week horizon", () => {
     });
     assert.equal(stopped.jobs.length, 1);
     assert.equal(stopped.jobs[0].jobId, "job-past");
+  });
+
+  it("does not recreate a deleted occurrence", () => {
+    const today = "2026-09-28";
+    const result = mergeRecurringHorizon({
+      today,
+      series: [series({ skippedDates: ["2026-10-05"] })],
+      jobs: [],
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: [],
+      nowIso: "2026-09-28T00:00:00.000Z",
+    });
+    assert.equal(result.jobs.some((job) => job.date === "2026-10-05"), false);
+    assert.ok(result.jobs.some((job) => job.date === "2026-09-28"));
+    assert.ok(result.jobs.some((job) => job.date === "2026-10-12"));
+  });
+
+  it("creates later cleanings on the weekday of the last one when no weekday is selected", () => {
+    const today = "2026-09-28";
+    const result = mergeRecurringHorizon({
+      today,
+      series: [
+        series({
+          startDate: "2026-09-07",
+          recurrence: { frequency: "WEEK", interval: 2, daysOfWeek: [] },
+        }),
+      ],
+      jobs: [{ ...pastJob(), jobId: "job-last", date: "2026-10-23" }],
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: [],
+      nowIso: "2026-09-28T00:00:00.000Z",
+    });
+    const dates = result.jobs.map((job) => job.date).sort();
+    assert.deepEqual(dates, ["2026-10-23", "2026-11-06", "2026-11-20"]);
   });
 });

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
+import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Card, Notice, PageHeader, Screen } from "@/components/ui";
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
 import { cleanerCrewSummary, formatPhone } from "@/lib/format";
@@ -39,12 +41,19 @@ export function TeamView() {
 
 export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   const hub = useHub();
+  const router = useRouter();
   const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
   const [helpersOn, setHelpersOn] = useState(cleaner ? helpersApproved(cleaner.maxHelperCount) : false);
   const [typicalHelperCount, setTypicalHelperCount] = useState(cleaner?.typicalHelperCount ?? 0);
   const [maxHelperCount, setMaxHelperCount] = useState(cleaner?.maxHelperCount ?? 0);
   const [status, setStatus] = useState<CleanerStatus>(cleaner?.status ?? "ACTIVE");
   const [message, setMessage] = useState<string | null>(null);
+  const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const cleanerSnapshot = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status });
+  const cleanerBaseline = useRef<string | null>(null);
+  if (cleaner && cleanerBaseline.current === null) cleanerBaseline.current = cleanerSnapshot;
+  const cleanerDirty = cleanerBaseline.current !== null && cleanerBaseline.current !== cleanerSnapshot;
+  useUnsavedNavigation(Boolean(cleaner), () => cleanerDirty, setLeaveHref);
   if (!cleaner) {
     return (
       <Screen>
@@ -59,13 +68,28 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   const usualCrew = typicalCrewSize(typical);
   const approvedCrew = maxCrewSize(maximum);
 
-  function save() {
+  function save(nextHref?: string) {
     const result = hub.updateCleanerAdmin(profile.cleanerId, {
       typicalHelperCount: typical,
       maxHelperCount: maximum,
       status,
     });
-    setMessage(result.ok ? "Saved." : result.message);
+    if (!result.ok) {
+      setMessage(result.message);
+      return false;
+    }
+    cleanerBaseline.current = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status });
+    if (nextHref) {
+      hub.flash("Saved.");
+      router.push(nextHref);
+      return true;
+    }
+    setMessage("Saved.");
+    return true;
+  }
+
+  function saveAndLeave() {
+    if (!save(leaveHref ?? undefined)) setLeaveHref(null);
   }
 
   return (
@@ -142,11 +166,21 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
               <Notice tone={message === "Saved." ? "ok" : "error"}>{message}</Notice>
             </div>
           ) : null}
-          <button type="button" onClick={save} className="mt-4 min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
+          <button type="button" onClick={() => save()} className="mt-4 min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
             Save
           </button>
         </Card>
       </div>
+      <UnsavedChangesDialog
+        open={leaveHref !== null}
+        onSave={saveAndLeave}
+        onDiscard={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (href) router.push(href);
+        }}
+        onDismiss={() => setLeaveHref(null)}
+      />
     </Screen>
   );
 }

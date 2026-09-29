@@ -2,47 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
 import { useHub } from "@/components/hub-provider";
+import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Card, PageHeader, Screen, fieldClass } from "@/components/ui";
 import { searchCustomers } from "@/lib/domain/customers";
 import { seriesSummary } from "@/lib/mock/seed";
 import { formatLongDate, formatPhone, serviceLabel } from "@/lib/format";
-
-function useUnsavedNavigation(active: boolean, blocked: () => boolean, onBlock: (href: string) => void) {
-  const activeRef = useRef(active);
-  const blockedRef = useRef(blocked);
-  const onBlockRef = useRef(onBlock);
-  activeRef.current = active;
-  blockedRef.current = blocked;
-  onBlockRef.current = onBlock;
-
-  useEffect(() => {
-    function onClick(event: MouseEvent) {
-      if (!activeRef.current || !blockedRef.current()) return;
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const anchor = target.closest("a[href]");
-      if (!(anchor instanceof HTMLAnchorElement)) return;
-      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
-      const raw = anchor.getAttribute("href");
-      if (!raw || raw.startsWith("#")) return;
-      const url = new URL(anchor.href, window.location.href);
-      if (url.origin !== window.location.origin) return;
-      const next = `${url.pathname}${url.search}`;
-      if (next === `${window.location.pathname}${window.location.search}`) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onBlockRef.current(next);
-    }
-    document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
-  }, []);
-}
 
 function Pencil() {
   return (
@@ -108,28 +76,87 @@ export function CustomersView() {
   );
 }
 
-export function NewCustomerView() {
+export function NewCustomerView({ returnTo }: { returnTo?: string }) {
+  const hub = useHub();
+  const router = useRouter();
+  const formRef = useRef<CustomerFormHandle>(null);
+  const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const back = returnTo?.startsWith("/admin/jobs/new") && !returnTo.startsWith("//") ? returnTo : null;
+  useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
+
+  function saveAndLeave() {
+    const href = leaveHref;
+    if (!formRef.current?.save()) {
+      setLeaveHref(null);
+      return;
+    }
+    hub.flash("changes saved");
+    setLeaveHref(null);
+    if (href) router.push(href);
+  }
+
   return (
     <Screen>
-      <PageHeader title="New customer" subtitle="Save them, then keep going" />
+      <PageHeader
+        title="New customer"
+        subtitle="Save them, then keep going"
+        crumb={back ? { href: back, label: "New cleaning" } : undefined}
+      />
       <div className="px-5 pt-4">
-        <CustomerForm />
+        <CustomerForm
+          ref={formRef}
+          onSaved={
+            back
+              ? (customerId) => {
+                  const url = new URL(back, "http://local");
+                  url.searchParams.set("customerId", customerId);
+                  router.push(`${url.pathname}${url.search}`);
+                }
+              : undefined
+          }
+        />
       </div>
+      <UnsavedChangesDialog
+        open={leaveHref !== null}
+        onSave={saveAndLeave}
+        onDiscard={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (href) router.push(href);
+        }}
+        onDismiss={() => setLeaveHref(null)}
+      />
     </Screen>
   );
 }
 
-export function CustomerDetail({ customerId }: { customerId: string }) {
+function localAdminPath(value: string): string | undefined {
+  if (!value.startsWith("/admin/") || value.startsWith("//")) return undefined;
+  return value;
+}
+
+export function CustomerDetail({
+  customerId,
+  initialSeriesId = "",
+  returnTo = "",
+}: {
+  customerId: string;
+  initialSeriesId?: string;
+  returnTo?: string;
+}) {
   const hub = useHub();
   const router = useRouter();
   const formRef = useRef<CustomerFormHandle>(null);
   const seriesFormRef = useRef<CustomerFormHandle>(null);
   const customer = hub.customers.find((item) => item.customerId === customerId);
   const [editing, setEditing] = useState(false);
-  const [editingSeriesId, setEditingSeriesId] = useState<string | null>(null);
+  const [editingSeriesId, setEditingSeriesId] = useState<string | null>(initialSeriesId || null);
+  const backTo = localAdminPath(returnTo);
   const [focusPropertyId, setFocusPropertyId] = useState<string | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<{ href?: string } | null>(null);
-  const editingRecord = editing || Boolean(editingSeriesId);
+  const series = hub.series.filter((item) => item.customerId === customerId);
+  const editingSeries = editingSeriesId ? series.find((item) => item.seriesId === editingSeriesId) : undefined;
+  const editingRecord = editing || Boolean(editingSeries);
 
   useUnsavedNavigation(
     Boolean(customer) && editingRecord,
@@ -176,11 +203,8 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
   const jobs = hub.jobs
     .filter((job) => job.customerId === customer.customerId)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = jobs.filter((job) => job.date >= hub.today && job.status === "SCHEDULED");
+  const upcoming = jobs.filter((job) => job.date >= hub.today && (job.status === "SCHEDULED" || job.status === "DRAFT"));
   const history = jobs.filter((job) => job.date < hub.today || job.status === "CANCELED");
-  const series = hub.series.filter((item) => item.customerId === customer.customerId);
-
-  const editingSeries = editingSeriesId ? series.find((item) => item.seriesId === editingSeriesId) : undefined;
   const name = `${customer.firstName} ${customer.lastName}`;
   const homes = hub.properties.filter((property) => property.customerId === customer.customerId);
   const place =
@@ -218,8 +242,11 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
             ref={seriesFormRef}
             series={editingSeries}
             homes={homes}
-            onCancel={() => requestLeave()}
-            onSaved={() => setEditingSeriesId(null)}
+            onCancel={() => requestLeave(backTo)}
+            onSaved={() => {
+              if (backTo) router.push(backTo);
+              else setEditingSeriesId(null);
+            }}
           />
         ) : (
           <>
@@ -283,7 +310,7 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
           <Link key={job.jobId} href={`/admin/jobs/${job.jobId}`} className="block">
             <Card>
               <p className="font-semibold">{formatLongDate(job.date)}</p>
-              <p className="text-sm text-ink/70">{serviceLabel(job.serviceType)}</p>
+              <p className="text-sm text-ink/70">{job.status === "DRAFT" ? `Draft · ${serviceLabel(job.serviceType)}` : serviceLabel(job.serviceType)}</p>
               <p className="text-sm text-ink/70">{job.snapshot.streetAddress}</p>
             </Card>
           </Link>
@@ -302,36 +329,12 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
           </>
         )}
       </div>
-      {leaveTarget ? (
-        <div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28"
-          onClick={() => setLeaveTarget(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="unsaved-title"
-            className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2 id="unsaved-title" className="text-lg font-semibold">
-              Unsaved changes
-            </h2>
-            <p className="mt-1 text-sm leading-5 text-ink/70">Save this customer before leaving, or discard the edits.</p>
-            <div className="mt-4 space-y-2">
-              <button type="button" onClick={saveAndLeave} className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
-                Save
-              </button>
-              <button type="button" onClick={() => finishLeave(leaveTarget.href)} className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink">
-                Discard changes
-              </button>
-              <button type="button" onClick={() => setLeaveTarget(null)} className="min-h-12 w-full text-base font-semibold text-ink/70">
-                Keep editing
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <UnsavedChangesDialog
+        open={leaveTarget !== null}
+        onSave={saveAndLeave}
+        onDiscard={() => finishLeave(leaveTarget?.href)}
+        onDismiss={() => setLeaveTarget(null)}
+      />
     </Screen>
   );
 }

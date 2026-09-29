@@ -49,6 +49,7 @@ const DAY_LABEL: Record<DayOfWeek, string> = {
 export function recurrenceSummary(rule: RecurrenceRule): string {
   if (rule.frequency === "WEEK") {
     const days = (rule.daysOfWeek ?? []).map((day) => DAY_LABEL[day]);
+    if (days.length === 0) return rule.interval === 1 ? "Every week" : `Every ${rule.interval} weeks`;
     const dayText = joinList(days);
     if (rule.interval === 1) return `Every ${dayText}`;
     return `Every ${rule.interval} weeks on ${dayText}`;
@@ -68,9 +69,6 @@ export function validateRecurrenceRule(
   if (rule.frequency === "WEEK") {
     if (![1, 2, 4].includes(rule.interval)) {
       return { ok: false, message: "Choose every week, every 2 weeks, or every 4 weeks." };
-    }
-    if (!rule.daysOfWeek || rule.daysOfWeek.length === 0) {
-      return { ok: false, message: "Choose at least one day of the week." };
     }
     if (rule.dayOfMonth || (rule.weekOrdinals && rule.weekOrdinals.length > 0)) {
       return { ok: false, message: "Weekly cleaning does not use a calendar date or week number." };
@@ -107,7 +105,9 @@ export function validateRecurrenceRule(
 export function dateMatchesRule(rule: RecurrenceRule, date: string, anchorDate: string): boolean {
   if (date < anchorDate) return false;
   if (rule.frequency === "WEEK") {
-    if (!rule.daysOfWeek?.includes(dayOfWeek(date))) return false;
+    const days = rule.daysOfWeek ?? [];
+    const weekday = days.length > 0 ? days.includes(dayOfWeek(date)) : dayOfWeek(date) === dayOfWeek(anchorDate);
+    if (!weekday) return false;
     const weeks = daysBetween(mondayOf(anchorDate), mondayOf(date)) / 7;
     return weeks >= 0 && weeks % rule.interval === 0;
   }
@@ -179,6 +179,13 @@ export function calculateNextOccurrence(
     cursor = addDays(cursor, 1);
   }
   return null;
+}
+
+/** When no weekday is chosen, new dates continue from the latest cleaning on that series. */
+export function occurrenceAnchor(startDate: string, rule: RecurrenceRule, jobDates: string[]): string {
+  const days = rule.daysOfWeek ?? [];
+  if (rule.frequency !== "WEEK" || days.length > 0) return startDate;
+  return [...jobDates].sort().at(-1) ?? startDate;
 }
 
 export function shouldGenerateOccurrence(existingDates: ReadonlySet<string>, date: string): boolean {
@@ -377,10 +384,20 @@ export function mergeRecurringHorizon(input: {
   for (const item of series) {
     if (item.status !== "ACTIVE") continue;
     const last = item.endDate && item.endDate < through ? item.endDate : through;
-    const dates = generateOccurrenceDates(item.recurrence, item.startDate, last, item.endDate).filter(
+    const anchor = occurrenceAnchor(
+      item.startDate,
+      item.recurrence,
+      jobs
+        .filter((job) => job.seriesId === item.seriesId && job.status !== "CANCELED")
+        .map((job) => job.date),
+    );
+    const dates = generateOccurrenceDates(item.recurrence, anchor, last, item.endDate).filter(
       (date) => date >= input.today && date <= through,
     );
-    const existing = new Set(jobs.filter((job) => job.seriesId === item.seriesId).map((job) => job.date));
+    const existing = new Set([
+      ...jobs.filter((job) => job.seriesId === item.seriesId).map((job) => job.date),
+      ...(item.skippedDates ?? []),
+    ]);
     const customer = input.customers.find((person) => person.customerId === item.customerId);
     const property = input.properties.find((home) => home.propertyId === item.propertyId);
     if (!customer || !property) continue;
