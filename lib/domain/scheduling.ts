@@ -87,7 +87,7 @@ export function cleaningCoverage(
 }
 
 export function calculateInvitedHeadcount(
-  assignments: Array<Pick<JobAssignment, "status" | "proposedCrewSize">>,
+  assignments: Array<Pick<JobAssignment, "status"> & { proposedCrewSize?: number }>,
 ): number {
   return assignments.reduce((sum, assignment) => {
     if (assignment.status !== "INVITED") return sum;

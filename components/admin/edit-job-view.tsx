@@ -2,12 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CleaningForm, dayArrivalWindows, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
 import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
-import type { PayType, Property, ServiceType } from "@/lib/domain/types";
-import { isValidDate, mondayOf } from "@/lib/domain/time";
+import type { PayType } from "@/lib/domain/types";
+import { mondayOf } from "@/lib/domain/time";
 import {
   arrivalMismatchText,
   assignmentFormStatus,
@@ -19,12 +20,7 @@ import {
   noticeFlagText,
   noticeGap,
   reinviteFlagText,
-  serviceLabel,
 } from "@/lib/format";
-
-const SERVICES: ServiceType[] = ["DEEP_CLEAN", "RECURRING", "MOVE_OUT", "POST_CONSTRUCTION", "OTHER"];
-
-const DURATIONS = [60, 120, 180, 240, 300, 360, 480];
 
 function dollarsToCents(value: string): number | null {
   const trimmed = value.trim();
@@ -76,18 +72,17 @@ function cleanerArrivals(
   return windows;
 }
 
-function propertyLine(home: Property): string {
-  return home.label ? `${home.label} · ${home.streetAddress}` : `${home.streetAddress}, ${home.city}`;
-}
 
 export function EditJobView({
   jobId,
   assignmentId,
   cleanerId = "",
+  customerId = "",
 }: {
   jobId: string;
   assignmentId: string;
   cleanerId?: string;
+  customerId?: string;
 }) {
   const hub = useHub();
   const router = useRouter();
@@ -164,7 +159,7 @@ export function EditJobView({
   }
 
   if (!assignmentId && !cleanerId) {
-    return <VisitEditForm jobId={jobId} />;
+    return <VisitEditForm jobId={jobId} customerId={customerId} />;
   }
 
   if (!job || !assignment || !cleaner) {
@@ -275,68 +270,10 @@ export function EditJobView({
   );
 }
 
-function VisitEditForm({ jobId }: { jobId: string }) {
+function VisitEditForm({ jobId, customerId = "" }: { jobId: string; customerId?: string }) {
   const hub = useHub();
   const router = useRouter();
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
-  const homes = job ? hub.properties.filter((item) => item.customerId === job.customerId && item.status === "ACTIVE") : [];
-  const saved =
-    job?.arrivalWindowStart && job.arrivalWindowEnd ? { start: job.arrivalWindowStart, end: job.arrivalWindowEnd } : null;
-  const choices = hourWindows("08:00", "18:00");
-  const windows = saved && !choices.some((window) => window.start === saved.start) ? [saved, ...choices] : choices;
-  const [date, setDate] = useState(job?.date ?? "");
-  const [propertyId, setPropertyId] = useState(job?.propertyId ?? "");
-  const [serviceType, setServiceType] = useState<ServiceType>(job?.serviceType ?? "DEEP_CLEAN");
-  const [arrivalStart, setArrivalStart] = useState(saved?.start ?? windows[0]?.start ?? "08:00");
-  const [arrivalEnd, setArrivalEnd] = useState(saved?.end ?? windows[0]?.end ?? "09:00");
-  const [duration, setDuration] = useState(job?.expectedDurationMinutes ?? 240);
-  const [instructions, setInstructions] = useState(job?.specialInstructions ?? "");
-  const [headcount, setHeadcount] = useState(job && job.headcountNeeded > 0 ? job.headcountNeeded : 1);
-  const [message, setMessage] = useState<string | null>(null);
-  const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const visitSnapshot = JSON.stringify({ date, propertyId, serviceType, arrivalStart, arrivalEnd, duration, instructions, headcount });
-  const visitBaseline = useRef<string | null>(null);
-  if (job && visitBaseline.current === null) visitBaseline.current = visitSnapshot;
-  const visitDirty = visitBaseline.current !== null && visitBaseline.current !== visitSnapshot;
-  useUnsavedNavigation(Boolean(job), () => visitDirty, setLeaveHref);
-
-  function submit(nextHref?: string) {
-    if (!job) return false;
-    const result = hub.updateVisit({
-      jobId: job.jobId,
-      date,
-      propertyId,
-      serviceType,
-      arrivalWindowStart: arrivalStart,
-      arrivalWindowEnd: arrivalEnd,
-      expectedDurationMinutes: duration,
-      headcountNeeded: headcount,
-      specialInstructions: instructions,
-    });
-    if (!result.ok) {
-      setMessage(result.message);
-      return false;
-    }
-    if (result.message) hub.flash(result.message);
-    router.push(nextHref ?? `/admin/jobs/${job.jobId}`);
-    return true;
-  }
-
-  function saveAndLeave() {
-    if (!submit(leaveHref ?? undefined)) setLeaveHref(null);
-  }
-
-  function remove() {
-    if (!job) return;
-    const result = hub.deleteJob(job.jobId);
-    if (!result.ok) {
-      setMessage(result.message);
-      return;
-    }
-    if (result.message) hub.flash(result.message);
-    router.push(`/admin/customers/${job.customerId}`);
-  }
-
   if (!job) {
     return (
       <Screen>
@@ -347,146 +284,106 @@ function VisitEditForm({ jobId }: { jobId: string }) {
       </Screen>
     );
   }
+  const cleaning = job;
+  const knownCustomer = hub.customers.some((item) => item.customerId === customerId);
+  const startingCustomerId = knownCustomer ? customerId : cleaning.customerId;
+  const startingHomes = hub.properties.filter((item) => item.customerId === startingCustomerId && item.status === "ACTIVE");
+  const startingPropertyId =
+    startingCustomerId === job.customerId
+      ? job.propertyId
+      : (startingHomes[0]?.propertyId ?? "");
+  const savedArrival =
+    job.arrivalWindowStart && job.arrivalWindowEnd ? { start: job.arrivalWindowStart, end: job.arrivalWindowEnd } : undefined;
+  const onCleaning = [
+    ...(job.draftCleanerIds ?? []),
+    ...hub.assignments
+      .filter(
+        (assignment) =>
+          assignment.jobId === job.jobId &&
+          assignment.status !== "CANCELED" &&
+          assignment.status !== "EXPIRED_JOB_FILLED",
+      )
+      .map((assignment) => assignment.cleanerId),
+  ];
+  const cleanerIds = [...new Set(onCleaning)];
+  const leadCleanerId = cleanerIds[0] ?? hub.cleaners.find((item) => item.status === "ACTIVE")?.cleanerId ?? "";
 
-  const earliest = earliestCleanerArrival(cleanerArrivals(job, hub.assignments, hub.cleaners));
-  const reinviteFlag = reinviteFlagText(
-    hub.assignments
-      .filter((assignment) => assignment.jobId === job.jobId && dateReinviteNeeded(assignment, date))
-      .map((assignment) => hub.cleaners.find((cleaner) => cleaner.cleanerId === assignment.cleanerId)?.firstName)
-      .filter((name): name is string => Boolean(name)),
-  );
-  const arrivalFlag =
-    earliest && (arrivalStart !== earliest.start || arrivalEnd !== earliest.end)
-      ? arrivalMismatchText(earliest.firstName, hourWindowLabel(earliest.start, earliest.end))
-      : null;
+  function submit(values: CleaningValues, nextHref?: string) {
+    const result = hub.updateVisit({
+      jobId: cleaning.jobId,
+      date: values.date,
+      customerId: values.customerId,
+      propertyId: values.propertyId,
+      serviceType: values.serviceType,
+      arrivalWindowStart: values.arrivalWindowStart,
+      arrivalWindowEnd: values.arrivalWindowEnd,
+      expectedDurationMinutes: values.expectedDurationMinutes,
+      headcountNeeded: values.headcountNeeded,
+      specialInstructions: values.specialInstructions,
+      cleanerIds: values.cleanerIds,
+    });
+    if (!result.ok) return { ok: false, message: result.message };
+    if (result.message) hub.flash(result.message);
+    router.push(nextHref ?? `/admin/jobs/${cleaning.jobId}`);
+    return { ok: true };
+  }
+
+  function remove() {
+    const result = hub.deleteJob(cleaning.jobId);
+    if (!result.ok) return;
+    if (result.message) hub.flash(result.message);
+    router.push(`/admin/customers/${cleaning.customerId}`);
+  }
 
   return (
     <Screen>
       <PageHeader
         title={job.snapshot.customerDisplayName}
-        subtitle={isValidDate(date) ? formatLongDate(date) : formatLongDate(job.date)}
+        subtitle={formatLongDate(job.date)}
         crumb={{ href: `/admin/jobs/${job.jobId}`, label: "Cleaning" }}
       />
-      <form
-        className="space-y-4 px-5 pt-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
+      <CleaningForm
+        initial={{
+          date: job.date,
+          customerId: startingCustomerId,
+          propertyId: startingPropertyId,
+          serviceType: job.serviceType,
+          arrivalWindowStart: savedArrival?.start ?? "08:00",
+          arrivalWindowEnd: savedArrival?.end ?? "09:00",
+          expectedDurationMinutes: job.expectedDurationMinutes ?? 240,
+          headcountNeeded: job.headcountNeeded,
+          specialInstructions: job.specialInstructions,
+          cleanerIds: cleanerIds.length > 0 ? cleanerIds : leadCleanerId ? [leadCleanerId] : [],
         }}
-      >
-        {message ? <Notice>{message}</Notice> : null}
-        <Field label="Date">
-          <input
-            type="date"
-            className={fieldClass}
-            value={date}
-            onChange={(event) => {
-              setDate(event.target.value);
-              setMessage(null);
-            }}
-          />
-        </Field>
-        {reinviteFlag ? <Notice>{reinviteFlag}</Notice> : null}
-        <Group label="Property">
-          <div className="flex flex-col gap-2">
-            {homes.map((home) => (
-              <button
-                key={home.propertyId}
-                type="button"
-                aria-pressed={propertyId === home.propertyId}
-                onClick={() => {
-                  setPropertyId(home.propertyId);
-                  setMessage(null);
-                }}
-                className={`min-h-11 rounded-2xl px-3 text-left text-sm font-semibold ${
-                  propertyId === home.propertyId ? "bg-gold text-ink" : "bg-white text-ink/70"
-                }`}
-              >
-                {propertyLine(home)}
-              </button>
-            ))}
-          </div>
-        </Group>
-        <Group label="Service">
-          <div className="flex flex-wrap gap-2">
-            {SERVICES.map((item) => (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={serviceType === item}
-                onClick={() => setServiceType(item)}
-                className={`min-h-10 rounded-full px-4 text-sm font-semibold ${
-                  serviceType === item ? "bg-gold text-ink" : "bg-white text-ink/70"
-                }`}
-              >
-                {serviceLabel(item)}
-              </button>
-            ))}
-          </div>
-        </Group>
-        <CountField label="Headcount" value={headcount} min={1} max={12} onChange={setHeadcount} />
-        <Field label={earliest ? "Earliest arrival" : "Arrival window"}>
-          <select
-            className={fieldClass}
-            value={arrivalStart}
-            onChange={(event) => {
-              const window = windows.find((item) => item.start === event.target.value);
-              if (!window) return;
-              setArrivalStart(window.start);
-              setArrivalEnd(window.end);
-              setMessage(null);
-            }}
+        arrivalWindows={dayArrivalWindows(savedArrival)}
+        leadCleanerId={leadCleanerId}
+        showDate
+        newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(`/admin/jobs/${job.jobId}/edit`)}`}
+        onSubmit={submit}
+        afterDate={(date) => {
+          const flag = reinviteFlagText(
+            hub.assignments
+              .filter((assignment) => assignment.jobId === job.jobId && dateReinviteNeeded(assignment, date))
+              .map((assignment) => hub.cleaners.find((cleaner) => cleaner.cleanerId === assignment.cleanerId)?.firstName)
+              .filter((name): name is string => Boolean(name)),
+          );
+          return flag ? <Notice>{flag}</Notice> : null;
+        }}
+        afterArrival={(start, end) => {
+          const earliest = earliestCleanerArrival(cleanerArrivals(job, hub.assignments, hub.cleaners));
+          if (!earliest || (start === earliest.start && end === earliest.end)) return null;
+          return <Notice>{arrivalMismatchText(earliest.firstName, hourWindowLabel(earliest.start, earliest.end))}</Notice>;
+        }}
+        trailing={
+          <button
+            type="button"
+            onClick={remove}
+            className="flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
           >
-            {windows.map((window) => (
-              <option key={window.start} value={window.start}>
-                {hourWindowLabel(window.start, window.end)}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {arrivalFlag ? <Notice>{arrivalFlag}</Notice> : null}
-        <Field label="Cleaning duration">
-          <select
-            className={fieldClass}
-            value={duration}
-            onChange={(event) => {
-              setDuration(Number(event.target.value));
-              setMessage(null);
-            }}
-          >
-            {(DURATIONS.includes(duration) ? DURATIONS : [duration, ...DURATIONS]).map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {minutes % 60 === 0 ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}` : `${minutes} min`}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Special instructions">
-          <textarea
-            className={`${fieldClass} min-h-24 py-3`}
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-          />
-        </Field>
-        <PrimaryButton type="submit">Save cleaning</PrimaryButton>
-        <UnsavedChangesDialog
-          open={leaveHref !== null}
-          onSave={saveAndLeave}
-          onDiscard={() => {
-            const href = leaveHref;
-            setLeaveHref(null);
-            if (href) router.push(href);
-          }}
-          onDismiss={() => setLeaveHref(null)}
-        />
-        <button
-          type="button"
-          onClick={remove}
-          className="flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
-        >
-          Delete cleaning
-        </button>
-      </form>
+            Delete cleaning
+          </button>
+        }
+      />
     </Screen>
   );
 }

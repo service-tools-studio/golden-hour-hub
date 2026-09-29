@@ -90,6 +90,7 @@ export type CompleteAssignmentInput = SaveCleanerDetailsInput & {
 export type UpdateVisitInput = {
   jobId: string;
   date: string;
+  customerId: string;
   propertyId: string;
   serviceType: ServiceType;
   arrivalWindowStart: string;
@@ -97,6 +98,7 @@ export type UpdateVisitInput = {
   expectedDurationMinutes: number;
   headcountNeeded: number;
   specialInstructions: string;
+  cleanerIds: string[];
 };
 
 export type UpdateJobInput = {
@@ -959,8 +961,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   function updateVisit(input: UpdateVisitInput): ActionResult {
     const job = data.jobs.find((item) => item.jobId === input.jobId);
     if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
-    const customer = data.customers.find((item) => item.customerId === job.customerId && item.status === "ACTIVE");
-    if (!customer) return { ok: false, message: "That customer could not be found." };
+    const customer = data.customers.find((item) => item.customerId === input.customerId && item.status === "ACTIVE");
+    if (!customer) return { ok: false, message: "Choose a customer." };
+    const cleanerIds = [...new Set(input.cleanerIds)];
+    const cleaners = cleanerIds.map((cleanerId) => data.cleaners.find((item) => item.cleanerId === cleanerId));
+    if (cleanerIds.length === 0 || cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
+      return { ok: false, message: "Choose at least one active cleaner." };
+    }
     const property = data.properties.find(
       (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
     );
@@ -979,12 +986,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     ) {
       return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
     }
-    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 1 || input.headcountNeeded > 12) {
+    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
       return { ok: false, message: "Enter how many cleaners are needed." };
     }
     const activeAssignments = data.assignments.filter(
       (assignment) =>
         assignment.jobId === job.jobId &&
+        cleanerIds.includes(assignment.cleanerId) &&
         assignment.status !== "CANCELED" &&
         assignment.status !== "EXPIRED_JOB_FILLED" &&
         assignment.status !== "DECLINED",
@@ -992,7 +1000,9 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     const covered = new Set(activeAssignments.map((assignment) => assignment.cleanerId));
     const crews = [
       ...activeAssignments.map((assignment) => assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize),
-      ...(job.draftCleanerDetails ?? []).filter((detail) => !covered.has(detail.cleanerId)).map((detail) => detail.proposedCrewSize),
+      ...(job.draftCleanerDetails ?? [])
+        .filter((detail) => cleanerIds.includes(detail.cleanerId) && !covered.has(detail.cleanerId))
+        .map((detail) => detail.proposedCrewSize),
     ];
     if (crews.some((size) => size > input.headcountNeeded)) {
       return { ok: false, message: "The headcount is smaller than a cleaner's crew on this cleaning." };
@@ -1012,6 +1022,40 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     }
     const now = new Date().toISOString();
     const arrival = { start: input.arrivalWindowStart, end: input.arrivalWindowEnd };
+    const selected = new Set(cleanerIds);
+    const nextAssignments = data.assignments.map((item) => {
+      if (item.jobId !== job.jobId) return item;
+      const removed =
+        !selected.has(item.cleanerId) && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED";
+      if (removed) return { ...item, status: "CANCELED" as const, updatedAt: now };
+      const tracksDate = item.status === "INVITED" || item.status === "CONFIRMED";
+      const baseline = item.notifiedServiceDate ?? item.serviceDate;
+      const needsReinvite = tracksDate && input.date !== baseline;
+      const notifiedServiceDate = tracksDate ? baseline : item.notifiedServiceDate;
+      if (
+        item.serviceDate === input.date &&
+        Boolean(item.needsDateReinvite) === needsReinvite &&
+        item.notifiedServiceDate === notifiedServiceDate
+      ) {
+        return item;
+      }
+      return {
+        ...item,
+        serviceDate: input.date,
+        notifiedServiceDate,
+        needsDateReinvite: needsReinvite ? true : undefined,
+        updatedAt: now,
+      };
+    });
+    const stillOnJob = new Set(
+      nextAssignments
+        .filter(
+          (item) =>
+            item.jobId === job.jobId && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED",
+        )
+        .map((item) => item.cleanerId),
+    );
+    const draftCleanerIds = cleanerIds.filter((id) => !stillOnJob.has(id));
     setState({
       ...data,
       series:
@@ -1027,6 +1071,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         item.jobId === job.jobId
           ? {
               ...item,
+              customerId: customer.customerId,
               date: input.date,
               propertyId: property.propertyId,
               serviceType: input.serviceType,
@@ -1034,6 +1079,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
               arrivalWindowEnd: arrival.end,
               expectedDurationMinutes: input.expectedDurationMinutes,
               headcountNeeded: input.headcountNeeded,
+              draftCleanerIds,
+              draftCleanerDetails: (item.draftCleanerDetails ?? []).filter((detail) => draftCleanerIds.includes(detail.cleanerId)),
               snapshot: snapshotVisit(customer, property),
               specialInstructions: input.specialInstructions.trim(),
               updatedAt: now,
@@ -1041,27 +1088,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
             }
           : item,
       ),
-      assignments: data.assignments.map((item) => {
-        if (item.jobId !== job.jobId) return item;
-        const tracksDate = item.status === "INVITED" || item.status === "CONFIRMED";
-        const baseline = item.notifiedServiceDate ?? item.serviceDate;
-        const needsReinvite = tracksDate && input.date !== baseline;
-        const notifiedServiceDate = tracksDate ? baseline : item.notifiedServiceDate;
-        if (
-          item.serviceDate === input.date &&
-          Boolean(item.needsDateReinvite) === needsReinvite &&
-          item.notifiedServiceDate === notifiedServiceDate
-        ) {
-          return item;
-        }
-        return {
-          ...item,
-          serviceDate: input.date,
-          notifiedServiceDate,
-          needsDateReinvite: needsReinvite ? true : undefined,
-          updatedAt: now,
-        };
-      }),
+      assignments: nextAssignments,
     });
     return { ok: true, message: "Cleaning updated." };
   }

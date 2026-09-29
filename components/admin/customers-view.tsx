@@ -81,7 +81,12 @@ export function NewCustomerView({ returnTo }: { returnTo?: string }) {
   const router = useRouter();
   const formRef = useRef<CustomerFormHandle>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const back = returnTo?.startsWith("/admin/jobs/new") && !returnTo.startsWith("//") ? returnTo : null;
+  const back =
+    returnTo &&
+    !returnTo.startsWith("//") &&
+    (returnTo.startsWith("/admin/jobs/new") || /^\/admin\/jobs\/[^/]+\/edit(?:\?|$)/.test(returnTo))
+      ? returnTo
+      : null;
   useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
 
   function saveAndLeave() {
@@ -100,7 +105,7 @@ export function NewCustomerView({ returnTo }: { returnTo?: string }) {
       <PageHeader
         title="New customer"
         subtitle="Save them, then keep going"
-        crumb={back ? { href: back, label: "New cleaning" } : undefined}
+        crumb={back ? { href: back, label: back.includes("/edit") ? "Cleaning" : "New cleaning" } : undefined}
       />
       <div className="px-5 pt-4">
         <CustomerForm

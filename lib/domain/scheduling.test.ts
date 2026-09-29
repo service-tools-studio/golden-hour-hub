@@ -200,11 +200,11 @@ describe("blocked time and effective availability", () => {
 describe("headcount and helper approval", () => {
   it("counts confirmed people, not assignment records", () => {
     const assignments = [
-      { status: "CONFIRMED" as const, confirmedCrewSize: 2 },
-      { status: "CONFIRMED" as const, confirmedCrewSize: 1 },
+      { status: "CONFIRMED" as const, confirmedCrewSize: 2, proposedCrewSize: 2 },
+      { status: "CONFIRMED" as const, confirmedCrewSize: 1, proposedCrewSize: 1 },
       { status: "INVITED" as const, confirmedCrewSize: 4, proposedCrewSize: 4 },
-      { status: "PENDING_AVAILABILITY" as const, pendingCrewSize: 2 },
-      { status: "DECLINED" as const, confirmedCrewSize: 1 },
+      { status: "PENDING_AVAILABILITY" as const, pendingCrewSize: 2, proposedCrewSize: 2 },
+      { status: "DECLINED" as const, confirmedCrewSize: 1, proposedCrewSize: 1 },
     ];
     assert.equal(calculateConfirmedHeadcount(assignments), 3);
     assert.equal(calculateInvitedHeadcount(assignments), 4);
