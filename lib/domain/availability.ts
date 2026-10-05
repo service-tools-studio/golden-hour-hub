@@ -1,6 +1,10 @@
 import type { AvailabilitySubmission, AvailabilityWindow, CleanerProfile } from "./types.ts";
 import { addDays, daysBetween, isValidLocalTime, minutesFromTime, timeFromMinutes } from "./time.ts";
 
+/** Business-day edges saved when a cleaner marks a day "All day". */
+export const OPEN_DAY_START = "07:00";
+export const OPEN_DAY_END = "24:00";
+
 export function listSubmissionStatus(
   cleaners: Array<Pick<CleanerProfile, "cleanerId" | "firstName" | "lastName" | "status">>,
   submissions: Array<Pick<AvailabilitySubmission, "cleanerId" | "weekStart">>,

@@ -5,7 +5,13 @@ import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { Card, Notice, PageHeader, Screen } from "@/components/ui";
-import { copyWeekWindows, mergeAdjacentWindows, windowsInWeek } from "@/lib/domain/availability";
+import {
+  OPEN_DAY_END,
+  OPEN_DAY_START,
+  copyWeekWindows,
+  mergeAdjacentWindows,
+  windowsInWeek,
+} from "@/lib/domain/availability";
 import { toAssignmentSchedule, validateAvailabilityEdit, validateAvailabilityWindows } from "@/lib/domain/scheduling";
 import { addDays, dayOfWeek, eachDate, formatHm, formatTimeLabel, formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
 import { formatArrival, formatLongDate } from "@/lib/format";
@@ -53,17 +59,18 @@ function TimeButton({
   onClick: () => void;
 }) {
   const short = label.startsWith("End") ? "End" : "Start";
+  const text = value ? formatTimeLabel(value) : short;
   return (
     <button
       type="button"
-      aria-label={value ? `${label} ${formatTimeLabel(value)}` : `Choose ${label}`}
+      aria-label={value ? `${label} ${text}` : `Choose ${label}`}
       aria-expanded={open}
       onClick={onClick}
       className={`flex min-h-14 w-full items-center justify-center whitespace-nowrap rounded-2xl px-2 text-base font-semibold ${
         open ? "bg-gold text-ink" : `border border-ink/15 bg-cream ${value ? "text-ink" : "text-ink/40"}`
       }`}
     >
-      {value ? formatTimeLabel(value) : short}
+      {text}
     </button>
   );
 }
@@ -82,6 +89,8 @@ function WindowTimes({
   onRemove: () => void;
 }) {
   const [open, setOpen] = useState<"start" | "end" | null>(null);
+  const [settingHours, setSettingHours] = useState(false);
+  const allDay = start === OPEN_DAY_START && end === OPEN_DAY_END;
 
   function toggle(field: "start" | "end") {
     if (open === field) {
@@ -91,6 +100,30 @@ function WindowTimes({
     if (field === "start" && !start) onStart("08:00");
     if (field === "end" && !end) onEnd("17:00");
     setOpen(field);
+  }
+
+  if (allDay && !settingHours) {
+    return (
+      <div className="mt-3 flex items-center gap-2">
+        <span className="flex min-h-12 min-w-0 flex-1 items-center whitespace-nowrap rounded-2xl bg-mint/60 px-4 text-base font-semibold">
+          All day
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setSettingHours(true);
+            onStart("08:00");
+            onEnd("23:55");
+          }}
+          className="min-h-12 shrink-0 whitespace-nowrap px-1 text-sm font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4"
+        >
+          Set hours
+        </button>
+        <button type="button" className="min-h-12 shrink-0 px-1 text-sm font-semibold text-ink/60" onClick={onRemove}>
+          Remove
+        </button>
+      </div>
+    );
   }
 
   const value = open === "end" ? end || "17:00" : start || "08:00";
@@ -105,10 +138,7 @@ function WindowTimes({
         </button>
       </div>
       {open ? (
-        <ClockWheel
-          value={value}
-          onChange={(next) => (open === "start" ? onStart(next) : onEnd(next))}
-        />
+        <ClockWheel value={value} onChange={(next) => (open === "start" ? onStart(next) : onEnd(next))} />
       ) : null}
     </div>
   );
@@ -276,8 +306,8 @@ export function AvailabilityEditor() {
           availabilityId: `draft-${date}-0`,
           cleanerId: profile.cleanerId,
           date,
-          start: "",
-          end: "",
+          start: OPEN_DAY_START,
+          end: OPEN_DAY_END,
         },
       ]);
     });
@@ -388,6 +418,7 @@ export function AvailabilityEditor() {
             return a.start.localeCompare(b.start);
           });
           const available = windows.length > 0;
+          const allDay = windows.some((window) => window.start === OPEN_DAY_START && window.end === OPEN_DAY_END);
           return (
             <Card key={date}>
               <div className="flex items-center justify-between gap-3">
@@ -415,11 +446,13 @@ export function AvailabilityEditor() {
               ))}
               {available ? (
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <button type="button" onClick={() => addWindow(date)} className="min-h-11 text-sm font-semibold text-ink">
-                    + Add Another Time
-                  </button>
+                  {allDay ? null : (
+                    <button type="button" onClick={() => addWindow(date)} className="min-h-11 text-sm font-semibold text-ink">
+                      + Add Another Time
+                    </button>
+                  )}
                   {date < week.weekEnd ? (
-                    <button type="button" onClick={() => copyDayForward(date)} className="min-h-11 text-sm font-semibold text-ink">
+                    <button type="button" onClick={() => copyDayForward(date)} className="ml-auto min-h-11 text-sm font-semibold text-ink">
                       copy thru end of week
                     </button>
                   ) : null}

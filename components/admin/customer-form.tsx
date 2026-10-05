@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { Field, fieldClass } from "@/components/ui";
@@ -216,6 +217,17 @@ export function CustomerForm({
     if (index >= 0 && name) clearError(`properties.${index}.${name}`);
   }
 
+  const sameName = (left: string, right: string) => left.trim().toLowerCase() === right.trim().toLowerCase();
+  const duplicate =
+    form.firstName.trim() && form.lastName.trim()
+      ? hub.customers.find(
+          (item) =>
+            item.customerId !== customer?.customerId &&
+            sameName(item.firstName, form.firstName) &&
+            sameName(item.lastName, form.lastName),
+        )
+      : undefined;
+
   function fieldMessage(field: string) {
     return error?.field === field ? error.message : undefined;
   }
@@ -229,6 +241,10 @@ export function CustomerForm({
   }
 
   function persist(): string | null {
+    if (duplicate) {
+      setError({ field: "duplicate", message: "", at: Date.now() });
+      return null;
+    }
     const current = latest.current;
     const input = {
       ...liveForm(),
@@ -308,6 +324,24 @@ export function CustomerForm({
           <input className={inputClass(Boolean(fieldMessage("lastName")))} value={form.lastName} onChange={(event) => set("lastName", event.target.value)} aria-invalid={Boolean(fieldMessage("lastName"))} />
         </Field>
       </div>
+      {duplicate ? (
+        <div id="customer-duplicate" role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-base leading-6 text-red-700 ring-1 ring-red-600">
+          <p className="font-semibold">
+            {duplicate.firstName} {duplicate.lastName} is already a customer.
+          </p>
+          <p className="mt-1">
+            To update their info, go to{" "}
+            <Link
+              href={`/admin/customers/${duplicate.customerId}`}
+              data-skip-unsaved
+              className="font-semibold underline decoration-red-600/40 decoration-2 underline-offset-4"
+            >
+              their profile
+            </Link>
+            .
+          </p>
+        </div>
+      ) : null}
       <Field id="customer-phone" label="Phone" error={fieldMessage("phone")}>
         <input className={inputClass(Boolean(fieldMessage("phone")))} type="tel" inputMode="tel" value={form.phone} onChange={(event) => set("phone", formatPhoneInput(event.target.value, form.phone))} aria-invalid={Boolean(fieldMessage("phone"))} />
       </Field>

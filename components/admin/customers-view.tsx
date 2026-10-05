@@ -7,7 +7,7 @@ import { CustomerForm, type CustomerFormHandle } from "@/components/admin/custom
 import { SeriesForm } from "@/components/admin/series-form";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
-import { Card, PageHeader, Screen, fieldClass } from "@/components/ui";
+import { Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
 import { searchCustomers } from "@/lib/domain/customers";
 import { seriesSummary } from "@/lib/mock/seed";
 import { formatLongDate, formatPhone, serviceLabel } from "@/lib/format";
@@ -121,7 +121,6 @@ export function NewCustomerView({ returnTo }: { returnTo?: string }) {
     <Screen>
       <PageHeader
         title="New customer"
-        subtitle="Save them, then keep going"
         crumb={back ? { href: back, label: back.includes("/edit") ? "Cleaning" : "New cleaning" } : undefined}
       />
       <div className="px-5 pt-4">
@@ -248,6 +247,17 @@ export function CustomerDetail({
                 { label: name, onClick: () => requestLeave() },
               ]
             : [{ href: "/admin/customers", label: "Customers" }]
+        }
+        action={
+          editingRecord ? undefined : (
+            <Link
+              href={`/admin/jobs/new?customerId=${customer.customerId}`}
+              aria-label={`Book a new cleaning for ${name}`}
+              className="mt-1 flex size-11 shrink-0 items-center justify-center self-center rounded-full bg-ink text-cream"
+            >
+              <PlusIcon />
+            </Link>
+          )
         }
       />
       <div className="space-y-3 px-5 pt-4">

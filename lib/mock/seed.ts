@@ -175,8 +175,8 @@ export function buildSeed(today: string): HubData {
         availabilityId: `ashley-cover-${date}`,
         cleanerId: "ashley",
         date,
-        start: "00:00",
-        end: "24:00",
+        start: "08:00",
+        end: "23:55",
       })),
     ],
   );

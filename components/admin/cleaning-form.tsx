@@ -11,11 +11,11 @@ import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from 
 import { searchCustomers } from "@/lib/domain/customers";
 import { addDays, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
 import type { Property, ServiceType } from "@/lib/domain/types";
-import { arrivalMismatchText, earliestCleanerArrival, hourWindowLabel, serviceLabel } from "@/lib/format";
-import { calculateQuoteEstimate, type CleanType } from "@/lib/portableQuoteEstimate";
+import { hourWindowLabel, serviceLabel } from "@/lib/format";
+import { calculateQuoteEstimate, type CleanType, type QuoteEstimate } from "@/lib/portableQuoteEstimate";
 
 const SERVICES: ServiceType[] = ["DEEP_CLEAN", "RECURRING", "MOVE_OUT", "POST_CONSTRUCTION", "OTHER"];
-const DURATIONS = [60, 120, 180, 240, 300, 360, 480];
+const DURATIONS = Array.from({ length: 12 }, (_, index) => (index + 1) * 60);
 
 export type CleanerArrival = {
   cleanerId: string;
@@ -38,9 +38,21 @@ export type CleaningValues = {
   cleanerArrivals?: CleanerArrival[];
 };
 
-function durationAboveEstimate(hoursHigh: number): number {
-  const minutes = Math.round((hoursHigh + 1) * 60);
-  return DURATIONS.find((option) => option >= minutes) ?? DURATIONS[DURATIONS.length - 1]!;
+function roundUpToHour(hours: number): number {
+  return Math.max(1, Math.ceil(hours - 1e-9)) * 60;
+}
+
+function trimHours(hours: number): string {
+  return String(Number(hours.toFixed(2)));
+}
+
+/** Spreads the quote's person-hours across the chosen headcount, to the nearest quarter hour. */
+function onSiteHours(quote: QuoteEstimate, headcount: number): { low: number; high: number; text: string } {
+  const spread = (hours: number) => Math.round(((hours * quote.time.cleaners) / headcount) * 4) / 4;
+  const low = spread(quote.time.hoursLow);
+  const high = spread(quote.time.hoursHigh);
+  const unit = high === 1 ? "hour" : "hours";
+  return { low, high, text: low === high ? `~${trimHours(high)} ${unit}` : `${trimHours(low)}–${trimHours(high)} ${unit}` };
 }
 
 function cleanTypeFor(service: ServiceType): CleanType | null {
@@ -115,12 +127,18 @@ export function CleaningForm({
           cleanType,
         })
       : null;
+  const estimate = quote ? onSiteHours(quote, headcount) : null;
+  function changeHeadcount(next: number) {
+    setHeadcount(next);
+    if (quote) setDuration(roundUpToHour(onSiteHours(quote, next).high));
+    setMessage(null);
+  }
   const suggestionKey = property && cleanType ? `${property.propertyId}:${cleanType}` : "";
   if (headcountFor !== "ready" && suggestionKey !== headcountFor) {
     setHeadcountFor(suggestionKey);
     if (quote) {
       setHeadcount(quote.time.cleaners);
-      setDuration(durationAboveEstimate(quote.time.hoursHigh));
+      setDuration(roundUpToHour(quote.time.hoursHigh));
     } else {
       setDuration(240);
     }
@@ -130,7 +148,6 @@ export function CleaningForm({
 
   const formSnapshot = JSON.stringify({
     date,
-    query,
     customerId,
     propertyId,
     serviceType,
@@ -145,7 +162,7 @@ export function CleaningForm({
   const baseline = useRef<string | null>(null);
   const settled = headcountFor === suggestionKey;
   if (baseline.current === null && settled) baseline.current = formSnapshot;
-  const dirty = baseline.current !== null && baseline.current !== formSnapshot;
+  const dirty = Boolean(customer) && baseline.current !== null && baseline.current !== formSnapshot;
   useUnsavedNavigation(settled, () => dirty, setLeaveHref);
 
   const roster = leadCleanerId
@@ -154,16 +171,6 @@ export function CleaningForm({
         ...hub.cleaners.filter((item) => item.status === "ACTIVE" && item.cleanerId !== leadCleanerId),
       ]
     : hub.cleaners.filter((item) => item.status === "ACTIVE");
-  const arrivalMismatch = cleanerArrivalMismatch({
-    cleaners: roster,
-    windows: hub.availability.filter((window) => window.date === date),
-    span: cleaningTimeSpan(arrivalStart, arrivalEnd, duration),
-    selected: draftCleanerIds,
-    arrivals: cleanerArrivals,
-    jobStart: arrivalStart,
-    jobEnd: arrivalEnd,
-  });
-
   function toggleDraft(id: string) {
     setMessage(null);
     if (draftCleanerIds.includes(id)) {
@@ -174,16 +181,18 @@ export function CleaningForm({
     }
     setDraftCleanerIds([...draftCleanerIds, id]);
     setCleanerArrivals((current) => {
-      if (current.some((arrival) => arrival.cleanerId === id)) return current;
       const person = roster.find((item) => item.cleanerId === id);
       if (!person) return current;
+      const windows = hub.availability.filter((window) => window.cleanerId === id && window.date === date);
+      const opening = firstOpenStart(windows, arrivalStart);
+      const arrival = opening === arrivalStart ? { start: arrivalStart, end: arrivalEnd } : oneHourWindow(opening);
       return [
-        ...current,
+        ...current.filter((item) => item.cleanerId !== id),
         {
           cleanerId: id,
           firstName: person.firstName,
-          arrivalWindowStart: arrivalStart,
-          arrivalWindowEnd: arrivalEnd,
+          arrivalWindowStart: arrival.start,
+          arrivalWindowEnd: arrival.end,
         },
       ];
     });
@@ -305,154 +314,156 @@ export function CleaningForm({
           </div>
         )}
 
-        {customer && homes.length > 1 ? (
-          <Group label="Property">
-            <div className="flex flex-col gap-2">
-              {homes.map((home) => (
-                <button
-                  key={home.propertyId}
-                  type="button"
-                  aria-pressed={propertyId === home.propertyId}
-                  onClick={() => {
-                    setPropertyId(home.propertyId);
-                    setMessage(null);
-                  }}
-                  className={`min-h-11 rounded-2xl px-3 text-left text-sm font-semibold ${
-                    propertyId === home.propertyId ? "bg-gold text-ink" : "bg-white text-ink/70"
-                  }`}
-                >
-                  {propertyLine(home)}
-                </button>
-              ))}
-            </div>
-          </Group>
-        ) : null}
+        {customer ? (
+          <>
+            {homes.length > 1 ? (
+              <Group label="Property">
+                <div className="flex flex-col gap-2">
+                  {homes.map((home) => (
+                    <button
+                      key={home.propertyId}
+                      type="button"
+                      aria-pressed={propertyId === home.propertyId}
+                      onClick={() => {
+                        setPropertyId(home.propertyId);
+                        setMessage(null);
+                      }}
+                      className={`min-h-11 rounded-2xl px-3 text-left text-sm font-semibold ${
+                        propertyId === home.propertyId ? "bg-gold text-ink" : "bg-white text-ink/70"
+                      }`}
+                    >
+                      {propertyLine(home)}
+                    </button>
+                  ))}
+                </div>
+              </Group>
+            ) : null}
 
-        <Group label="Service">
-          <div className="flex flex-wrap gap-2">
-            {SERVICES.map((item) => (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={serviceType === item}
-                onClick={() => {
-                  setServiceType(item);
+            <Group label="Service">
+              <div className="flex flex-wrap gap-2">
+                {SERVICES.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    aria-pressed={serviceType === item}
+                    onClick={() => {
+                      setServiceType(item);
+                      setMessage(null);
+                    }}
+                    className={`min-h-10 rounded-full px-4 text-sm font-semibold ${
+                      serviceType === item ? "bg-gold text-ink" : "bg-white text-ink/70"
+                    }`}
+                  >
+                    {serviceLabel(item)}
+                  </button>
+                ))}
+              </div>
+            </Group>
+
+            <ArrivalStart
+              date={date}
+              start={arrivalStart}
+              today={hub.today}
+              picker={picker}
+              onPicker={(next) => {
+                setArrivalEditor(null);
+                setPicker(next);
+              }}
+              onDate={(next) => {
+                setDate(next);
+                setMessage(null);
+                onDateChange?.(next);
+              }}
+              onStart={chooseStart}
+            />
+            {afterDate ? afterDate(date) : null}
+            {afterArrival ? afterArrival(arrivalStart, arrivalEnd) : null}
+            <Cleaners
+              cleaners={roster}
+              windows={hub.availability.filter((window) => window.date === date)}
+              span={cleaningTimeSpan(arrivalStart, arrivalEnd, duration)}
+              selected={draftCleanerIds}
+              arrivals={cleanerArrivals}
+              jobStart={arrivalStart}
+              jobEnd={arrivalEnd}
+              editorId={arrivalEditor}
+              onToggle={toggleDraft}
+              onToggleEditor={(cleanerId) => {
+                setPicker(null);
+                setArrivalEditor((current) => (current === cleanerId ? null : cleanerId));
+              }}
+              onArrival={(cleanerId, start, end) => {
+                setCleanerArrivals((current) =>
+                  current.map((arrival) =>
+                    arrival.cleanerId === cleanerId ? { ...arrival, arrivalWindowStart: start, arrivalWindowEnd: end } : arrival,
+                  ),
+                );
+                setMessage(null);
+              }}
+            />
+
+            {quote && property && estimate ? (
+              <div>
+                <p className="mb-1.5 text-sm font-medium text-ink/80">Headcount</p>
+                <div className="flex min-h-12 items-center justify-between rounded-2xl bg-white px-2 ring-1 ring-ink/15">
+                  <button
+                    type="button"
+                    aria-label="Decrease Headcount"
+                    disabled={headcount <= 1}
+                    onClick={() => changeHeadcount(headcount - 1)}
+                    className="flex size-10 items-center justify-center rounded-full bg-mint text-lg font-semibold disabled:bg-ink/8 disabled:text-ink/25"
+                  >
+                    −
+                  </button>
+                  <span className="text-base font-semibold tabular-nums">{headcount}</span>
+                  <button
+                    type="button"
+                    aria-label="Increase Headcount"
+                    disabled={headcount >= 12}
+                    onClick={() => changeHeadcount(headcount + 1)}
+                    className="flex size-10 items-center justify-center rounded-full bg-mint text-lg font-semibold disabled:bg-ink/8 disabled:text-ink/25"
+                  >
+                    +
+                  </button>
+                </div>
+                <p className="mt-2 text-sm text-ink/70">
+                  {property.bedrooms} bed, {property.bathrooms} bath, {property.squareFeet.toLocaleString()} sq ft
+                </p>
+                <p className="text-sm text-ink/70">
+                  Estimated time on site is {estimate.text} with {headcount} {headcount === 1 ? "cleaner" : "cleaners"}.
+                </p>
+              </div>
+            ) : null}
+
+            <Field label="Cleaning duration">
+              <select
+                className={fieldClass}
+                value={duration}
+                onChange={(event) => {
+                  setDuration(Number(event.target.value));
                   setMessage(null);
                 }}
-                className={`min-h-10 rounded-full px-4 text-sm font-semibold ${
-                  serviceType === item ? "bg-gold text-ink" : "bg-white text-ink/70"
-                }`}
               >
-                {serviceLabel(item)}
-              </button>
-            ))}
-          </div>
-        </Group>
+                {(DURATIONS.includes(duration) ? DURATIONS : [duration, ...DURATIONS]).map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {minutes % 60 === 0 ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}` : `${minutes} min`}
+                  </option>
+                ))}
+              </select>
+            </Field>
 
-        <ArrivalStart
-          date={date}
-          start={arrivalStart}
-          today={hub.today}
-          picker={picker}
-          onPicker={(next) => {
-            setArrivalEditor(null);
-            setPicker(next);
-          }}
-          onDate={(next) => {
-            setDate(next);
-            setMessage(null);
-            onDateChange?.(next);
-          }}
-          onStart={chooseStart}
-        />
-        {arrivalMismatch ? <Notice>{arrivalMismatch}</Notice> : null}
-        {afterDate ? afterDate(date) : null}
-        {afterArrival ? afterArrival(arrivalStart, arrivalEnd) : null}
-        <Cleaners
-          cleaners={roster}
-          windows={hub.availability.filter((window) => window.date === date)}
-          span={cleaningTimeSpan(arrivalStart, arrivalEnd, duration)}
-          selected={draftCleanerIds}
-          arrivals={cleanerArrivals}
-          jobStart={arrivalStart}
-          jobEnd={arrivalEnd}
-          editorId={arrivalEditor}
-          onToggle={toggleDraft}
-          onToggleEditor={(cleanerId) => {
-            setPicker(null);
-            setArrivalEditor((current) => (current === cleanerId ? null : cleanerId));
-          }}
-          onArrival={(cleanerId, start, end) => {
-            setCleanerArrivals((current) =>
-              current.map((arrival) =>
-                arrival.cleanerId === cleanerId ? { ...arrival, arrivalWindowStart: start, arrivalWindowEnd: end } : arrival,
-              ),
-            );
-            setMessage(null);
-          }}
-        />
+            <Field label="Special instructions">
+              <textarea
+                className={`${fieldClass} min-h-24 py-3`}
+                value={instructions}
+                onChange={(event) => setInstructions(event.target.value)}
+              />
+            </Field>
 
-        {quote && property ? (
-          <div>
-            <p className="mb-1.5 text-sm font-medium text-ink/80">Headcount</p>
-            <div className="flex min-h-12 items-center justify-between rounded-2xl bg-white px-2 ring-1 ring-ink/15">
-              <button
-                type="button"
-                aria-label="Decrease Headcount"
-                disabled={headcount <= 1}
-                onClick={() => setHeadcount(headcount - 1)}
-                className="flex size-10 items-center justify-center rounded-full bg-mint text-lg font-semibold disabled:bg-ink/8 disabled:text-ink/25"
-              >
-                −
-              </button>
-              <span className="text-base font-semibold tabular-nums">{headcount}</span>
-              <button
-                type="button"
-                aria-label="Increase Headcount"
-                disabled={headcount >= 12}
-                onClick={() => setHeadcount(headcount + 1)}
-                className="flex size-10 items-center justify-center rounded-full bg-mint text-lg font-semibold disabled:bg-ink/8 disabled:text-ink/25"
-              >
-                +
-              </button>
-            </div>
-            <p className="mt-2 text-sm text-ink/70">
-              {property.bedrooms} bed, {property.bathrooms} bath, {property.squareFeet.toLocaleString()} sq ft
-            </p>
-            <p className="text-sm text-ink/70">
-              Estimated time on site is {quote.time.displayText} with {quote.time.cleaners}{" "}
-              {quote.time.cleaners === 1 ? "cleaner" : "cleaners"}.
-            </p>
-          </div>
+            <PrimaryButton type="submit">Save cleaning</PrimaryButton>
+            {trailing}
+          </>
         ) : null}
-
-        <Field label="Cleaning duration">
-          <select
-            className={fieldClass}
-            value={duration}
-            onChange={(event) => {
-              setDuration(Number(event.target.value));
-              setMessage(null);
-            }}
-          >
-            {(DURATIONS.includes(duration) ? DURATIONS : [duration, ...DURATIONS]).map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {minutes % 60 === 0 ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}` : `${minutes} min`}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Special instructions">
-          <textarea
-            className={`${fieldClass} min-h-24 py-3`}
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-          />
-        </Field>
-
-        <PrimaryButton type="submit">Save cleaning</PrimaryButton>
-        {trailing}
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}
@@ -609,38 +620,6 @@ function Cleaners({
   );
 }
 
-function cleanerArrivalMismatch({
-  cleaners,
-  windows,
-  span,
-  selected,
-  arrivals,
-  jobStart,
-  jobEnd,
-}: {
-  cleaners: { cleanerId: string; firstName: string }[];
-  windows: { cleanerId: string; start: string; end: string }[];
-  span: { start: string; end: string } | null;
-  selected: string[];
-  arrivals: CleanerArrival[];
-  jobStart: string;
-  jobEnd: string;
-}): string | null {
-  const chosen = cleaners.flatMap((person) => {
-    if (!selected.includes(person.cleanerId)) return [];
-    const pills = availabilityAgainstSpan(
-      windows.filter((window) => window.cleanerId === person.cleanerId).map((window) => ({ start: window.start, end: window.end })),
-      span,
-    );
-    if (pills.length === 0) return [];
-    const arrival = arrivals.find((item) => item.cleanerId === person.cleanerId);
-    return [{ firstName: person.firstName, start: arrival?.arrivalWindowStart ?? jobStart, end: arrival?.arrivalWindowEnd ?? jobEnd }];
-  });
-  const earliest = earliestCleanerArrival(chosen);
-  if (!earliest || (jobStart === earliest.start && jobEnd === earliest.end)) return null;
-  return arrivalMismatchText(earliest.firstName, hourWindowLabel(earliest.start, earliest.end));
-}
-
 function CleanerTimeWheel({
   start,
   end,
@@ -705,6 +684,16 @@ const WHEEL_ITEM = 36;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
 const MINUTES = Array.from({ length: 12 }, (_, index) => index * 5);
+
+/** Earliest moment at or after the cleaning's start that falls inside one of the cleaner's windows. */
+function firstOpenStart(windows: { start: string; end: string }[], jobStart: string): string {
+  const from = minutesFromTime(jobStart);
+  const open = windows
+    .map((window) => ({ start: minutesFromTime(window.start), end: minutesFromTime(window.end) }))
+    .filter((window) => window.end > from)
+    .map((window) => Math.max(window.start, from));
+  return open.length > 0 ? timeFromMinutes(Math.min(...open)) : jobStart;
+}
 
 function oneHourWindow(start: string): { start: string; end: string } {
   const parsed = minutesFromTime(start);

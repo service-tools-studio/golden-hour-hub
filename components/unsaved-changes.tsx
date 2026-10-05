@@ -19,7 +19,7 @@ export function useUnsavedNavigation(active: boolean, blocked: () => boolean, on
       if (!(target instanceof Element)) return;
       const anchor = target.closest("a[href]");
       if (!(anchor instanceof HTMLAnchorElement)) return;
-      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download") || anchor.hasAttribute("data-skip-unsaved")) return;
       const raw = anchor.getAttribute("href");
       if (!raw || raw.startsWith("#")) return;
       const url = new URL(anchor.href, window.location.href);

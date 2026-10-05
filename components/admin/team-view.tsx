@@ -17,7 +17,7 @@ export function TeamView() {
   const hub = useHub();
   return (
     <Screen>
-      <PageHeader title="Team" subtitle="Helper approval is set by admins" />
+      <PageHeader title="Team" />
       <div className="space-y-3 px-5 pt-4">
         <WeekSubmissions />
         {hub.cleaners.map((cleaner) => (
@@ -63,7 +63,7 @@ function WeekSubmissions() {
     <>
       {notice ? <Notice tone="ok">{notice}</Notice> : null}
       <Card>
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Next week</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Next Week Availability</p>
         <h2 className="mt-1 text-2xl font-semibold">{formatWeekRange(week.weekStart, week.weekEnd)}</h2>
         <ul className="mt-4 space-y-3">
           {submissions.map((item) => (

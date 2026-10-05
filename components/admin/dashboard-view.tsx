@@ -60,14 +60,14 @@ export function DashboardView() {
   return (
     <Screen>
       <PageHeader title="Dashboard" subtitle={formatLongDate(hub.today)} />
-      <div className="space-y-4 px-5 pt-5">
+      <div className="space-y-8 px-5 pt-5">
         {happening.length > 0 ? (
-          <>
+          <section className="space-y-3">
             <h2 className={heading}>Happening Now</h2>
             {happening.map((job) => (
               <JobStaffingCard key={job.jobId} jobId={job.jobId} />
             ))}
-          </>
+          </section>
         ) : null}
 
         {missingPhone.length > 0 ? (
@@ -90,27 +90,24 @@ export function DashboardView() {
           </div>
         ) : null}
 
-        <div className="flex items-end justify-between gap-3">
+        <section className="space-y-3">
           <h2 className={heading}>Jobs needing attention</h2>
-          <Link href="/admin/schedule" className="shrink-0 whitespace-nowrap text-sm font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
-            Open Schedule
-          </Link>
-        </div>
-        {needsAttention.length === 0 ? (
-          <Card>
-            <p className="text-base text-ink/70">Nothing in the next 7 days needs attention.</p>
-          </Card>
-        ) : (
-          needsAttention.map((job) => <JobStaffingCard key={job.jobId} jobId={job.jobId} />)
-        )}
+          {needsAttention.length === 0 ? (
+            <Card>
+              <p className="text-base text-ink/70">Nothing in the next 7 days needs attention.</p>
+            </Card>
+          ) : (
+            needsAttention.map((job) => <JobStaffingCard key={job.jobId} jobId={job.jobId} />)
+          )}
+        </section>
 
         {staffed.length > 0 ? (
-          <>
+          <section className="space-y-3">
             <h2 className={heading}>Fully staffed</h2>
             {staffed.map((job) => (
               <JobStaffingCard key={job.jobId} jobId={job.jobId} />
             ))}
-          </>
+          </section>
         ) : null}
       </div>
     </Screen>
