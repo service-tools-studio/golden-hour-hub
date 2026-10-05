@@ -16,6 +16,7 @@ import {
   dateReinviteNeeded,
   earliestCleanerArrival,
   formatArrival,
+  formatTimeLabel,
   formatDuration,
   formatLongDate,
   formatScheduleFacts,
@@ -97,8 +98,8 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
             </div>
             {visit.preferences ? <p className="mt-3 text-sm">Preferences: {visit.preferences}</p> : null}
             {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
-            {job.arrivalWindowStart && job.arrivalWindowEnd ? (
-              <p className="mt-3 text-sm">Earliest arrival {formatArrival(job.arrivalWindowStart, job.arrivalWindowEnd)}</p>
+            {job.arrivalWindowStart ? (
+              <p className="mt-3 text-sm">Scheduled for {formatTimeLabel(job.arrivalWindowStart)}</p>
             ) : null}
             {arrivalFlag ? <p className="mt-2 text-sm font-semibold text-red-700">{arrivalFlag}</p> : null}
             {reinviteFlag ? <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlag}</p> : null}
@@ -143,7 +144,10 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
                         <p className="text-base font-semibold">
                           {cleaner.firstName} {cleaner.lastName}
                         </p>
-                        <p className="text-sm text-ink/55">Details not set</p>
+                        <p className="flex items-center gap-1.5 text-sm text-ink/55">
+                          <WarningIcon />
+                          Details not set
+                        </p>
                       </>
                     )}
                   </Link>
@@ -215,6 +219,16 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
         ) : null}
       </div>
     </Screen>
+  );
+}
+
+function WarningIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" role="img" aria-label="Warning">
+      <path d="M10.3 3.6a2 2 0 0 1 3.4 0l8.4 14.6A2 2 0 0 1 20.4 21H3.6a2 2 0 0 1-1.7-2.8z" className="fill-amber-400" />
+      <path d="M12 9v5" stroke="#333333" strokeWidth="2.25" strokeLinecap="round" />
+      <circle cx="12" cy="17.4" r="1.3" fill="#333333" />
+    </svg>
   );
 }
 

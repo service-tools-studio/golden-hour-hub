@@ -321,7 +321,7 @@ function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId
       .map((assignment) => assignment.cleanerId),
   ];
   const cleanerIds = [...new Set(onCleaning)];
-  const leadCleanerId = cleanerIds[0] ?? hub.cleaners.find((item) => item.status === "ACTIVE")?.cleanerId ?? "";
+  const leadCleanerId = cleanerIds[0] ?? "";
 
   function submit(values: CleaningValues, nextHref?: string) {
     const result = hub.updateVisit({
@@ -369,7 +369,7 @@ function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId
           expectedDurationMinutes: job.expectedDurationMinutes ?? 240,
           headcountNeeded: job.headcountNeeded,
           specialInstructions: job.specialInstructions,
-          cleanerIds: cleanerIds.length > 0 ? cleanerIds : leadCleanerId ? [leadCleanerId] : [],
+          cleanerIds,
           cleanerArrivals: cleanerArrivals(job, hub.assignments, hub.cleaners).map((arrival) => ({
             cleanerId: arrival.cleanerId,
             firstName: arrival.firstName,
