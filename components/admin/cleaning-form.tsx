@@ -1,19 +1,28 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PrimaryButton, fieldClass } from "@/components/ui";
 import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availability";
+import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "@/lib/domain/scheduling";
 import { searchCustomers } from "@/lib/domain/customers";
+import { addDays, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
 import type { Property, ServiceType } from "@/lib/domain/types";
-import { hourWindowLabel, hourWindows, serviceLabel } from "@/lib/format";
+import { arrivalMismatchText, earliestCleanerArrival, hourWindowLabel, serviceLabel } from "@/lib/format";
 import { calculateQuoteEstimate, type CleanType } from "@/lib/portableQuoteEstimate";
 
 const SERVICES: ServiceType[] = ["DEEP_CLEAN", "RECURRING", "MOVE_OUT", "POST_CONSTRUCTION", "OTHER"];
 const DURATIONS = [60, 120, 180, 240, 300, 360, 480];
+
+export type CleanerArrival = {
+  cleanerId: string;
+  firstName: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+};
 
 export type CleaningValues = {
   date: string;
@@ -26,6 +35,7 @@ export type CleaningValues = {
   headcountNeeded: number;
   specialInstructions: string;
   cleanerIds: string[];
+  cleanerArrivals?: CleanerArrival[];
 };
 
 function durationAboveEstimate(hoursHigh: number): number {
@@ -46,23 +56,23 @@ function propertyLine(home: Property): string {
 
 export function CleaningForm({
   initial,
-  arrivalWindows,
-  leadCleanerId,
+  leadCleanerId = "",
+  canClearCleaners = false,
   estimateOnLoad = false,
-  showDate = false,
   newCustomerHref,
   onSubmit,
+  onDateChange,
   afterDate,
   afterArrival,
   trailing,
 }: {
   initial: CleaningValues;
-  arrivalWindows: { start: string; end: string }[];
-  leadCleanerId: string;
+  leadCleanerId?: string;
+  canClearCleaners?: boolean;
   estimateOnLoad?: boolean;
-  showDate?: boolean;
   newCustomerHref: string;
   onSubmit: (values: CleaningValues, nextHref?: string) => { ok: boolean; message?: string };
+  onDateChange?: (date: string) => void;
   afterDate?: (date: string) => React.ReactNode;
   afterArrival?: (start: string, end: string) => React.ReactNode;
   trailing?: React.ReactNode;
@@ -74,14 +84,18 @@ export function CleaningForm({
   const [customerId, setCustomerId] = useState(initial.customerId);
   const [propertyId, setPropertyId] = useState(initial.propertyId);
   const [serviceType, setServiceType] = useState<ServiceType>(initial.serviceType);
-  const [arrivalStart, setArrivalStart] = useState(initial.arrivalWindowStart);
-  const [arrivalEnd, setArrivalEnd] = useState(initial.arrivalWindowEnd);
+  const opening = oneHourWindow(initial.arrivalWindowStart);
+  const [arrivalStart, setArrivalStart] = useState(opening.start);
+  const [arrivalEnd, setArrivalEnd] = useState(opening.end);
+  const [picker, setPicker] = useState<"date" | "time" | null>(null);
   const [instructions, setInstructions] = useState(initial.specialInstructions);
   const [message, setMessage] = useState<string | null>(null);
   const [headcount, setHeadcount] = useState(initial.headcountNeeded > 0 ? initial.headcountNeeded : 1);
   const [duration, setDuration] = useState(initial.expectedDurationMinutes);
   const [headcountFor, setHeadcountFor] = useState(estimateOnLoad ? "" : "ready");
   const [draftCleanerIds, setDraftCleanerIds] = useState<string[]>(initial.cleanerIds);
+  const [cleanerArrivals, setCleanerArrivals] = useState<CleanerArrival[]>(initial.cleanerArrivals ?? []);
+  const [arrivalEditor, setArrivalEditor] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
 
   const matches = useMemo(
@@ -126,6 +140,7 @@ export function CleaningForm({
     headcount,
     duration,
     draftCleanerIds: [...draftCleanerIds].sort(),
+    cleanerArrivals,
   });
   const baseline = useRef<string | null>(null);
   const settled = headcountFor === suggestionKey;
@@ -133,19 +148,51 @@ export function CleaningForm({
   const dirty = baseline.current !== null && baseline.current !== formSnapshot;
   useUnsavedNavigation(settled, () => dirty, setLeaveHref);
 
-  const windows = arrivalWindows.some((window) => window.start === arrivalStart)
-    ? arrivalWindows
-    : [{ start: arrivalStart, end: arrivalEnd }, ...arrivalWindows];
-  const roster = [
-    ...hub.cleaners.filter((item) => item.cleanerId === leadCleanerId),
-    ...hub.cleaners.filter((item) => item.status === "ACTIVE" && item.cleanerId !== leadCleanerId),
-  ];
+  const roster = leadCleanerId
+    ? [
+        ...hub.cleaners.filter((item) => item.cleanerId === leadCleanerId),
+        ...hub.cleaners.filter((item) => item.status === "ACTIVE" && item.cleanerId !== leadCleanerId),
+      ]
+    : hub.cleaners.filter((item) => item.status === "ACTIVE");
+  const arrivalMismatch = cleanerArrivalMismatch({
+    cleaners: roster,
+    windows: hub.availability.filter((window) => window.date === date),
+    span: cleaningTimeSpan(arrivalStart, arrivalEnd, duration),
+    selected: draftCleanerIds,
+    arrivals: cleanerArrivals,
+    jobStart: arrivalStart,
+    jobEnd: arrivalEnd,
+  });
 
   function toggleDraft(id: string) {
-    setDraftCleanerIds((current) => {
-      if (current.includes(id)) return current.length === 1 ? current : current.filter((item) => item !== id);
-      return [...current, id];
+    setMessage(null);
+    if (draftCleanerIds.includes(id)) {
+      if (!canClearCleaners && draftCleanerIds.length === 1) return;
+      setDraftCleanerIds(draftCleanerIds.filter((item) => item !== id));
+      setArrivalEditor((current) => (current === id ? null : current));
+      return;
+    }
+    setDraftCleanerIds([...draftCleanerIds, id]);
+    setCleanerArrivals((current) => {
+      if (current.some((arrival) => arrival.cleanerId === id)) return current;
+      const person = roster.find((item) => item.cleanerId === id);
+      if (!person) return current;
+      return [
+        ...current,
+        {
+          cleanerId: id,
+          firstName: person.firstName,
+          arrivalWindowStart: arrivalStart,
+          arrivalWindowEnd: arrivalEnd,
+        },
+      ];
     });
+  }
+
+  function chooseStart(start: string) {
+    const window = oneHourWindow(start);
+    setArrivalStart(window.start);
+    setArrivalEnd(window.end);
     setMessage(null);
   }
 
@@ -169,6 +216,7 @@ export function CleaningForm({
       headcountNeeded: quote ? headcount : 0,
       specialInstructions: instructions,
       cleanerIds: draftCleanerIds,
+      cleanerArrivals: cleanerArrivals.filter((arrival) => draftCleanerIds.includes(arrival.cleanerId)),
     };
   }
 
@@ -196,20 +244,6 @@ export function CleaningForm({
         }}
       >
         {message ? <Notice>{message}</Notice> : null}
-        {showDate ? (
-          <Field label="Date">
-            <input
-              type="date"
-              className={fieldClass}
-              value={date}
-              onChange={(event) => {
-                setDate(event.target.value);
-                setMessage(null);
-              }}
-            />
-          </Field>
-        ) : null}
-        {afterDate ? afterDate(date) : null}
 
         {customer ? (
           <Group label="Customer">
@@ -315,33 +349,47 @@ export function CleaningForm({
           </div>
         </Group>
 
-        <Field label="Arrival window">
-          <select
-            className={fieldClass}
-            value={arrivalStart}
-            onChange={(event) => {
-              const window = windows.find((item) => item.start === event.target.value);
-              if (!window) return;
-              setArrivalStart(window.start);
-              setArrivalEnd(window.end);
-              setMessage(null);
-            }}
-          >
-            {windows.map((window) => (
-              <option key={window.start} value={window.start}>
-                {hourWindowLabel(window.start, window.end)}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <ArrivalStart
+          date={date}
+          start={arrivalStart}
+          today={hub.today}
+          picker={picker}
+          onPicker={(next) => {
+            setArrivalEditor(null);
+            setPicker(next);
+          }}
+          onDate={(next) => {
+            setDate(next);
+            setMessage(null);
+            onDateChange?.(next);
+          }}
+          onStart={chooseStart}
+        />
+        {arrivalMismatch ? <Notice>{arrivalMismatch}</Notice> : null}
+        {afterDate ? afterDate(date) : null}
         {afterArrival ? afterArrival(arrivalStart, arrivalEnd) : null}
-
-        <CleanerRoster
+        <Cleaners
           cleaners={roster}
           windows={hub.availability.filter((window) => window.date === date)}
           span={cleaningTimeSpan(arrivalStart, arrivalEnd, duration)}
           selected={draftCleanerIds}
+          arrivals={cleanerArrivals}
+          jobStart={arrivalStart}
+          jobEnd={arrivalEnd}
+          editorId={arrivalEditor}
           onToggle={toggleDraft}
+          onToggleEditor={(cleanerId) => {
+            setPicker(null);
+            setArrivalEditor((current) => (current === cleanerId ? null : cleanerId));
+          }}
+          onArrival={(cleanerId, start, end) => {
+            setCleanerArrivals((current) =>
+              current.map((arrival) =>
+                arrival.cleanerId === cleanerId ? { ...arrival, arrivalWindowStart: start, arrivalWindowEnd: end } : arrival,
+              ),
+            );
+            setMessage(null);
+          }}
         />
 
         {quote && property ? (
@@ -420,60 +468,225 @@ export function CleaningForm({
   );
 }
 
-function CleanerRoster({
+function Cleaners({
   cleaners,
   windows,
   span,
   selected,
+  arrivals,
+  jobStart,
+  jobEnd,
+  editorId,
   onToggle,
+  onToggleEditor,
+  onArrival,
 }: {
   cleaners: { cleanerId: string; firstName: string }[];
   windows: { cleanerId: string; start: string; end: string }[];
   span: { start: string; end: string } | null;
   selected: string[];
+  arrivals: CleanerArrival[];
+  jobStart: string;
+  jobEnd: string;
+  editorId: string | null;
   onToggle: (cleanerId: string) => void;
+  onToggleEditor: (cleanerId: string) => void;
+  onArrival: (cleanerId: string, start: string, end: string) => void;
 }) {
   const rows = cleaners.flatMap((person) => {
     const pills = availabilityAgainstSpan(
       windows.filter((window) => window.cleanerId === person.cleanerId).map((window) => ({ start: window.start, end: window.end })),
       span,
     );
-    return pills.length > 0 ? [{ person, pills }] : [];
+    if (pills.length === 0) return [];
+    const chosen = selected.includes(person.cleanerId);
+    const arrival = arrivals.find((item) => item.cleanerId === person.cleanerId);
+    return [
+      {
+        person,
+        pills,
+        chosen,
+        arrivalStart: chosen ? (arrival?.arrivalWindowStart ?? jobStart) : "",
+        arrivalEnd: chosen ? (arrival?.arrivalWindowEnd ?? jobEnd) : "",
+      },
+    ];
   });
   if (rows.length === 0) return null;
+  const selectedRows = rows.filter((row) => row.chosen);
+  const availableRows = rows.filter((row) => !row.chosen);
 
   return (
-    <div>
-      <p className="mb-1 text-sm font-medium text-ink/80">Cleaners</p>
-      <div className="space-y-1">
-        {rows.map(({ person, pills }) => {
-          const chosen = selected.includes(person.cleanerId);
-          return (
-            <button
-              key={person.cleanerId}
-              type="button"
-              aria-pressed={chosen}
-              onClick={() => onToggle(person.cleanerId)}
-              className={`flex min-h-8 w-full items-center gap-2 rounded-xl px-2 py-1 text-left ${
-                chosen ? "bg-white ring-1 ring-gold" : "bg-white/60"
-              }`}
-            >
-              <span className={`shrink-0 text-sm font-semibold ${chosen ? "text-ink" : "text-ink/70"}`}>{person.firstName}</span>
-              <span className="flex min-w-0 flex-wrap gap-1">
-                {pills.map((pill) => (
+    <div className="space-y-4">
+      {selectedRows.length > 0 ? (
+        <div>
+          <p className="mb-1.5 text-sm font-medium text-ink/80">Selected cleaners</p>
+          <div className="space-y-2">
+            {selectedRows.map(({ person, pills, arrivalStart, arrivalEnd }) => (
+            <div key={person.cleanerId} className="relative overflow-hidden rounded-2xl bg-gold">
+              <button
+                type="button"
+                aria-pressed
+                aria-label={`${person.firstName}, selected`}
+                onClick={() => onToggle(person.cleanerId)}
+                className="absolute inset-0 rounded-2xl"
+              />
+              <div className="pointer-events-none relative grid grid-cols-[minmax(0,3fr)_1px_minmax(0,1fr)] items-stretch">
+                <div className="pointer-events-none min-w-0 px-3 py-2">
+                  <p className="text-base font-semibold text-ink">{person.firstName}</p>
+                  <div className="mt-1.5">
+                    <p className="text-sm text-ink/60">Available</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {pills.map((pill) => (
+                        <span
+                          key={`${pill.start}-${pill.end}`}
+                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/55"}`}
+                        >
+                          {hourWindowLabel(pill.start, pill.end)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-ink/20" />
+                <button
+                  type="button"
+                  aria-expanded={editorId === person.cleanerId}
+                  aria-label={`${person.firstName} starts ${hourWindowLabel(arrivalStart, arrivalEnd)}`}
+                  onClick={() => onToggleEditor(person.cleanerId)}
+                  className="pointer-events-auto relative z-10 flex h-full flex-col items-center justify-center bg-white px-1 py-2 text-center"
+                >
+                  <span className="text-xs text-ink/60">Starts</span>
                   <span
-                    key={`${pill.start}-${pill.end}`}
-                    className={`rounded-full px-1.5 py-px text-[11px] font-semibold leading-4 ${
-                      pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/60"
+                    className={`mt-1 max-w-full rounded-full px-1.5 py-0.5 text-xs font-semibold leading-4 ${
+                      editorId === person.cleanerId ? "bg-gold text-ink" : "text-ink"
                     }`}
                   >
-                    {hourWindowLabel(pill.start, pill.end)}
+                    {hourWindowLabel(arrivalStart, arrivalEnd)}
                   </span>
-                ))}
-              </span>
-            </button>
-          );
-        })}
+                </button>
+              </div>
+              {editorId === person.cleanerId ? (
+                <div className="pointer-events-auto relative z-10">
+                  <CleanerTimeWheel start={arrivalStart} end={arrivalEnd} onChange={(start, end) => onArrival(person.cleanerId, start, end)} />
+                </div>
+              ) : null}
+            </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {availableRows.length > 0 ? (
+        <div>
+          <p className="mb-1.5 text-sm font-medium text-ink/80">Available cleaners</p>
+          <div className="space-y-2">
+            {availableRows.map(({ person, pills }) => (
+              <button
+                key={person.cleanerId}
+                type="button"
+                aria-pressed={false}
+                onClick={() => onToggle(person.cleanerId)}
+                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-xl bg-white/60 px-2 py-1 text-left"
+              >
+                <span className="shrink-0 text-sm font-semibold text-ink/70">{person.firstName}</span>
+                <span className="flex min-w-0 flex-wrap gap-1">
+                  {pills.map((pill) => (
+                    <span
+                      key={`${pill.start}-${pill.end}`}
+                      className={`rounded-full px-1.5 py-px text-[11px] font-semibold leading-4 ${
+                        pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/60"
+                      }`}
+                    >
+                      {hourWindowLabel(pill.start, pill.end)}
+                    </span>
+                  ))}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function cleanerArrivalMismatch({
+  cleaners,
+  windows,
+  span,
+  selected,
+  arrivals,
+  jobStart,
+  jobEnd,
+}: {
+  cleaners: { cleanerId: string; firstName: string }[];
+  windows: { cleanerId: string; start: string; end: string }[];
+  span: { start: string; end: string } | null;
+  selected: string[];
+  arrivals: CleanerArrival[];
+  jobStart: string;
+  jobEnd: string;
+}): string | null {
+  const chosen = cleaners.flatMap((person) => {
+    if (!selected.includes(person.cleanerId)) return [];
+    const pills = availabilityAgainstSpan(
+      windows.filter((window) => window.cleanerId === person.cleanerId).map((window) => ({ start: window.start, end: window.end })),
+      span,
+    );
+    if (pills.length === 0) return [];
+    const arrival = arrivals.find((item) => item.cleanerId === person.cleanerId);
+    return [{ firstName: person.firstName, start: arrival?.arrivalWindowStart ?? jobStart, end: arrival?.arrivalWindowEnd ?? jobEnd }];
+  });
+  const earliest = earliestCleanerArrival(chosen);
+  if (!earliest || (jobStart === earliest.start && jobEnd === earliest.end)) return null;
+  return arrivalMismatchText(earliest.firstName, hourWindowLabel(earliest.start, earliest.end));
+}
+
+function CleanerTimeWheel({
+  start,
+  end,
+  onChange,
+}: {
+  start: string;
+  end: string;
+  onChange: (start: string, end: string) => void;
+}) {
+  const clock = clockParts(start);
+  const length = Math.max(minutesFromTime(end) - minutesFromTime(start), 15);
+  const minuteChoices = MINUTES.includes(clock.minute) ? MINUTES : [clock.minute, ...MINUTES].sort((a, b) => a - b);
+
+  function choose(patch: Partial<{ hour: number; minute: number; suffix: "AM" | "PM" }>) {
+    const parts = { ...clock, ...patch };
+    const nextStart = clockTime(parts.hour, parts.minute, parts.suffix);
+    const latest = Math.max(0, 24 * 60 - length);
+    const startMin = Math.min(Math.max(minutesFromTime(nextStart), 0), latest);
+    onChange(timeFromMinutes(startMin), timeFromMinutes(startMin + length));
+  }
+
+  return (
+    <div className="relative mt-2">
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-9 -translate-y-1/2 rounded-lg bg-ink/8" />
+      <div className="flex gap-2">
+        <TimeWheel
+          label="Hour"
+          options={HOURS.map((hour) => ({ value: String(hour), label: String(hour) }))}
+          value={String(clock.hour)}
+          onChange={(value) => choose({ hour: Number(value) })}
+        />
+        <TimeWheel
+          label="Minute"
+          options={minuteChoices.map((minute) => ({ value: String(minute), label: String(minute).padStart(2, "0") }))}
+          value={String(clock.minute)}
+          onChange={(value) => choose({ minute: Number(value) })}
+        />
+        <TimeWheel
+          label="AM or PM"
+          options={[
+            { value: "AM", label: "AM" },
+            { value: "PM", label: "PM" },
+          ]}
+          value={clock.suffix}
+          onChange={(value) => choose({ suffix: value === "PM" ? "PM" : "AM" })}
+        />
       </div>
     </div>
   );
@@ -488,8 +701,294 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function dayArrivalWindows(saved?: { start: string; end: string }) {
-  const choices = hourWindows("08:00", "18:00");
-  if (saved && !choices.some((window) => window.start === saved.start)) return [saved, ...choices];
-  return choices;
+const WHEEL_ITEM = 36;
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
+const MINUTES = Array.from({ length: 12 }, (_, index) => index * 5);
+
+function oneHourWindow(start: string): { start: string; end: string } {
+  const parsed = minutesFromTime(start);
+  const minutes = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 23 * 60) : 8 * 60;
+  return { start: timeFromMinutes(minutes), end: timeFromMinutes(minutes + 60) };
+}
+
+function datePillLabel(date: string): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year, month - 1, day, 12)),
+  );
+}
+
+function clockParts(time: string): { hour: number; minute: number; suffix: "AM" | "PM" } {
+  const total = minutesFromTime(oneHourWindow(time).start);
+  const hour24 = Math.floor(total / 60);
+  return {
+    hour: hour24 % 12 === 0 ? 12 : hour24 % 12,
+    minute: total % 60,
+    suffix: hour24 >= 12 ? "PM" : "AM",
+  };
+}
+
+function clockTime(hour: number, minute: number, suffix: "AM" | "PM"): string {
+  let hour24 = hour % 12;
+  if (suffix === "PM") hour24 += 12;
+  return timeFromMinutes(Math.min(hour24 * 60 + minute, 23 * 60));
+}
+
+function ArrivalStart({
+  date,
+  start,
+  today,
+  picker,
+  onPicker,
+  onDate,
+  onStart,
+}: {
+  date: string;
+  start: string;
+  today: string;
+  picker: "date" | "time" | null;
+  onPicker: (picker: "date" | "time" | null) => void;
+  onDate: (date: string) => void;
+  onStart: (start: string) => void;
+}) {
+  const clock = clockParts(start);
+  const minuteChoices = clock.suffix === "PM" && clock.hour === 11 ? [0] : MINUTES;
+
+  function chooseClock(next: Partial<{ hour: number; minute: number; suffix: "AM" | "PM" }>) {
+    const parts = { ...clock, ...next };
+    const minute = parts.suffix === "PM" && parts.hour === 11 ? 0 : parts.minute;
+    onStart(clockTime(parts.hour, minute, parts.suffix));
+  }
+
+  return (
+    <div className="rounded-3xl bg-white px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-base">Starts</span>
+        <span className="flex gap-2">
+          <button
+            type="button"
+            aria-expanded={picker === "date"}
+            onClick={() => onPicker(picker === "date" ? null : "date")}
+            className={`rounded-full px-3 py-1.5 text-sm font-semibold ${picker === "date" ? "bg-gold text-ink" : "bg-ink/8 text-ink"}`}
+          >
+            {datePillLabel(date)}
+          </button>
+          <button
+            type="button"
+            aria-expanded={picker === "time"}
+            onClick={() => onPicker(picker === "time" ? null : "time")}
+            className={`rounded-full px-3 py-1.5 text-sm font-semibold ${picker === "time" ? "bg-gold text-ink" : "bg-ink/8 text-ink"}`}
+          >
+            {formatTimeLabel(start)}
+          </button>
+        </span>
+      </div>
+      {picker === "date" ? (
+        <MonthCalendar
+          date={date}
+          today={today}
+          onDate={onDate}
+        />
+      ) : null}
+      {picker === "time" ? (
+        <div className="relative mt-3">
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-9 -translate-y-1/2 rounded-lg bg-ink/8" />
+          <div className="flex gap-2">
+          <TimeWheel
+            label="Hour"
+            options={HOURS.map((hour) => ({ value: String(hour), label: String(hour) }))}
+            value={String(clock.hour)}
+            onChange={(value) => chooseClock({ hour: Number(value) })}
+          />
+          <TimeWheel
+            label="Minute"
+            options={(minuteChoices.includes(clock.minute) ? minuteChoices : [clock.minute, ...minuteChoices].sort((a, b) => a - b)).map(
+              (minute) => ({ value: String(minute), label: String(minute).padStart(2, "0") }),
+            )}
+            value={String(clock.minute)}
+            onChange={(value) => chooseClock({ minute: Number(value) })}
+          />
+          <TimeWheel
+            label="AM or PM"
+            options={[
+              { value: "AM", label: "AM" },
+              { value: "PM", label: "PM" },
+            ]}
+            value={clock.suffix}
+            onChange={(value) => chooseClock({ suffix: value === "PM" ? "PM" : "AM" })}
+          />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MonthCalendar({ date, today, onDate }: { date: string; today: string; onDate: (date: string) => void }) {
+  const openings = useOpenDates();
+  const [month, setMonth] = useState(`${date.slice(0, 7)}-01`);
+  const cells = monthCells(month);
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-base font-semibold">{formatMonthYear(month)}</p>
+        <span className="flex gap-1">
+          <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))} className="flex size-9 items-center justify-center rounded-full bg-ink/8">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))} className="flex size-9 items-center justify-center rounded-full bg-ink/8">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-7">
+        {WEEKDAYS.map((label) => (
+          <p key={label} className="py-1 text-center text-[11px] font-semibold text-ink/40">
+            {label}
+          </p>
+        ))}
+        {cells.map((day, index) =>
+          day ? (
+            <button
+              key={day}
+              type="button"
+              onClick={() => onDate(day)}
+              aria-pressed={day === date}
+              className="flex min-h-12 flex-col items-center justify-center"
+            >
+              <span
+                className={`flex size-8 items-center justify-center rounded-full text-sm ${
+                  day === date ? "bg-ink font-semibold text-cream" : day === today ? "font-semibold text-ink ring-1 ring-mint" : "text-ink"
+                }`}
+              >
+                {Number(day.slice(8))}
+              </span>
+              {openings.has(day) ? <span className="mt-0.5 size-1.5 rounded-full bg-mint" aria-hidden="true" /> : <span className="mt-0.5 size-1.5" />}
+            </button>
+          ) : (
+            <span key={`empty-${index}`} />
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TimeWheel({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const onChangeRef = useRef(onChange);
+  const valueRef = useRef(value);
+  const optionsRef = useRef(options);
+  onChangeRef.current = onChange;
+  valueRef.current = value;
+  optionsRef.current = options;
+
+  const optionKey = options.map((option) => option.value).join(",");
+  useLayoutEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    const index = Math.max(0, options.findIndex((option) => option.value === value));
+    const top = index * WHEEL_ITEM;
+    if (Math.abs(node.scrollTop - top) > 1) node.scrollTop = top;
+  }, [optionKey, options, value]);
+
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    function commit() {
+      if (!node) return;
+      const index = Math.round(node.scrollTop / WHEEL_ITEM);
+      const next = optionsRef.current[Math.max(0, Math.min(optionsRef.current.length - 1, index))];
+      if (next && next.value !== valueRef.current) onChangeRef.current(next.value);
+    }
+    node.addEventListener("scrollend", commit);
+    return () => node.removeEventListener("scrollend", commit);
+  }, []);
+
+  return (
+    <div className="relative h-[180px] min-w-0 flex-1">
+      <div
+        ref={scroller}
+        aria-label={label}
+        className="h-full snap-y snap-mandatory overflow-y-auto [scrollbar-width:none] [mask-image:linear-gradient(transparent,black_28%,black_72%,transparent)] [&::-webkit-scrollbar]:hidden"
+      >
+        <div style={{ height: WHEEL_ITEM * 2 }} />
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-selected={option.value === value}
+            onClick={() => onChange(option.value)}
+            className={`relative z-20 flex h-9 w-full snap-center items-center justify-center text-lg ${
+              option.value === value ? "font-semibold text-ink" : "text-ink/35"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+        <div style={{ height: WHEEL_ITEM * 2 }} />
+      </div>
+    </div>
+  );
+}
+
+function useOpenDates() {
+  const hub = useHub();
+  const activeIds = hub.cleaners
+    .filter((cleaner) => cleaner.status === "ACTIVE")
+    .map((cleaner) => cleaner.cleanerId)
+    .join("\0");
+  return useMemo(() => {
+    const dates = new Set<string>();
+    for (const cleanerId of activeIds ? activeIds.split("\0") : []) {
+      const windows = hub.availability
+        .filter((window) => window.cleanerId === cleanerId)
+        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
+      const confirmed = hub.assignments.filter(
+        (assignment) => assignment.cleanerId === cleanerId && assignment.status === "CONFIRMED",
+      );
+      for (const window of subtractConfirmedBookingsFromAvailability(windows, confirmed.map(toAssignmentSchedule))) {
+        dates.add(window.date);
+      }
+    }
+    return dates;
+  }, [activeIds, hub.assignments, hub.availability]);
+}
+
+function monthCells(monthStart: string): (string | null)[] {
+  const sunday = sundayOf(monthStart);
+  const leading = sunday === monthStart ? 0 : eachDate(sunday, addDays(monthStart, -1)).length;
+  const days: string[] = [];
+  let cursor = monthStart;
+  while (cursor.slice(0, 7) === monthStart.slice(0, 7)) {
+    days.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  const cells: (string | null)[] = [...Array(leading).fill(null), ...days];
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+function shiftMonth(monthStart: string, delta: number): string {
+  const shifted = new Date(Date.UTC(Number(monthStart.slice(0, 4)), Number(monthStart.slice(5, 7)) - 1 + delta, 1, 12));
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${month}-01`;
 }

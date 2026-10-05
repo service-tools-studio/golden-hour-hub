@@ -3,9 +3,9 @@ import type { AssignmentNotice, AssignmentStatus, CleanerProfile, JobAssignment,
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import { addDays, formatHm, formatLongDate, formatShortDate, formatTimeLabel, minutesFromTime, timeFromMinutes, zonedParts } from "./domain/time";
 import { formatMoney } from "./domain/compensation";
-import { formatPhone } from "./domain/customers";
+import { formatPhone, formatPhoneInput } from "./domain/customers";
 
-export { formatLongDate, formatMoney, formatPhone, formatShortDate, formatTimeLabel };
+export { formatLongDate, formatMoney, formatPhone, formatPhoneInput, formatShortDate, formatTimeLabel };
 
 export function hourWindows(start: string, end: string): { start: string; end: string }[] {
   const first = Math.ceil(minutesFromTime(start) / 60) * 60;

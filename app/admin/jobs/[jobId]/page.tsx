@@ -1,6 +1,13 @@
 import { AdminJobDetail } from "@/components/jobs/job-detail";
 
-export default async function AdminJobPage({ params }: { params: Promise<{ jobId: string }> }) {
+export default async function AdminJobPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ jobId: string }>;
+  searchParams: Promise<{ from?: string | string[] }>;
+}) {
   const { jobId } = await params;
-  return <AdminJobDetail jobId={jobId} />;
+  const query = await searchParams;
+  return <AdminJobDetail jobId={jobId} fromSchedule={query.from === "schedule"} />;
 }

@@ -1,94 +1,104 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { sendAvailabilityReminders } from "@/app/actions/reminders";
 import { useHub } from "@/components/hub-provider";
-import { Card, Notice, PageHeader, Screen } from "@/components/ui";
-import { listSubmissionStatus } from "@/lib/domain/availability";
-import { calculateConfirmedHeadcount } from "@/lib/domain/scheduling";
-import { formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
+import { Card, PageHeader, Screen } from "@/components/ui";
+import { useNow } from "@/components/use-now";
+import {
+  calculateBlockedRange,
+  calculateConfirmedHeadcount,
+  cleaningCoverage,
+  isWithinRange,
+} from "@/lib/domain/scheduling";
+import { addDays } from "@/lib/domain/time";
+import type { Job, JobAssignment } from "@/lib/domain/types";
 import { crewLine, formatLongDate, relativeDay, serviceLabel } from "@/lib/format";
+
+const heading = "text-sm font-semibold uppercase tracking-[0.14em] text-ink/50";
+
+function jobInProgress(job: Job, assignments: JobAssignment[], now: number): boolean {
+  if (job.status !== "SCHEDULED") return false;
+  const coverage = cleaningCoverage(assignments.filter((item) => item.jobId === job.jobId));
+  if (coverage) return isWithinRange(coverage, now);
+  if (!job.arrivalWindowStart || !job.arrivalWindowEnd || job.expectedDurationMinutes === undefined) return false;
+  return isWithinRange(
+    calculateBlockedRange({
+      date: job.date,
+      arrivalWindowStart: job.arrivalWindowStart,
+      arrivalWindowEnd: job.arrivalWindowEnd,
+      expectedDurationMinutes: job.expectedDurationMinutes,
+    }),
+    now,
+  );
+}
 
 export function DashboardView() {
   const hub = useHub();
-  const week = nextAvailabilityWeek(hub.today);
-  const submissions = listSubmissionStatus(hub.cleaners, hub.submissions, week.weekStart);
-  const submittedCount = submissions.filter((item) => item.submitted).length;
-  const missing = submissions.filter((item) => !item.submitted);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const now = useNow();
 
-  const upcoming = hub.jobs
-    .filter((job) => (job.status === "SCHEDULED" || job.status === "DRAFT") && job.date >= hub.today)
+  const happening = hub.jobs
+    .filter((job) => jobInProgress(job, hub.assignments, now))
     .sort((a, b) => a.date.localeCompare(b.date));
-  const needsAttention = upcoming.filter((job) => {
+  const upcoming = hub.jobs
+    .filter(
+      (job) =>
+        (job.status === "SCHEDULED" || job.status === "DRAFT") && job.date >= hub.today && !happening.includes(job),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const horizon = addDays(hub.today, 7);
+  const unstaffed = upcoming.filter((job) => {
     if (job.status === "DRAFT" || job.headcountNeeded < 1) return true;
     const people = calculateConfirmedHeadcount(hub.assignments.filter((item) => item.jobId === job.jobId));
     return people < job.headcountNeeded;
   });
-  const staffed = upcoming.filter((job) => !needsAttention.includes(job));
-
-  async function remind(ids: string[]) {
-    setSending(true);
-    const result = await sendAvailabilityReminders(ids);
-    setNotice(result.message);
-    setSending(false);
-  }
+  const needsAttention = unstaffed.filter((job) => job.date <= horizon);
+  const missingPhone = hub.customers
+    .filter((customer) => customer.phone.replace(/\D/g, "") === "")
+    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+  const staffed = upcoming.filter((job) => !unstaffed.includes(job));
 
   return (
     <Screen>
       <PageHeader title="Dashboard" subtitle={formatLongDate(hub.today)} />
       <div className="space-y-4 px-5 pt-5">
-        {notice ? <Notice tone="ok">{notice}</Notice> : null}
-        <Card>
-          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Next week</p>
-          <h2 className="mt-1 text-2xl font-semibold">{formatWeekRange(week.weekStart, week.weekEnd)}</h2>
-          <ul className="mt-4 space-y-3">
-            {submissions.map((item) => (
-              <li key={item.cleanerId} className="flex items-center justify-between gap-3">
-                <p className="text-base">
-                  <span className={item.submitted ? "text-ink" : "text-ink"}>{item.submitted ? "✓" : "⚠"}</span>{" "}
-                  {item.firstName}
-                  <span className="text-ink/60"> — {item.submitted ? "Submitted" : "Missing"}</span>
-                </p>
-                {item.submitted ? null : (
-                  <button
-                    type="button"
-                    disabled={sending}
-                    onClick={() => remind([item.cleanerId])}
-                    className="min-h-10 shrink-0 rounded-full bg-mint px-3 text-sm font-semibold text-ink"
-                  >
-                    Send Reminder
-                  </button>
-                )}
-              </li>
+        {happening.length > 0 ? (
+          <>
+            <h2 className={heading}>Happening Now</h2>
+            {happening.map((job) => (
+              <JobStaffingCard key={job.jobId} jobId={job.jobId} />
             ))}
-          </ul>
-          <p className="mt-4 text-sm text-ink/70">
-            {submittedCount} of {submissions.length} cleaners submitted
-          </p>
-          {missing.length > 0 ? (
-            <button
-              type="button"
-              disabled={sending}
-              onClick={() => remind(missing.map((item) => item.cleanerId))}
-              className="mt-3 min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream"
-            >
-              Send All Reminders
-            </button>
-          ) : null}
-        </Card>
+          </>
+        ) : null}
 
-        <div className="flex items-end justify-between">
-          <h2 className="text-lg font-semibold">Jobs needing attention</h2>
-          <Link href="/admin/schedule" className="text-sm font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
+        {missingPhone.length > 0 ? (
+          <div role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-red-700 ring-1 ring-red-600">
+            <p className="text-base font-semibold">
+              {missingPhone.length === 1 ? "1 customer has" : `${missingPhone.length} customers have`} no phone number
+            </p>
+            <ul className="mt-1 space-y-1">
+              {missingPhone.map((customer) => (
+                <li key={customer.customerId}>
+                  <Link
+                    href={`/admin/customers/${customer.customerId}`}
+                    className="text-base underline decoration-red-600/40 decoration-2 underline-offset-4"
+                  >
+                    {customer.firstName} {customer.lastName}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="flex items-end justify-between gap-3">
+          <h2 className={heading}>Jobs needing attention</h2>
+          <Link href="/admin/schedule" className="shrink-0 whitespace-nowrap text-sm font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
             Open Schedule
           </Link>
         </div>
         {needsAttention.length === 0 ? (
           <Card>
-            <p className="text-base text-ink/70">Every upcoming cleaning is fully staffed.</p>
+            <p className="text-base text-ink/70">Nothing in the next 7 days needs attention.</p>
           </Card>
         ) : (
           needsAttention.map((job) => <JobStaffingCard key={job.jobId} jobId={job.jobId} />)
@@ -96,13 +106,12 @@ export function DashboardView() {
 
         {staffed.length > 0 ? (
           <>
-            <h2 className="text-lg font-semibold">Fully staffed</h2>
+            <h2 className={heading}>Fully staffed</h2>
             {staffed.map((job) => (
               <JobStaffingCard key={job.jobId} jobId={job.jobId} />
             ))}
           </>
         ) : null}
-        <p className="text-sm text-ink/50">{serviceLabel("RECURRING")} jobs use the same headcount rules as one-time cleanings.</p>
       </div>
     </Screen>
   );

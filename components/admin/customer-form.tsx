@@ -6,7 +6,7 @@ import { useHub } from "@/components/hub-provider";
 import { Field, fieldClass } from "@/components/ui";
 import { validateCustomerInput } from "@/lib/domain/customers";
 import type { Customer, Property } from "@/lib/domain/types";
-import { formatPhone } from "@/lib/format";
+import { formatPhoneInput } from "@/lib/format";
 
 function inputClass(invalid: boolean) {
   return invalid
@@ -41,12 +41,34 @@ function NumberStepper({
   error?: string;
   id?: string;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
   const atMin = value <= min;
   const atMax = max !== undefined && value >= max;
+  const decimal = !Number.isInteger(step);
   function change(direction: -1 | 1) {
     const next = Math.round((value + direction * step) * 10) / 10;
     if (next < min || (max !== undefined && next > max)) return;
     onChange(next);
+  }
+  function parse(text: string): number | null {
+    if (text.trim() === "") return null;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  function type(text: string) {
+    const cleaned = text.replace(decimal ? /[^\d.]/g : /\D/g, "");
+    setDraft(cleaned);
+    const parsed = parse(cleaned);
+    if (parsed !== null && parsed >= min && (max === undefined || parsed <= max)) onChange(parsed);
+  }
+  function commit() {
+    const parsed = draft === null ? null : parse(draft);
+    if (parsed !== null) {
+      const rounded = decimal ? Math.round(Math.round(parsed / step) * step * 10) / 10 : Math.round(parsed);
+      const bounded = Math.min(max ?? Infinity, Math.max(min, rounded));
+      onChange(bounded);
+    }
+    setDraft(null);
   }
   const stepButton =
     "flex size-11 items-center justify-center rounded-full bg-mint text-ink shadow-[0_4px_12px_rgba(51,51,51,0.08)] transition active:scale-95 disabled:bg-ink/8 disabled:text-ink/25 disabled:shadow-none";
@@ -57,7 +79,25 @@ function NumberStepper({
         <button type="button" aria-label={`Increase ${label}`} disabled={atMax} onClick={() => change(1)} className={stepButton}>
           <StepGlyph direction="up" />
         </button>
-        <p className="min-h-8 text-center text-base font-semibold tabular-nums leading-8">{value}</p>
+        <input
+          type="text"
+          inputMode={decimal ? "decimal" : "numeric"}
+          aria-label={label}
+          value={draft ?? String(value)}
+          onFocus={(event) => {
+            setDraft(String(value));
+            event.currentTarget.select();
+          }}
+          onChange={(event) => type(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+          className="min-h-8 w-full min-w-0 rounded-xl bg-transparent text-center text-base font-semibold tabular-nums leading-8 outline-none focus:bg-cream focus:ring-2 focus:ring-gold"
+        />
         <button type="button" aria-label={`Decrease ${label}`} disabled={atMin} onClick={() => change(-1)} className={stepButton}>
           <StepGlyph direction="down" />
         </button>
@@ -143,7 +183,7 @@ export function CustomerForm({
   const [form, setForm] = useState({
     firstName: customer?.firstName ?? "",
     lastName: customer?.lastName ?? "",
-    phone: customer ? formatPhone(customer.phone) : "",
+    phone: customer ? formatPhoneInput(customer.phone) : "",
     email: customer?.email ?? "",
     notes: customer?.notes ?? "",
   });
@@ -269,7 +309,7 @@ export function CustomerForm({
         </Field>
       </div>
       <Field id="customer-phone" label="Phone" error={fieldMessage("phone")}>
-        <input className={inputClass(Boolean(fieldMessage("phone")))} type="tel" inputMode="tel" value={form.phone} onChange={(event) => set("phone", event.target.value)} aria-invalid={Boolean(fieldMessage("phone"))} />
+        <input className={inputClass(Boolean(fieldMessage("phone")))} type="tel" inputMode="tel" value={form.phone} onChange={(event) => set("phone", formatPhoneInput(event.target.value, form.phone))} aria-invalid={Boolean(fieldMessage("phone"))} />
       </Field>
       <Field id="customer-email" label="Email" error={fieldMessage("email")}>
         <input className={inputClass(Boolean(fieldMessage("email")))} type="email" value={form.email} onChange={(event) => set("email", event.target.value)} aria-invalid={Boolean(fieldMessage("email"))} />
@@ -308,14 +348,6 @@ export function CustomerForm({
                 ) : null}
               </div>
               {locked ? <p className="text-sm text-ink/60">Scheduled cleanings use this property.</p> : null}
-              <Field label="Property nickname (optional)">
-                <input
-                  className={fieldClass}
-                  placeholder="Optional, like Main house"
-                  value={property.label}
-                  onChange={(event) => updateProperty(property.key, { label: event.target.value })}
-                />
-              </Field>
               <Field id={`property-${property.key}-streetAddress`} label="Street" error={streetError}>
                 <input
                   className={inputClass(Boolean(streetError))}
@@ -388,6 +420,14 @@ export function CustomerForm({
                   className={`${fieldClass} min-h-24 py-3`}
                   value={property.preferences}
                   onChange={(event) => updateProperty(property.key, { preferences: event.target.value })}
+                />
+              </Field>
+              <Field label="Property nickname">
+                <input
+                  className={fieldClass}
+                  placeholder="Optional, like Main house"
+                  value={property.label}
+                  onChange={(event) => updateProperty(property.key, { label: event.target.value })}
                 />
               </Field>
             </div>

@@ -7,7 +7,7 @@ import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availabi
 import { personName } from "@/lib/domain/cleaners";
 import { hourWindowLabel } from "@/lib/format";
 
-export function AddCleanerView({ jobId }: { jobId: string }) {
+export function AddCleanerView({ jobId, fromSchedule = false }: { jobId: string; fromSchedule?: boolean }) {
   const hub = useHub();
   const router = useRouter();
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
@@ -44,7 +44,7 @@ export function AddCleanerView({ jobId }: { jobId: string }) {
     const result = hub.addJobCleaner(jobId, cleanerId);
     if (!result.ok) return;
     if (result.message) hub.flash(result.message);
-    router.push(`/admin/jobs/${jobId}`);
+    router.push(fromSchedule ? `/admin/jobs/${jobId}?from=schedule` : `/admin/jobs/${jobId}`);
   }
 
   return (
@@ -52,7 +52,7 @@ export function AddCleanerView({ jobId }: { jobId: string }) {
       <PageHeader
         title="Add cleaner"
         subtitle={job.snapshot.customerDisplayName}
-        crumb={{ href: `/admin/jobs/${job.jobId}`, label: "Cleaning" }}
+        crumb={{ href: fromSchedule ? `/admin/jobs/${job.jobId}?from=schedule` : `/admin/jobs/${job.jobId}`, label: "Cleaning" }}
       />
       <div className="space-y-2 px-5 pt-4">
         {choices.length === 0 ? <p className="text-sm text-ink/70">Every active cleaner is already on this cleaning.</p> : null}

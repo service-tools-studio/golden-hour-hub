@@ -9,6 +9,7 @@ import {
 import { deriveCrewSettings, helpersApproved, maxCrewSize, typicalCrewSize, validateProposedCrewSize } from "./cleaners.ts";
 import {
   buildCustomerSearchKeys,
+  formatPhoneInput,
   searchCustomers,
   snapshotVisit,
   validateCustomerInput,
@@ -417,6 +418,52 @@ describe("customers", () => {
     assert.equal(snapshot.propertyId, "prop-main");
     assert.equal(snapshot.streetAddress, "123 Main St");
     assert.equal(snapshot.preferences, "Please use the side entrance.");
+  });
+
+  it("formats a phone number as it is typed", () => {
+    assert.equal(formatPhoneInput("4"), "(4");
+    assert.equal(formatPhoneInput("4444444444"), "(444) 444-4444");
+    assert.equal(formatPhoneInput("14444444444"), "(444) 444-4444");
+    assert.equal(formatPhoneInput("(444) 444-444", "(444) 444-4444"), "(444) 444-444");
+  });
+
+  it("accepts a blank ZIP and rejects a partial one", () => {
+    const home = {
+      streetAddress: "9 Elm St",
+      city: "Portland",
+      state: "OR",
+      zip: "",
+      bedrooms: 2,
+      bathrooms: 1,
+      squareFeet: 900,
+      preferences: "",
+    };
+    const customer = { firstName: "Amy", lastName: "Johnson", phone: "(503) 555-0199" };
+    assert.equal(validateCustomerInput({ ...customer, properties: [home] }).ok, true);
+    const partial = validateCustomerInput({ ...customer, properties: [{ ...home, zip: "972" }] });
+    assert.equal(partial.ok, false);
+  });
+
+  it("accepts a blank phone", () => {
+    const result = validateCustomerInput({
+      firstName: "Amy",
+      lastName: "Johnson",
+      phone: "",
+      properties: [
+        {
+          streetAddress: "9 Elm St",
+          city: "Portland",
+          state: "OR",
+          zip: "97202",
+          bedrooms: 2,
+          bathrooms: 1,
+          squareFeet: 900,
+          preferences: "",
+        },
+      ],
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.value.phone, "");
   });
 
   it("normalizes a valid customer and rejects a bad phone", () => {

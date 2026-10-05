@@ -58,6 +58,10 @@ export function calculateBlockedRange(input: {
   };
 }
 
+export function isWithinRange(range: { startUtc: Date; endUtc: Date }, nowMs: number): boolean {
+  return range.startUtc.getTime() <= nowMs && nowMs < range.endUtc.getTime();
+}
+
 const COUNTS_TOWARD_JOB_TIME = new Set<AssignmentStatus>(["INVITED", "CONFIRMED"]);
 
 /** Earliest arrival-window start through the latest expected end, across cleaners still on the job. */

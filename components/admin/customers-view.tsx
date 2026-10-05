@@ -30,6 +30,16 @@ function Pencil() {
   );
 }
 
+function AlertIcon({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`shrink-0 ${className}`} role="img" aria-label="Missing">
+      <circle cx="12" cy="12" r="11" className="fill-red-600" />
+      <path d="M12 6.5v7" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="12" cy="17.25" r="1.5" fill="white" />
+    </svg>
+  );
+}
+
 export function CustomersView() {
   const hub = useHub();
   const [query, setQuery] = useState("");
@@ -65,7 +75,14 @@ export function CustomersView() {
                     {home.streetAddress}, {home.city}
                   </p>
                 ))}
-                <p className="text-sm text-ink/70">{formatPhone(customer.phone)}</p>
+                {customer.phone ? (
+                  <p className="text-sm text-ink/70">{formatPhone(customer.phone)}</p>
+                ) : (
+                  <p className="flex items-center gap-1.5 text-sm text-ink/70">
+                    <AlertIcon className="size-4" />
+                    No phone number
+                  </p>
+                )}
               </Card>
             </Link>
           );
@@ -263,7 +280,14 @@ export function CustomerDetail({
             }}
           >
             <Pencil />
-            <p className="pr-6">{formatPhone(customer.phone)}</p>
+            {customer.phone ? (
+              <p className="pr-6">{formatPhone(customer.phone)}</p>
+            ) : (
+              <p className="flex items-center gap-2 pr-6 text-ink/60">
+                <AlertIcon className="size-5" />
+                No phone number
+              </p>
+            )}
             {customer.email ? <p className="pr-6 text-sm text-ink/70">{customer.email}</p> : null}
             {customer.notes ? <p className="mt-3 text-sm">Notes: {customer.notes}</p> : null}
           </Card>

@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, Screen } from "@/components/ui";
+import { snapshotVisit } from "@/lib/domain/customers";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
 import type { JobAssignment } from "@/lib/domain/types";
-import { calculateConfirmedHeadcount, calculateInvitedHeadcount } from "@/lib/domain/scheduling";
+import { calculateConfirmedHeadcount } from "@/lib/domain/scheduling";
 import { seriesSummary } from "@/lib/mock/seed";
 import {
   arrivalMismatchText,
@@ -27,7 +28,7 @@ import {
   serviceLabel,
 } from "@/lib/format";
 
-export function AdminJobDetail({ jobId }: { jobId: string }) {
+export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string; fromSchedule?: boolean }) {
   const hub = useHub();
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -39,7 +40,6 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
   );
   const assignedIds = new Set(assignments.map((item) => item.cleanerId));
   const pendingCleanerIds = (job.draftCleanerIds ?? []).filter((id) => !assignedIds.has(id));
-  const invited = calculateInvitedHeadcount(assignments);
   const confirmed = calculateConfirmedHeadcount(assignments);
   const needed = job.headcountNeeded > 0 ? String(job.headcountNeeded) : "not set";
   const draft = job.status === "DRAFT";
@@ -52,6 +52,9 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
     (job.arrivalWindowStart !== earliest.start || job.arrivalWindowEnd !== earliest.end)
       ? arrivalMismatchText(earliest.firstName, hourWindowLabel(earliest.start, earliest.end))
       : null;
+  const customer = hub.customers.find((item) => item.customerId === job.customerId);
+  const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
+  const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;
   const reinviteFlag = reinviteFlagText(
     assignments
       .filter((assignment) => dateReinviteNeeded(assignment, job.date))
@@ -62,26 +65,37 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
     <Screen>
       <PageHeader
         title={formatLongDate(job.date)}
-        crumbs={[
-          { href: "/admin/customers", label: "Customers" },
-          { href: `/admin/customers/${job.customerId}`, label: job.snapshot.customerDisplayName },
-        ]}
+        titleHref={fromSchedule ? `/admin/schedule?date=${job.date}&view=day` : undefined}
+        crumbs={
+          fromSchedule
+            ? [{ href: `/admin/schedule?date=${job.date}`, label: "Schedule" }]
+            : [
+                { href: "/admin/customers", label: "Customers" },
+                { href: `/admin/customers/${job.customerId}`, label: visit.customerDisplayName },
+              ]
+        }
       />
       <div className="space-y-3 px-5 pt-4">
         <Card>
-          <Link href={`/admin/jobs/${job.jobId}/edit`} className="block">
+          <Link href={editPath(job.jobId, fromSchedule)} className="block">
             <ServiceLine serviceType={job.serviceType} prominent />
             <div className="mt-3">
-              {job.snapshot.propertyLabel ? <p className="font-semibold">{job.snapshot.propertyLabel}</p> : null}
-              <p className={job.snapshot.propertyLabel ? "text-sm" : "font-semibold"}>{job.snapshot.streetAddress}</p>
-              <p className="text-sm text-ink/70">
-                {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
-              </p>
+              <p className="font-semibold">{visit.customerDisplayName}</p>
+              {visit.propertyLabel ? <p className="font-semibold">{visit.propertyLabel}</p> : null}
+              <div className="flex items-start gap-2">
+                <span aria-hidden="true">📍</span>
+                <div>
+                  <p className={visit.propertyLabel ? "text-sm" : "font-semibold"}>{visit.streetAddress}</p>
+                  <p className="text-sm text-ink/70">
+                    {visit.city}, {visit.state} {visit.zip}
+                  </p>
+                </div>
+              </div>
               <p className="mt-1 text-sm text-ink/60">
-                {job.snapshot.bedrooms} bed · {job.snapshot.bathrooms} bath · {job.snapshot.squareFeet.toLocaleString()} sq ft
+                {visit.bedrooms} bed · {visit.bathrooms} bath · {visit.squareFeet.toLocaleString()} sq ft
               </p>
             </div>
-            {job.snapshot.preferences ? <p className="mt-3 text-sm">Preferences: {job.snapshot.preferences}</p> : null}
+            {visit.preferences ? <p className="mt-3 text-sm">Preferences: {visit.preferences}</p> : null}
             {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
             {job.arrivalWindowStart && job.arrivalWindowEnd ? (
               <p className="mt-3 text-sm">Earliest arrival {formatArrival(job.arrivalWindowStart, job.arrivalWindowEnd)}</p>
@@ -90,7 +104,6 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
             {reinviteFlag ? <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlag}</p> : null}
             <div className="mt-3 flex items-start justify-between gap-3">
               <div className="text-sm font-semibold">
-                <p>Invited headcount: {invited} / {needed}</p>
                 <p>Confirmed headcount: {confirmed} / {needed}</p>
               </div>
               {full ? <span className="rounded-full bg-mint px-3 py-1 text-sm font-semibold">Fully Staffed</span> : null}
@@ -108,7 +121,7 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
               const gap = detail ? noticeGap(true, detail) : null;
               return (
                 <div key={cleanerId} className="flex items-start justify-between gap-3">
-                  <Link href={`/admin/jobs/${job.jobId}/edit?cleaner=${cleanerId}`} className="block min-w-0 flex-1">
+                  <Link href={editPath(job.jobId, fromSchedule, { cleaner: cleanerId })} className="block min-w-0 flex-1">
                     {detail ? (
                       <>
                         <p className="text-base font-semibold">
@@ -145,7 +158,7 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
               const gap = noticeGap(false, assignment, assignment.lastNotified);
               return (
                 <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
-                  <Link href={`/admin/jobs/${job.jobId}/edit?assignment=${assignment.assignmentId}`} className="block min-w-0 flex-1">
+                  <Link href={editPath(job.jobId, fromSchedule, { assignment: assignment.assignmentId })} className="block min-w-0 flex-1">
                     <p className="text-base font-semibold">
                       {cleaner.firstName} {cleaner.lastName}
                     </p>
@@ -168,7 +181,7 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
               );
             })}
             <Link
-              href={`/admin/jobs/${job.jobId}/cleaners`}
+              href={fromSchedule ? `/admin/jobs/${job.jobId}/cleaners?from=schedule` : `/admin/jobs/${job.jobId}/cleaners`}
               className="flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
             >
               Add cleaner
@@ -178,6 +191,7 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
         {series ? (
           <RecurringCard
             jobId={job.jobId}
+            fromSchedule={fromSchedule}
             customerId={job.customerId}
             dateLabel={formatLongDate(job.date)}
             seriesId={series.seriesId}
@@ -202,6 +216,13 @@ export function AdminJobDetail({ jobId }: { jobId: string }) {
       </div>
     </Screen>
   );
+}
+
+function editPath(jobId: string, fromSchedule: boolean, params: Record<string, string> = {}) {
+  const search = new URLSearchParams(params);
+  if (fromSchedule) search.set("from", "schedule");
+  const query = search.toString();
+  return `/admin/jobs/${jobId}/edit${query ? `?${query}` : ""}`;
 }
 
 function cleanerArrivals(
@@ -241,6 +262,7 @@ function seriesPlace(
 function RecurringCard({
   jobId,
   customerId,
+  fromSchedule = false,
   dateLabel,
   seriesId,
   summary,
@@ -254,6 +276,7 @@ function RecurringCard({
 }: {
   jobId: string;
   customerId: string;
+  fromSchedule?: boolean;
   dateLabel: string;
   seriesId: string;
   summary: string;
@@ -265,7 +288,8 @@ function RecurringCard({
   onDeleteCleaning: () => void;
   onDeleteSchedule: () => void;
 }) {
-  const editHref = `/admin/customers/${customerId}?series=${encodeURIComponent(seriesId)}&returnTo=${encodeURIComponent(`/admin/jobs/${jobId}`)}`;
+  const back = fromSchedule ? `/admin/jobs/${jobId}?from=schedule` : `/admin/jobs/${jobId}`;
+  const editHref = `/admin/customers/${customerId}?series=${encodeURIComponent(seriesId)}&returnTo=${encodeURIComponent(back)}`;
   return (
     <>
       <Card>

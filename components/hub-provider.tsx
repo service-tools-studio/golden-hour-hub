@@ -99,6 +99,7 @@ export type UpdateVisitInput = {
   headcountNeeded: number;
   specialInstructions: string;
   cleanerIds: string[];
+  cleanerArrivals?: { cleanerId: string; arrivalWindowStart: string; arrivalWindowEnd: string }[];
 };
 
 export type UpdateJobInput = {
@@ -146,6 +147,7 @@ type HubContextValue = HubState & {
   removeJobCleaner: (jobId: string, cleanerId: string) => ActionResult;
   updateVisit: (input: UpdateVisitInput) => ActionResult;
   updateJob: (input: UpdateJobInput) => ActionResult;
+  moveAssignmentTime: (assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string) => ActionResult;
   deleteJob: (jobId: string) => ActionResult;
   deleteSeries: (seriesId: string) => ActionResult;
 };
@@ -461,6 +463,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         ? data.customers.map((item) => (item.customerId === id ? saved : item))
         : [saved, ...data.customers],
       properties: [...data.properties.filter((item) => item.customerId !== id), ...nextProperties],
+      jobs: data.jobs.map((job) => {
+        if (job.customerId !== id) return job;
+        const home = nextProperties.find((property) => property.propertyId === job.propertyId);
+        if (!home) return job;
+        return { ...job, snapshot: snapshotVisit(saved, home), updatedAt: now, updatedBy: "kelsey" };
+      }),
     });
     return { ok: true, customerId: id };
   }
@@ -542,8 +550,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   function createJob(input: CreateJobInput): ActionResult {
     const cleanerIds = [...new Set(input.cleanerIds)];
     const cleaners = cleanerIds.map((cleanerId) => data.cleaners.find((item) => item.cleanerId === cleanerId));
-    if (cleanerIds.length === 0 || cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
-      return { ok: false, message: "Choose at least one active cleaner." };
+    if (cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
+      return { ok: false, message: "Choose an active cleaner." };
     }
     if (!isValidDate(input.date)) return { ok: false, message: "Choose a valid date." };
     const customer = data.customers.find((item) => item.customerId === input.customerId && item.status === "ACTIVE");
@@ -965,8 +973,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     if (!customer) return { ok: false, message: "Choose a customer." };
     const cleanerIds = [...new Set(input.cleanerIds)];
     const cleaners = cleanerIds.map((cleanerId) => data.cleaners.find((item) => item.cleanerId === cleanerId));
-    if (cleanerIds.length === 0 || cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
-      return { ok: false, message: "Choose at least one active cleaner." };
+    if (cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
+      return { ok: false, message: "Choose an active cleaner." };
     }
     const property = data.properties.find(
       (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
@@ -1020,6 +1028,56 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     ) {
       return { ok: false, message: "This schedule already has a cleaning on that date." };
     }
+    const requestedArrivals = new Map((input.cleanerArrivals ?? []).map((arrival) => [arrival.cleanerId, arrival]));
+    for (const arrival of requestedArrivals.values()) {
+      if (!isValidLocalTime(arrival.arrivalWindowStart) || !isValidLocalTime(arrival.arrivalWindowEnd)) {
+        return { ok: false, message: "Enter a valid arrival window." };
+      }
+      if (minutesFromTime(arrival.arrivalWindowEnd) <= minutesFromTime(arrival.arrivalWindowStart)) {
+        return { ok: false, message: "The arrival window must end after it starts." };
+      }
+      const assignment = data.assignments.find(
+        (item) =>
+          item.jobId === job.jobId &&
+          item.cleanerId === arrival.cleanerId &&
+          item.status !== "CANCELED" &&
+          item.status !== "EXPIRED_JOB_FILLED" &&
+          item.status !== "DECLINED",
+      );
+      if (!assignment || assignment.status !== "CONFIRMED") continue;
+      if (
+        assignment.arrivalWindowStart === arrival.arrivalWindowStart &&
+        assignment.arrivalWindowEnd === arrival.arrivalWindowEnd
+      ) {
+        continue;
+      }
+      const cleaner = data.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
+      if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
+      const weekStart = mondayOf(input.date);
+      const submitted = data.submissions.some(
+        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
+      );
+      if (!submitted) return { ok: false, message: `${cleaner.firstName} has not submitted this week.` };
+      const blocked = calculateBlockedRange({
+        date: input.date,
+        arrivalWindowStart: arrival.arrivalWindowStart,
+        arrivalWindowEnd: arrival.arrivalWindowEnd,
+        expectedDurationMinutes: assignment.expectedDurationMinutes,
+      });
+      const windows = data.availability
+        .filter((window) => window.cleanerId === cleaner.cleanerId)
+        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
+      if (!availabilityCoversBlockedRange(windows, blocked)) {
+        return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
+      }
+      const conflict = detectConfirmedAssignmentConflict({
+        cleanerId: cleaner.cleanerId,
+        blocked,
+        confirmedAssignments: data.assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
+        ignoreAssignmentId: assignment.assignmentId,
+      });
+      if (conflict) return { ok: false, message: `This conflicts with another confirmed job for ${cleaner.firstName}.` };
+    }
     const now = new Date().toISOString();
     const arrival = { start: input.arrivalWindowStart, end: input.arrivalWindowEnd };
     const selected = new Set(cleanerIds);
@@ -1032,18 +1090,23 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       const baseline = item.notifiedServiceDate ?? item.serviceDate;
       const needsReinvite = tracksDate && input.date !== baseline;
       const notifiedServiceDate = tracksDate ? baseline : item.notifiedServiceDate;
-      if (
-        item.serviceDate === input.date &&
-        Boolean(item.needsDateReinvite) === needsReinvite &&
-        item.notifiedServiceDate === notifiedServiceDate
-      ) {
-        return item;
-      }
+      const requested = requestedArrivals.get(item.cleanerId);
+      const arrivalChanged = Boolean(
+        requested &&
+          (requested.arrivalWindowStart !== item.arrivalWindowStart || requested.arrivalWindowEnd !== item.arrivalWindowEnd),
+      );
+      const dateChangedForCleaner =
+        item.serviceDate !== input.date ||
+        Boolean(item.needsDateReinvite) !== needsReinvite ||
+        item.notifiedServiceDate !== notifiedServiceDate;
+      if (!dateChangedForCleaner && !arrivalChanged) return item;
       return {
         ...item,
         serviceDate: input.date,
         notifiedServiceDate,
         needsDateReinvite: needsReinvite ? true : undefined,
+        arrivalWindowStart: requested?.arrivalWindowStart ?? item.arrivalWindowStart,
+        arrivalWindowEnd: requested?.arrivalWindowEnd ?? item.arrivalWindowEnd,
         updatedAt: now,
       };
     });
@@ -1080,7 +1143,17 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
               expectedDurationMinutes: input.expectedDurationMinutes,
               headcountNeeded: input.headcountNeeded,
               draftCleanerIds,
-              draftCleanerDetails: (item.draftCleanerDetails ?? []).filter((detail) => draftCleanerIds.includes(detail.cleanerId)),
+              draftCleanerDetails: (item.draftCleanerDetails ?? [])
+                .filter((detail) => draftCleanerIds.includes(detail.cleanerId))
+                .map((detail) => {
+                  const requested = requestedArrivals.get(detail.cleanerId);
+                  if (!requested) return detail;
+                  return {
+                    ...detail,
+                    arrivalWindowStart: requested.arrivalWindowStart,
+                    arrivalWindowEnd: requested.arrivalWindowEnd,
+                  };
+                }),
               snapshot: snapshotVisit(customer, property),
               specialInstructions: input.specialInstructions.trim(),
               updatedAt: now,
@@ -1210,6 +1283,64 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     return { ok: true, message: "Assignment saved." };
   }
 
+  function moveAssignmentTime(assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string): ActionResult {
+    const assignment = data.assignments.find((item) => item.assignmentId === assignmentId);
+    if (
+      !assignment ||
+      assignment.status === "CANCELED" ||
+      assignment.status === "DECLINED" ||
+      assignment.status === "EXPIRED_JOB_FILLED"
+    ) {
+      return { ok: false, message: "That cleaning could not be moved." };
+    }
+    if (!isValidLocalTime(arrivalWindowStart) || !isValidLocalTime(arrivalWindowEnd)) {
+      return { ok: false, message: "Enter a valid arrival window." };
+    }
+    if (minutesFromTime(arrivalWindowEnd) <= minutesFromTime(arrivalWindowStart)) {
+      return { ok: false, message: "The arrival window must end after it starts." };
+    }
+    const job = data.jobs.find((item) => item.jobId === assignment.jobId);
+    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be moved." };
+    const cleaner = data.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
+    if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
+    if (assignment.status === "CONFIRMED") {
+      const weekStart = mondayOf(assignment.serviceDate);
+      const submitted = data.submissions.some(
+        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
+      );
+      if (!submitted) return { ok: false, message: `${cleaner.firstName} has not submitted this week.` };
+      const blocked = calculateBlockedRange({
+        date: assignment.serviceDate,
+        arrivalWindowStart,
+        arrivalWindowEnd,
+        expectedDurationMinutes: assignment.expectedDurationMinutes,
+      });
+      const windows = data.availability
+        .filter((window) => window.cleanerId === cleaner.cleanerId)
+        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
+      if (!availabilityCoversBlockedRange(windows, blocked)) {
+        return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
+      }
+      const conflict = detectConfirmedAssignmentConflict({
+        cleanerId: cleaner.cleanerId,
+        blocked,
+        confirmedAssignments: data.assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
+        ignoreAssignmentId: assignment.assignmentId,
+      });
+      if (conflict) return { ok: false, message: `This conflicts with another confirmed job for ${cleaner.firstName}.` };
+    }
+    const now = new Date().toISOString();
+    setState({
+      ...data,
+      assignments: data.assignments.map((item) =>
+        item.assignmentId === assignment.assignmentId
+          ? { ...item, arrivalWindowStart, arrivalWindowEnd, updatedAt: now }
+          : item,
+      ),
+    });
+    return { ok: true };
+  }
+
   function deleteJob(jobId: string): ActionResult {
     const job = data.jobs.find((item) => item.jobId === jobId);
     if (!job) return { ok: false, message: "That cleaning could not be deleted." };
@@ -1270,6 +1401,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     removeJobCleaner,
     updateVisit,
     updateJob,
+    moveAssignmentTime,
     deleteJob,
     deleteSeries,
   };

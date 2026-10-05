@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { sendAvailabilityReminders } from "@/app/actions/reminders";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Card, Notice, PageHeader, Screen } from "@/components/ui";
+import { listSubmissionStatus } from "@/lib/domain/availability";
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
+import { formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
 import { cleanerCrewSummary, formatPhone } from "@/lib/format";
 import type { CleanerStatus } from "@/lib/domain/types";
 
@@ -16,6 +19,7 @@ export function TeamView() {
     <Screen>
       <PageHeader title="Team" subtitle="Helper approval is set by admins" />
       <div className="space-y-3 px-5 pt-4">
+        <WeekSubmissions />
         {hub.cleaners.map((cleaner) => (
           <Link key={cleaner.cleanerId} href={`/admin/team/${cleaner.cleanerId}`} className="block">
             <Card>
@@ -36,6 +40,66 @@ export function TeamView() {
         ))}
       </div>
     </Screen>
+  );
+}
+
+function WeekSubmissions() {
+  const hub = useHub();
+  const week = nextAvailabilityWeek(hub.today);
+  const submissions = listSubmissionStatus(hub.cleaners, hub.submissions, week.weekStart);
+  const submittedCount = submissions.filter((item) => item.submitted).length;
+  const missing = submissions.filter((item) => !item.submitted);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+
+  async function remind(ids: string[]) {
+    setSending(true);
+    const result = await sendAvailabilityReminders(ids);
+    setNotice(result.message);
+    setSending(false);
+  }
+
+  return (
+    <>
+      {notice ? <Notice tone="ok">{notice}</Notice> : null}
+      <Card>
+        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Next week</p>
+        <h2 className="mt-1 text-2xl font-semibold">{formatWeekRange(week.weekStart, week.weekEnd)}</h2>
+        <ul className="mt-4 space-y-3">
+          {submissions.map((item) => (
+            <li key={item.cleanerId} className="flex items-center justify-between gap-3">
+              <p className="text-base">
+                <span>{item.submitted ? "✓" : "⚠"}</span> {item.firstName}
+                <span className="text-ink/60"> — {item.submitted ? "Submitted" : "Missing"}</span>
+              </p>
+              {item.submitted ? null : (
+                <button
+                  type="button"
+                  disabled={sending}
+                  onClick={() => remind([item.cleanerId])}
+                  className="min-h-10 shrink-0 rounded-full bg-mint px-3 text-sm font-semibold text-ink"
+                >
+                  Send Reminder
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 text-sm text-ink/70">
+          {submittedCount} of {submissions.length} cleaners submitted
+        </p>
+        {missing.length > 0 ? (
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => remind(missing.map((item) => item.cleanerId))}
+            className="mt-3 min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream"
+          >
+            Send All Reminders
+          </button>
+        ) : null}
+      </Card>
+    </>
   );
 }
 

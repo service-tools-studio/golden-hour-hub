@@ -43,8 +43,12 @@ export function CleanerSchedule() {
                   return (
                     <Link key={assignment.assignmentId} href={`/cleaner/jobs/${job.jobId}`} className="block rounded-2xl bg-ink px-3 py-3 text-cream">
                       <p className="font-semibold">{job.snapshot.customerDisplayName}</p>
+                      <p className="text-sm text-cream/80">{serviceLabel(job.serviceType)}</p>
                       <p className="text-sm text-cream/80">
-                        {serviceLabel(job.serviceType)} · {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
+                        Arrival window:{" "}
+                        <span className="whitespace-nowrap">
+                          {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
+                        </span>
                       </p>
                     </Link>
                   );

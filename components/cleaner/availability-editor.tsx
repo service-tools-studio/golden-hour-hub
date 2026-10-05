@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { Card, Notice, PageHeader, Screen } from "@/components/ui";
@@ -39,105 +38,186 @@ function minuteChoices(minute: number): number[] {
   return [...choices].sort((left, right) => left - right);
 }
 
-function ClockField({
+const WHEEL_ITEM = 36;
+const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
+
+function TimeButton({
   label,
+  value,
+  open,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  open: boolean;
+  onClick: () => void;
+}) {
+  const short = label.startsWith("End") ? "End" : "Start";
+  return (
+    <button
+      type="button"
+      aria-label={value ? `${label} ${formatTimeLabel(value)}` : `Choose ${label}`}
+      aria-expanded={open}
+      onClick={onClick}
+      className={`flex min-h-14 w-full items-center justify-center whitespace-nowrap rounded-2xl px-2 text-base font-semibold ${
+        open ? "bg-gold text-ink" : `border border-ink/15 bg-cream ${value ? "text-ink" : "text-ink/40"}`
+      }`}
+    >
+      {value ? formatTimeLabel(value) : short}
+    </button>
+  );
+}
+
+function WindowTimes({
+  start,
+  end,
+  onStart,
+  onEnd,
+  onRemove,
+}: {
+  start: string;
+  end: string;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState<"start" | "end" | null>(null);
+
+  function toggle(field: "start" | "end") {
+    if (open === field) {
+      setOpen(null);
+      return;
+    }
+    if (field === "start" && !start) onStart("08:00");
+    if (field === "end" && !end) onEnd("17:00");
+    setOpen(field);
+  }
+
+  const value = open === "end" ? end || "17:00" : start || "08:00";
+
+  return (
+    <div className="mt-3">
+      <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+        <TimeButton label="Start time" value={start} open={open === "start"} onClick={() => toggle("start")} />
+        <TimeButton label="End time" value={end} open={open === "end"} onClick={() => toggle("end")} />
+        <button type="button" className="min-h-12 px-2 text-sm font-semibold text-ink/60" onClick={onRemove}>
+          Remove
+        </button>
+      </div>
+      {open ? (
+        <ClockWheel
+          value={value}
+          onChange={(next) => (open === "start" ? onStart(next) : onEnd(next))}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ClockWheel({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const clock = clockParts(value);
+  const minutes = minuteChoices(clock.minute);
+
+  function choose(patch: Partial<{ hour: number; minute: number; suffix: "AM" | "PM" }>) {
+    const next = { ...clock, ...patch };
+    onChange(clockValue(next.hour, next.minute, next.suffix));
+  }
+
+  return (
+    <div className="relative mt-3">
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-9 -translate-y-1/2 rounded-lg bg-ink/8" />
+      <div className="flex gap-2">
+        <TimeWheel
+          label="Hour"
+          options={HOURS.map((hour) => ({ value: String(hour), label: String(hour) }))}
+          value={String(clock.hour)}
+          onChange={(next) => choose({ hour: Number(next) })}
+        />
+        <TimeWheel
+          label="Minute"
+          options={minutes.map((minute) => ({ value: String(minute), label: String(minute).padStart(2, "0") }))}
+          value={String(clock.minute)}
+          onChange={(next) => choose({ minute: Number(next) })}
+        />
+        <TimeWheel
+          label="AM or PM"
+          options={[
+            { value: "AM", label: "AM" },
+            { value: "PM", label: "PM" },
+          ]}
+          value={clock.suffix}
+          onChange={(next) => choose({ suffix: next === "PM" ? "PM" : "AM" })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TimeWheel({
+  label,
+  options,
   value,
   onChange,
 }: {
   label: string;
+  options: { value: string; label: string }[];
   value: string;
   onChange: (value: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState<{ hour?: number; minute?: number; suffix?: "AM" | "PM" }>({});
-  const pendingRef = useRef(pending);
-  pendingRef.current = pending;
-  const clock = value ? clockParts(value) : null;
-  const hour = clock?.hour ?? pending.hour;
-  const minute = clock?.minute ?? pending.minute;
-  const suffix = clock?.suffix ?? pending.suffix;
-  const short = label.startsWith("End") ? "End" : "Start";
-  function update(patch: { hour?: number; minute?: number; suffix?: "AM" | "PM" }) {
-    if (clock) {
-      const next = { ...clock, ...patch };
-      onChange(clockValue(next.hour, next.minute, next.suffix));
-      return;
+  const scroller = useRef<HTMLDivElement>(null);
+  const onChangeRef = useRef(onChange);
+  const valueRef = useRef(value);
+  const optionsRef = useRef(options);
+  onChangeRef.current = onChange;
+  valueRef.current = value;
+  optionsRef.current = options;
+
+  const optionKey = options.map((option) => option.value).join(",");
+  useLayoutEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    const index = Math.max(0, options.findIndex((option) => option.value === value));
+    const top = index * WHEEL_ITEM;
+    if (Math.abs(node.scrollTop - top) > 1) node.scrollTop = top;
+  }, [optionKey, options, value]);
+
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    function commit() {
+      if (!node) return;
+      const index = Math.round(node.scrollTop / WHEEL_ITEM);
+      const next = optionsRef.current[Math.max(0, Math.min(optionsRef.current.length - 1, index))];
+      if (next && next.value !== valueRef.current) onChangeRef.current(next.value);
     }
-    const next = { ...pendingRef.current, ...patch };
-    pendingRef.current = next;
-    setPending(next);
-    if (next.hour !== undefined && next.minute !== undefined && next.suffix) {
-      onChange(clockValue(next.hour, next.minute, next.suffix));
-    }
-  }
-  const preview =
-    hour !== undefined && minute !== undefined && suffix
-      ? formatTimeLabel(clockValue(hour, minute, suffix))
-      : [hour ?? "–", ":", minute === undefined ? "––" : String(minute).padStart(2, "0"), suffix ? ` ${suffix}` : ""].join("");
-  function choiceClass(selected: boolean) {
-    return `min-h-12 rounded-2xl text-base font-semibold ${selected ? "bg-ink text-cream" : "bg-cream text-ink"}`;
-  }
+    node.addEventListener("scrollend", commit);
+    return () => node.removeEventListener("scrollend", commit);
+  }, []);
+
   return (
-    <>
-      <button
-        type="button"
-        aria-label={value ? `${label} ${formatTimeLabel(value)}` : `Choose ${label}`}
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-        className={`flex min-h-14 w-full items-center justify-center whitespace-nowrap rounded-2xl border border-ink/15 bg-cream px-2 text-base font-semibold ${
-          value ? "text-ink" : "text-ink/40"
-        }`}
+    <div className="relative h-[180px] min-w-0 flex-1">
+      <div
+        ref={scroller}
+        aria-label={label}
+        className="h-full snap-y snap-mandatory overflow-y-auto [scrollbar-width:none] [mask-image:linear-gradient(transparent,black_28%,black_72%,transparent)] [&::-webkit-scrollbar]:hidden"
       >
-        {value ? formatTimeLabel(value) : short}
-      </button>
-      {open
-        ? createPortal(
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40" onClick={() => setOpen(false)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={label}
-            className="flex max-h-[88dvh] min-h-0 w-full max-w-md flex-col rounded-t-3xl bg-white shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
-            onClick={(event) => event.stopPropagation()}
+        <div style={{ height: WHEEL_ITEM * 2 }} />
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-selected={option.value === value}
+            onClick={() => onChange(option.value)}
+            className={`relative z-20 flex h-9 w-full snap-center items-center justify-center text-lg ${
+              option.value === value ? "font-semibold text-ink" : "text-ink/35"
+            }`}
           >
-            <div className="overflow-y-auto px-5 pt-5">
-              <p className="text-sm font-medium text-ink/60">{label}</p>
-              <p className="mt-1 text-2xl font-semibold">{hour === undefined && minute === undefined && !suffix ? short : preview}</p>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                {(["AM", "PM"] as const).map((option) => (
-                  <button key={option} type="button" className={choiceClass(suffix === option)} onClick={() => update({ suffix: option })}>
-                    {option}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-4 text-sm font-medium text-ink/60">Hour</p>
-              <div className="mt-2 grid grid-cols-4 gap-2">
-                {Array.from({ length: 12 }, (_, index) => index + 1).map((option) => (
-                  <button key={option} type="button" className={choiceClass(hour === option)} onClick={() => update({ hour: option })}>
-                    {option}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-4 text-sm font-medium text-ink/60">Minute</p>
-              <div className="mt-2 grid grid-cols-4 gap-2 pb-3">
-                {minuteChoices(minute ?? 0).map((option) => (
-                  <button key={option} type="button" className={choiceClass(minute === option)} onClick={() => update({ minute: option })}>
-                    {String(option).padStart(2, "0")}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
-              <button type="button" className="min-h-14 w-full rounded-2xl bg-ink text-base font-semibold text-cream" onClick={() => setOpen(false)}>
-                Done
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
-        : null}
-    </>
+            {option.label}
+          </button>
+        ))}
+        <div style={{ height: WHEEL_ITEM * 2 }} />
+      </div>
+    </div>
   );
 }
 
@@ -324,25 +404,14 @@ export function AvailabilityEditor() {
                 </button>
               </div>
               {windows.map((window) => (
-                <div key={window.availabilityId} className="mt-3 grid grid-cols-[1fr_1fr_auto] items-center gap-2">
-                  <ClockField
-                    label="Start time"
-                    value={window.start}
-                    onChange={(start) => updateWindow(window.availabilityId, { start })}
-                  />
-                  <ClockField
-                    label="End time"
-                    value={window.end}
-                    onChange={(end) => updateWindow(window.availabilityId, { end })}
-                  />
-                  <button
-                    type="button"
-                    className="min-h-12 px-2 text-sm font-semibold text-ink/60"
-                    onClick={() => setDraft((current) => current.filter((item) => item.availabilityId !== window.availabilityId))}
-                  >
-                    Remove
-                  </button>
-                </div>
+                <WindowTimes
+                  key={window.availabilityId}
+                  start={window.start}
+                  end={window.end}
+                  onStart={(start) => updateWindow(window.availabilityId, { start })}
+                  onEnd={(end) => updateWindow(window.availabilityId, { end })}
+                  onRemove={() => setDraft((current) => current.filter((item) => item.availabilityId !== window.availabilityId))}
+                />
               ))}
               {available ? (
                 <div className="mt-3 flex items-center justify-between gap-3">

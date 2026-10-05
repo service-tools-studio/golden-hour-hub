@@ -164,7 +164,8 @@ export function expireRemainingInvitationsWhenFilled(
 
 /**
  * After a week of availability is submitted, finish or flag assignments that were
- * accepted or directly reserved before that week existed.
+ * accepted or directly reserved before that week existed. A pending cleaning on
+ * any day these windows already cover is settled too.
  * Confirmed history is left unchanged.
  */
 export function revalidatePendingAssignments(input: {
@@ -178,13 +179,14 @@ export function revalidatePendingAssignments(input: {
 }): JobAssignment[] {
   const jobs = new Map(input.jobs.map((job) => [job.jobId, job]));
   let next = input.assignments.map((assignment) => ({ ...assignment }));
+  const coveredDates = new Set(input.windows.map((window) => window.date));
   const pending = next
     .filter(
       (assignment) =>
         assignment.cleanerId === input.cleaner.cleanerId &&
         assignment.status === "PENDING_AVAILABILITY" &&
-        assignment.serviceDate >= input.weekStart &&
-        assignment.serviceDate <= input.weekEnd,
+        ((assignment.serviceDate >= input.weekStart && assignment.serviceDate <= input.weekEnd) ||
+          coveredDates.has(assignment.serviceDate)),
     )
     .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate) || a.assignmentId.localeCompare(b.assignmentId));
 

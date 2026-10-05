@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CleaningForm, dayArrivalWindows, type CleaningValues } from "@/components/admin/cleaning-form";
+import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
@@ -10,10 +10,8 @@ import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
 import type { PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
 import {
-  arrivalMismatchText,
   assignmentFormStatus,
   dateReinviteNeeded,
-  earliestCleanerArrival,
   formatLongDate,
   hourWindowLabel,
   hourWindows,
@@ -21,6 +19,10 @@ import {
   noticeGap,
   reinviteFlagText,
 } from "@/lib/format";
+
+function cleaningHref(jobId: string, fromSchedule: boolean) {
+  return fromSchedule ? `/admin/jobs/${jobId}?from=schedule` : `/admin/jobs/${jobId}`;
+}
 
 function dollarsToCents(value: string): number | null {
   const trimmed = value.trim();
@@ -52,8 +54,8 @@ function cleanerArrivals(
   job: { jobId: string; draftCleanerDetails?: { cleanerId: string; arrivalWindowStart: string; arrivalWindowEnd: string }[] },
   assignments: { jobId: string; cleanerId: string; status: string; arrivalWindowStart: string; arrivalWindowEnd: string }[],
   cleaners: { cleanerId: string; firstName: string }[],
-): { firstName: string; start: string; end: string }[] {
-  const windows: { firstName: string; start: string; end: string }[] = [];
+): { cleanerId: string; firstName: string; start: string; end: string }[] {
+  const windows: { cleanerId: string; firstName: string; start: string; end: string }[] = [];
   const covered = new Set<string>();
   for (const assignment of assignments) {
     if (assignment.jobId !== job.jobId) continue;
@@ -61,13 +63,23 @@ function cleanerArrivals(
     covered.add(assignment.cleanerId);
     const cleaner = cleaners.find((item) => item.cleanerId === assignment.cleanerId);
     if (!cleaner) continue;
-    windows.push({ firstName: cleaner.firstName, start: assignment.arrivalWindowStart, end: assignment.arrivalWindowEnd });
+    windows.push({
+      cleanerId: cleaner.cleanerId,
+      firstName: cleaner.firstName,
+      start: assignment.arrivalWindowStart,
+      end: assignment.arrivalWindowEnd,
+    });
   }
   for (const detail of job.draftCleanerDetails ?? []) {
     if (covered.has(detail.cleanerId)) continue;
     const cleaner = cleaners.find((item) => item.cleanerId === detail.cleanerId);
     if (!cleaner) continue;
-    windows.push({ firstName: cleaner.firstName, start: detail.arrivalWindowStart, end: detail.arrivalWindowEnd });
+    windows.push({
+      cleanerId: cleaner.cleanerId,
+      firstName: cleaner.firstName,
+      start: detail.arrivalWindowStart,
+      end: detail.arrivalWindowEnd,
+    });
   }
   return windows;
 }
@@ -78,11 +90,13 @@ export function EditJobView({
   assignmentId,
   cleanerId = "",
   customerId = "",
+  fromSchedule = false,
 }: {
   jobId: string;
   assignmentId: string;
   cleanerId?: string;
   customerId?: string;
+  fromSchedule?: boolean;
 }) {
   const hub = useHub();
   const router = useRouter();
@@ -146,7 +160,7 @@ export function EditJobView({
       return false;
     }
     if (result.message) hub.flash(result.message);
-    router.push(nextHref ?? `/admin/jobs/${jobId}`);
+    router.push(nextHref ?? cleaningHref(jobId, fromSchedule));
     return true;
   }
 
@@ -155,11 +169,11 @@ export function EditJobView({
   }
 
   if (cleanerId && !assignment) {
-    return <DraftStaffingForm jobId={jobId} cleanerId={cleanerId} />;
+    return <DraftStaffingForm jobId={jobId} cleanerId={cleanerId} fromSchedule={fromSchedule} />;
   }
 
   if (!assignmentId && !cleanerId) {
-    return <VisitEditForm jobId={jobId} customerId={customerId} />;
+    return <VisitEditForm jobId={jobId} customerId={customerId} fromSchedule={fromSchedule} />;
   }
 
   if (!job || !assignment || !cleaner) {
@@ -178,7 +192,7 @@ export function EditJobView({
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
         subtitle={`${job.snapshot.customerDisplayName} · ${formatLongDate(job.date)}`}
-        crumb={{ href: `/admin/jobs/${job.jobId}`, label: "Cleaning" }}
+        crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
       />
       <form
         className="space-y-4 px-5 pt-4"
@@ -270,10 +284,11 @@ export function EditJobView({
   );
 }
 
-function VisitEditForm({ jobId, customerId = "" }: { jobId: string; customerId?: string }) {
+function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId: string; customerId?: string; fromSchedule?: boolean }) {
   const hub = useHub();
   const router = useRouter();
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
   if (!job) {
     return (
       <Screen>
@@ -321,10 +336,11 @@ function VisitEditForm({ jobId, customerId = "" }: { jobId: string; customerId?:
       headcountNeeded: values.headcountNeeded,
       specialInstructions: values.specialInstructions,
       cleanerIds: values.cleanerIds,
+      cleanerArrivals: values.cleanerArrivals,
     });
     if (!result.ok) return { ok: false, message: result.message };
     if (result.message) hub.flash(result.message);
-    router.push(nextHref ?? `/admin/jobs/${cleaning.jobId}`);
+    router.push(nextHref ?? cleaningHref(cleaning.jobId, fromSchedule));
     return { ok: true };
   }
 
@@ -339,8 +355,8 @@ function VisitEditForm({ jobId, customerId = "" }: { jobId: string; customerId?:
     <Screen>
       <PageHeader
         title={job.snapshot.customerDisplayName}
-        subtitle={formatLongDate(job.date)}
-        crumb={{ href: `/admin/jobs/${job.jobId}`, label: "Cleaning" }}
+        subtitle={formatLongDate(pickedDate ?? job.date)}
+        crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
       />
       <CleaningForm
         initial={{
@@ -354,11 +370,17 @@ function VisitEditForm({ jobId, customerId = "" }: { jobId: string; customerId?:
           headcountNeeded: job.headcountNeeded,
           specialInstructions: job.specialInstructions,
           cleanerIds: cleanerIds.length > 0 ? cleanerIds : leadCleanerId ? [leadCleanerId] : [],
+          cleanerArrivals: cleanerArrivals(job, hub.assignments, hub.cleaners).map((arrival) => ({
+            cleanerId: arrival.cleanerId,
+            firstName: arrival.firstName,
+            arrivalWindowStart: arrival.start,
+            arrivalWindowEnd: arrival.end,
+          })),
         }}
-        arrivalWindows={dayArrivalWindows(savedArrival)}
         leadCleanerId={leadCleanerId}
-        showDate
-        newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(`/admin/jobs/${job.jobId}/edit`)}`}
+        canClearCleaners
+        onDateChange={setPickedDate}
+        newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(`/admin/jobs/${job.jobId}/edit${fromSchedule ? "?from=schedule" : ""}`)}`}
         onSubmit={submit}
         afterDate={(date) => {
           const flag = reinviteFlagText(
@@ -368,11 +390,6 @@ function VisitEditForm({ jobId, customerId = "" }: { jobId: string; customerId?:
               .filter((name): name is string => Boolean(name)),
           );
           return flag ? <Notice>{flag}</Notice> : null;
-        }}
-        afterArrival={(start, end) => {
-          const earliest = earliestCleanerArrival(cleanerArrivals(job, hub.assignments, hub.cleaners));
-          if (!earliest || (start === earliest.start && end === earliest.end)) return null;
-          return <Notice>{arrivalMismatchText(earliest.firstName, hourWindowLabel(earliest.start, earliest.end))}</Notice>;
         }}
         trailing={
           <button
@@ -388,7 +405,7 @@ function VisitEditForm({ jobId, customerId = "" }: { jobId: string; customerId?:
   );
 }
 
-function DraftStaffingForm({ jobId, cleanerId }: { jobId: string; cleanerId: string }) {
+function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: string; cleanerId: string; fromSchedule?: boolean }) {
   const hub = useHub();
   const router = useRouter();
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
@@ -449,7 +466,7 @@ function DraftStaffingForm({ jobId, cleanerId }: { jobId: string; cleanerId: str
       return false;
     }
     if (result.message) hub.flash(result.message);
-    router.push(nextHref ?? `/admin/jobs/${job.jobId}`);
+    router.push(nextHref ?? cleaningHref(job.jobId, fromSchedule));
     return true;
   }
 
@@ -473,7 +490,7 @@ function DraftStaffingForm({ jobId, cleanerId }: { jobId: string; cleanerId: str
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
         subtitle={`${job.snapshot.customerDisplayName} · ${formatLongDate(job.date)}`}
-        crumb={{ href: `/admin/jobs/${job.jobId}`, label: "Cleaning" }}
+        crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
       />
       <form
         className="space-y-4 px-5 pt-4"

@@ -3,6 +3,7 @@ import { mergeRecurringHorizon, recurrenceSummary } from "../domain/recurrence.t
 import {
   addDays,
   dayOfWeek,
+  eachDate,
   mondayOf,
   nextAvailabilityWeek,
 } from "../domain/time.ts";
@@ -170,6 +171,13 @@ export function buildSeed(today: string): HubData {
     [
       ...weekdayWindows("claudia", addDays(mondayOf(today), -7), 35, "08:00", "17:00"),
       ...weekdayWindows("mariana", addDays(mondayOf(today), -7), 35, "08:00", "17:00"),
+      ...eachDate("2026-09-28", "2026-10-11").map((date) => ({
+        availabilityId: `ashley-cover-${date}`,
+        cleanerId: "ashley",
+        date,
+        start: "00:00",
+        end: "24:00",
+      })),
     ],
   );
 

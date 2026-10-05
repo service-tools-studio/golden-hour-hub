@@ -38,7 +38,21 @@ export function normalizePhone(input: string): string | null {
 export function formatPhone(phone: string): string {
   const digits = normalizePhone(phone) ?? phone;
   if (digits.length !== 10) return phone;
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return formatPhoneInput(digits);
+}
+
+export function formatPhoneInput(input: string, previous = ""): string {
+  let digits = input.replace(/\D/g, "");
+  const previousDigits = previous.replace(/\D/g, "");
+  if (input.length < previous.length && digits === previousDigits && digits.length > 0) {
+    digits = digits.slice(0, -1);
+  }
+  const national = digits.length > 10 && digits.startsWith("1") ? digits.slice(1) : digits;
+  const trimmed = national.slice(0, 10);
+  if (trimmed.length === 0) return "";
+  if (trimmed.length < 4) return `(${trimmed}`;
+  if (trimmed.length < 7) return `(${trimmed.slice(0, 3)}) ${trimmed.slice(3)}`;
+  return `(${trimmed.slice(0, 3)}) ${trimmed.slice(3, 6)}-${trimmed.slice(6)}`;
 }
 
 export function normalizeSearchText(value: string): string {
@@ -88,7 +102,7 @@ function validateProperty(input: PropertyInput, index: number): Result<{ value: 
   if (!/^[A-Z]{2}$/.test(state)) {
     return { ok: false, field: propertyField(index, "state"), message: "Enter a two-letter state." };
   }
-  if (!/^\d{5}$/.test(zip)) {
+  if (zip !== "" && !/^\d{5}$/.test(zip)) {
     return { ok: false, field: propertyField(index, "zip"), message: "Enter a 5-digit ZIP code." };
   }
   if (!Number.isInteger(input.bedrooms) || input.bedrooms < 0 || input.bedrooms > 20) {
@@ -122,7 +136,8 @@ export function validateCustomerInput(
 ): Result<{ value: CustomerInput & { phone: string; email?: string } }> & { field?: string } {
   const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
-  const phone = normalizePhone(input.phone);
+  const phoneDigits = input.phone.replace(/\D/g, "");
+  const phone = phoneDigits === "" ? "" : normalizePhone(input.phone);
   const email = input.email?.trim() ?? "";
   const notes = input.notes?.trim() ?? "";
 
@@ -132,8 +147,8 @@ export function validateCustomerInput(
   if (lastName.length < 1) {
     return { ok: false, field: "lastName", message: "Enter a last name." };
   }
-  if (!phone) {
-    return { ok: false, field: "phone", message: "Enter a 10-digit mobile or home phone number." };
+  if (phone === null) {
+    return { ok: false, field: "phone", message: "Enter a 10-digit mobile or home phone number, or leave it blank." };
   }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { ok: false, field: "email", message: "Enter a valid email, or leave it blank." };

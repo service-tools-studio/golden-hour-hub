@@ -11,13 +11,17 @@ export function PageHeader({
   crumb,
   crumbs,
   title,
+  titleHref,
   subtitle,
+  action,
 }: {
   eyebrow?: string;
   crumb?: Crumb;
   crumbs?: Crumb[];
   title: string;
+  titleHref?: string;
   subtitle?: string;
+  action?: React.ReactNode;
 }) {
   const trail = crumbs ?? (crumb ? [crumb] : undefined);
   const bar = (
@@ -46,7 +50,13 @@ export function PageHeader({
             <span className="px-1.5" aria-hidden="true">
               /
             </span>
-            <span>{title}</span>
+            {titleHref ? (
+              <Link href={titleHref} className="font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4">
+                {title}
+              </Link>
+            ) : (
+              <span>{title}</span>
+            )}
           </span>
         </nav>
       ) : (
@@ -60,9 +70,12 @@ export function PageHeader({
   return (
     <>
       <header className={trail ? "sticky top-0 z-20 bg-cream px-5 pb-2 pt-2" : "px-5 pt-6"}>{bar}</header>
-      <div className="px-5">
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink">{title}</h1>
-        {subtitle ? <p className="mt-1 text-base text-ink/70">{subtitle}</p> : null}
+      <div className="flex items-start justify-between gap-3 px-5">
+        <div className="min-w-0">
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink">{title}</h1>
+          {subtitle ? <p className="mt-1 text-base text-ink/70">{subtitle}</p> : null}
+        </div>
+        {action}
       </div>
     </>
   );

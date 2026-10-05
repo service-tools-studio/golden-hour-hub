@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { Notice, PageHeader, Screen } from "@/components/ui";
 import { isValidDate, isValidLocalTime, minutesFromTime } from "@/lib/domain/time";
-import { formatLongDate, hourWindows } from "@/lib/format";
+import { formatLongDate } from "@/lib/format";
 
 export function CreateJobView({
   cleanerId,
@@ -22,18 +23,22 @@ export function CreateJobView({
 }) {
   const hub = useHub();
   const router = useRouter();
+  const serviceDate = isValidDate(date) ? date : hub.today;
+  const [shownDate, setShownDate] = useState(serviceDate);
   const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId && item.status === "ACTIVE");
-  const ready = Boolean(
+  const fromAvailability = Boolean(
     cleaner && isValidDate(date) && isValidLocalTime(start) && isValidLocalTime(end) && minutesFromTime(end) > minutesFromTime(start),
   );
+  const openBooking = cleanerId === "";
   const knownCustomer = hub.customers.some((item) => item.customerId === initialCustomerId);
   const customerId = knownCustomer ? initialCustomerId : "";
   const propertyId = knownCustomer
     ? (hub.properties.find((item) => item.customerId === initialCustomerId && item.status === "ACTIVE")?.propertyId ?? "")
     : "";
-  const arrivalWindows = hourWindows(start, end);
-  const arrivalStart = arrivalWindows[0]?.start ?? start;
-  const arrivalEnd = arrivalWindows[0]?.end ?? end;
+  const arrivalStart = fromAvailability && isValidLocalTime(start) ? start : "08:00";
+  const returnTo = fromAvailability
+    ? `/admin/jobs/new?cleanerId=${cleanerId}&date=${date}&start=${start}&end=${end}`
+    : `/admin/jobs/new?date=${serviceDate}`;
 
   function submit(values: CleaningValues, nextHref?: string) {
     const result = hub.createJob({
@@ -56,7 +61,7 @@ export function CreateJobView({
     return { ok: true };
   }
 
-  if (!ready || !cleaner) {
+  if (!fromAvailability && !openBooking) {
     return (
       <Screen>
         <PageHeader title="New cleaning" crumb={{ href: "/admin/schedule", label: "Schedule" }} />
@@ -68,31 +73,32 @@ export function CreateJobView({
   }
 
   const initial: CleaningValues = {
-    date,
+    date: serviceDate,
     customerId,
     propertyId,
     serviceType: "DEEP_CLEAN",
     arrivalWindowStart: arrivalStart,
-    arrivalWindowEnd: arrivalEnd,
+    arrivalWindowEnd: arrivalStart,
     expectedDurationMinutes: 240,
     headcountNeeded: 1,
     specialInstructions: "",
-    cleanerIds: [cleaner.cleanerId],
+    cleanerIds: fromAvailability && cleaner ? [cleaner.cleanerId] : [],
   };
 
   return (
     <Screen>
       <PageHeader
         title="New cleaning"
-        subtitle={formatLongDate(date)}
-        crumb={{ href: `/admin/schedule?date=${date}`, label: "Schedule" }}
+        subtitle={formatLongDate(shownDate)}
+        crumb={{ href: `/admin/schedule?date=${serviceDate}`, label: "Schedule" }}
       />
       <CleaningForm
         initial={initial}
-        arrivalWindows={arrivalWindows}
-        leadCleanerId={cleaner.cleanerId}
+        leadCleanerId={fromAvailability ? cleaner?.cleanerId : undefined}
+        canClearCleaners={openBooking}
         estimateOnLoad
-        newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(`/admin/jobs/new?cleanerId=${cleanerId}&date=${date}&start=${start}&end=${end}`)}`}
+        onDateChange={setShownDate}
+        newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(returnTo)}`}
         onSubmit={submit}
       />
     </Screen>
