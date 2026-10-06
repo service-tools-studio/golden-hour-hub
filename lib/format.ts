@@ -97,7 +97,7 @@ function compactClock(time: string): { clock: string; suffix: string } {
 function compactWindow(start: string, end: string): string {
   const from = compactClock(start);
   const to = compactClock(end);
-  if (from.suffix === to.suffix) return `${from.clock}–${to.clock}`;
+  if (from.suffix === to.suffix) return `${from.clock}–${to.clock} ${to.suffix}`;
   return `${from.clock} ${from.suffix}–${to.clock} ${to.suffix}`;
 }
 
@@ -206,8 +206,26 @@ export function reinviteFlagText(firstNames: string[]): string | null {
   return `${list} ${firstNames.length === 1 ? "needs" : "need"} to be reinvited for the new date.`;
 }
 
-export function arrivalMismatchText(firstName: string, arrivalLabel: string): string {
-  return `This does not match the earliest cleaner. ${firstName} arrives ${arrivalLabel}.`;
+export function arrivalMismatchText(scheduledTime: string, firstName: string, arrivalTime: string): string {
+  return `This cleaning is scheduled with the client for ${scheduledTime}, but the earliest cleaner ${firstName} arrives at ${arrivalTime}. You may want to update the client on the arrival time.`;
+}
+
+export function arrivalChangeSms(input: { customerFirstName: string; date: string; scheduledTime: string; arrivalTime: string }): string {
+  return `Hi ${input.customerFirstName}! This is Golden Hour Cleaning Co. Your cleaning on ${formatLongDate(input.date)} will start at ${input.arrivalTime} instead of ${input.scheduledTime}. Reply to this message if you need a different time.`;
+}
+
+export function cleanerArrivalChangeSms(input: {
+  cleanerFirstName: string;
+  customerName: string;
+  date: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+}): string {
+  return `Hi ${input.cleanerFirstName}! Golden Hour here. Your arrival time for ${input.customerName} on ${formatLongDate(input.date)} is now ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}.`;
+}
+
+export function smsHref(phone: string, body: string): string {
+  return `sms:+1${phone}?&body=${encodeURIComponent(body)}`;
 }
 
 export function earliestCleanerArrival<T extends { start: string }>(windows: T[]): T | null {

@@ -7,12 +7,13 @@ import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
 import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
-import type { PayType } from "@/lib/domain/types";
+import type { Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
 import {
   assignmentFormStatus,
   dateReinviteNeeded,
   formatLongDate,
+  formatTimeLabel,
   hourWindowLabel,
   hourWindows,
   noticeFlagText,
@@ -22,6 +23,13 @@ import {
 
 function cleaningHref(jobId: string, fromSchedule: boolean) {
   return fromSchedule ? `/admin/jobs/${jobId}?from=schedule` : `/admin/jobs/${jobId}`;
+}
+
+function cleaningSubtitle(job: Job): string {
+  const when = job.arrivalWindowStart
+    ? `${formatLongDate(job.date)} at ${formatTimeLabel(job.arrivalWindowStart)}`
+    : formatLongDate(job.date);
+  return `${job.snapshot.customerDisplayName} · ${when}`;
 }
 
 function dollarsToCents(value: string): number | null {
@@ -48,6 +56,14 @@ function arrivalChoicesFor(
   const choices = fromAvailability.length > 0 ? fromAvailability : hourWindows("08:00", "18:00");
   if (current && !choices.some((window) => window.start === current.start)) return [current, ...choices];
   return choices;
+}
+
+function defaultArrival(
+  windows: { start: string; end: string }[],
+  jobStart: string | undefined,
+): { start: string; end: string } | undefined {
+  if (!jobStart) return windows[0];
+  return windows.find((window) => window.start >= jobStart) ?? windows[0];
 }
 
 function cleanerArrivals(
@@ -109,8 +125,9 @@ export function EditJobView({
     job?.date ?? "",
     assignment ? { start: assignment.arrivalWindowStart, end: assignment.arrivalWindowEnd } : undefined,
   );
-  const [arrivalStart, setArrivalStart] = useState(assignment?.arrivalWindowStart ?? arrivalWindows[0]?.start ?? "");
-  const [arrivalEnd, setArrivalEnd] = useState(assignment?.arrivalWindowEnd ?? arrivalWindows[0]?.end ?? "");
+  const initialArrival = defaultArrival(arrivalWindows, job?.arrivalWindowStart);
+  const [arrivalStart, setArrivalStart] = useState(assignment?.arrivalWindowStart ?? initialArrival?.start ?? "");
+  const [arrivalEnd, setArrivalEnd] = useState(assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "");
   const [crew, setCrew] = useState(assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1);
   const [payType, setPayType] = useState<PayType>(assignment?.payType ?? "FLAT");
   const [pay, setPay] = useState(assignment ? centsToInput(assignment.payPerPersonCents) : "");
@@ -191,7 +208,7 @@ export function EditJobView({
     <Screen>
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
-        subtitle={`${job.snapshot.customerDisplayName} · ${formatLongDate(job.date)}`}
+        subtitle={cleaningSubtitle(job)}
         crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
       />
       <form
@@ -419,8 +436,9 @@ function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: 
     job?.date ?? "",
     savedDetail ? { start: savedDetail.arrivalWindowStart, end: savedDetail.arrivalWindowEnd } : undefined,
   );
-  const [arrivalStart, setArrivalStart] = useState(savedDetail?.arrivalWindowStart ?? windows[0]?.start ?? "");
-  const [arrivalEnd, setArrivalEnd] = useState(savedDetail?.arrivalWindowEnd ?? windows[0]?.end ?? "");
+  const initialArrival = defaultArrival(windows, job?.arrivalWindowStart);
+  const [arrivalStart, setArrivalStart] = useState(savedDetail?.arrivalWindowStart ?? initialArrival?.start ?? "");
+  const [arrivalEnd, setArrivalEnd] = useState(savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "");
   const [crew, setCrew] = useState(savedDetail?.proposedCrewSize ?? usualCrew);
   const [payType, setPayType] = useState<PayType>(savedDetail?.payType ?? "FLAT");
   const [pay, setPay] = useState(savedDetail ? centsToInput(savedDetail.payPerPersonCents) : "50");
@@ -489,7 +507,7 @@ function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: 
     <Screen>
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
-        subtitle={`${job.snapshot.customerDisplayName} · ${formatLongDate(job.date)}`}
+        subtitle={cleaningSubtitle(job)}
         crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
       />
       <form

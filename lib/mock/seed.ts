@@ -196,6 +196,13 @@ export function buildSeed(today: string): HubData {
       submittedAt: STAMP,
       updatedAt: STAMP,
     },
+    ...["2026-09-28", "2026-10-05"].map((weekStart) => ({
+      submissionId: `sub-ashley-${weekStart}`,
+      cleanerId: "ashley",
+      weekStart,
+      submittedAt: STAMP,
+      updatedAt: STAMP,
+    })),
   ];
 
   const generated = mergeRecurringHorizon({

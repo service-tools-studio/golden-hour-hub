@@ -7,7 +7,7 @@ import { CustomerForm, type CustomerFormHandle } from "@/components/admin/custom
 import { SeriesForm } from "@/components/admin/series-form";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
-import { Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
+import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
 import { searchCustomers } from "@/lib/domain/customers";
 import { seriesSummary } from "@/lib/mock/seed";
 import { formatLongDate, formatPhone, serviceLabel } from "@/lib/format";
@@ -26,16 +26,6 @@ function Pencil() {
     >
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-    </svg>
-  );
-}
-
-function AlertIcon({ className }: { className: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={`shrink-0 ${className}`} role="img" aria-label="Missing">
-      <circle cx="12" cy="12" r="11" className="fill-red-600" />
-      <path d="M12 6.5v7" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="12" cy="17.25" r="1.5" fill="white" />
     </svg>
   );
 }
@@ -79,7 +69,7 @@ export function CustomersView() {
                   <p className="text-sm text-ink/70">{formatPhone(customer.phone)}</p>
                 ) : (
                   <p className="flex items-center gap-1.5 text-sm text-ink/70">
-                    <AlertIcon className="size-4" />
+                    <AlertIcon className="size-4" label="Missing" />
                     No phone number
                   </p>
                 )}
@@ -294,7 +284,7 @@ export function CustomerDetail({
               <p className="pr-6">{formatPhone(customer.phone)}</p>
             ) : (
               <p className="flex items-center gap-2 pr-6 text-ink/60">
-                <AlertIcon className="size-5" />
+                <AlertIcon className="size-5" label="Missing" />
                 No phone number
               </p>
             )}

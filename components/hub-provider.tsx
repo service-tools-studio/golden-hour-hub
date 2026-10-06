@@ -148,6 +148,7 @@ type HubContextValue = HubState & {
   updateVisit: (input: UpdateVisitInput) => ActionResult;
   updateJob: (input: UpdateJobInput) => ActionResult;
   moveAssignmentTime: (assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string) => ActionResult;
+  markAssignmentNotified: (assignmentId: string) => ActionResult;
   deleteJob: (jobId: string) => ActionResult;
   deleteSeries: (seriesId: string) => ActionResult;
 };
@@ -1341,6 +1342,33 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   }
 
+  function markAssignmentNotified(assignmentId: string): ActionResult {
+    const assignment = data.assignments.find((item) => item.assignmentId === assignmentId);
+    if (
+      !assignment ||
+      assignment.status === "CANCELED" ||
+      assignment.status === "DECLINED" ||
+      assignment.status === "EXPIRED_JOB_FILLED"
+    ) {
+      return { ok: false, message: "That assignment could not be updated." };
+    }
+    const now = new Date().toISOString();
+    setState({
+      ...data,
+      assignments: data.assignments.map((item) =>
+        item.assignmentId === assignment.assignmentId
+          ? {
+              ...item,
+              lastNotified: assignmentNotice(item),
+              notifiedServiceDate: item.serviceDate,
+              updatedAt: now,
+            }
+          : item,
+      ),
+    });
+    return { ok: true };
+  }
+
   function deleteJob(jobId: string): ActionResult {
     const job = data.jobs.find((item) => item.jobId === jobId);
     if (!job) return { ok: false, message: "That cleaning could not be deleted." };
@@ -1402,6 +1430,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     updateVisit,
     updateJob,
     moveAssignmentTime,
+    markAssignmentNotified,
     deleteJob,
     deleteSeries,
   };

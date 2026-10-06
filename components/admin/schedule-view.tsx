@@ -22,7 +22,7 @@ import {
   zonedParts,
 } from "@/lib/domain/time";
 import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
-import { formatLongDate, serviceLabel } from "@/lib/format";
+import { cleanerArrivalChangeSms, formatLongDate, serviceLabel, smsHref } from "@/lib/format";
 
 type View = "day" | "month";
 
@@ -404,6 +404,7 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
   const height = GRID_PAD_TOP + ((grid.end - grid.start) / 60) * HOUR_PX + GRID_PAD_BOTTOM;
   const now = date === hub.today ? nowMinutes() : null;
   const showNow = now != null && now >= grid.start && now <= grid.end;
+  const [movedAssignmentId, setMovedAssignmentId] = useState<string | null>(null);
 
   return (
     <div className="rounded-3xl bg-white px-2 pb-3 pt-2">
@@ -430,7 +431,7 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
         <div className="absolute right-1 left-12" style={{ top: 0, height }}>
           {laidOut.map((event) =>
             event.assignmentId && event.windowMinutes ? (
-              <DraggableBooking key={event.id} event={event} gridStart={grid.start} />
+              <DraggableBooking key={event.id} event={event} gridStart={grid.start} onMoved={setMovedAssignmentId} />
             ) : (
               <Link
                 key={event.id}
@@ -450,6 +451,72 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
           {nameList(built.quiet)} {built.quiet.length === 1 ? "has" : "have"} no availability this day.
         </p>
       ) : null}
+      {movedAssignmentId ? (
+        <NotifyCleanerDialog assignmentId={movedAssignmentId} onClose={() => setMovedAssignmentId(null)} />
+      ) : null}
+    </div>
+  );
+}
+
+function NotifyCleanerDialog({ assignmentId, onClose }: { assignmentId: string; onClose: () => void }) {
+  const hub = useHub();
+  const assignment = hub.assignments.find((item) => item.assignmentId === assignmentId);
+  const cleaner = assignment ? hub.cleaners.find((item) => item.cleanerId === assignment.cleanerId) : undefined;
+  const job = assignment ? hub.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
+  if (!assignment || !cleaner || !job) return null;
+  const phone = cleaner.mobilePhone;
+  const body = cleanerArrivalChangeSms({
+    cleanerFirstName: cleaner.firstName,
+    customerName: job.snapshot.customerDisplayName,
+    date: assignment.serviceDate,
+    arrivalWindowStart: assignment.arrivalWindowStart,
+    arrivalWindowEnd: assignment.arrivalWindowEnd,
+  });
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notify-cleaner-title"
+        className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id="notify-cleaner-title" className="text-lg font-semibold">
+          Arrival time changed
+        </h2>
+        <p className="mt-1 text-sm leading-5 text-ink/70">
+          You are changing {cleaner.firstName}&apos;s arrival time for this job. Would you like to notify {cleaner.firstName}?
+        </p>
+        <div className="mt-4 space-y-2">
+          {phone ? (
+            <>
+              <a
+                href={smsHref(phone, body)}
+                onClick={() => {
+                  hub.markAssignmentNotified(assignment.assignmentId);
+                  onClose();
+                }}
+                className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+              >
+                Text {cleaner.firstName}
+              </a>
+              <a
+                href={`tel:+1${phone}`}
+                onClick={() => {
+                  hub.markAssignmentNotified(assignment.assignmentId);
+                  onClose();
+                }}
+                className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-cream text-base font-semibold text-ink"
+              >
+                Call {cleaner.firstName}
+              </a>
+            </>
+          ) : null}
+          <button type="button" onClick={onClose} className="min-h-12 w-full text-base font-semibold text-ink/70">
+            Dismiss
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -477,9 +544,11 @@ function snappedStart(originStart: number, span: number, deltaY: number) {
 function DraggableBooking({
   event,
   gridStart,
+  onMoved,
 }: {
   event: DayEvent & { column: number; columns: number };
   gridStart: number;
+  onMoved: (assignmentId: string) => void;
 }) {
   const hub = useHub();
   const drag = useRef<{ pointerId: number; originY: number; originStart: number; moved: boolean } | null>(null);
@@ -531,6 +600,7 @@ function DraggableBooking({
       return;
     }
     setPreviewStart(next);
+    onMoved(event.assignmentId);
   }
 
   return (

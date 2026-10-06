@@ -12,6 +12,7 @@ export function PageHeader({
   crumbs,
   title,
   titleHref,
+  current,
   subtitle,
   action,
 }: {
@@ -20,6 +21,7 @@ export function PageHeader({
   crumbs?: Crumb[];
   title: string;
   titleHref?: string;
+  current?: string;
   subtitle?: string;
   action?: React.ReactNode;
 }) {
@@ -58,6 +60,14 @@ export function PageHeader({
               <span>{title}</span>
             )}
           </span>
+          {current ? (
+            <span className="inline-flex items-center whitespace-nowrap">
+              <span className="px-1.5" aria-hidden="true">
+                /
+              </span>
+              <span aria-current="page">{current}</span>
+            </span>
+          ) : null}
         </nav>
       ) : (
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">{eyebrow}</p>
@@ -111,6 +121,16 @@ export function PlusIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function AlertIcon({ className, label = "Alert" }: { className: string; label?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`shrink-0 ${className}`} role="img" aria-label={label}>
+      <circle cx="12" cy="12" r="11" className="fill-red-600" />
+      <path d="M12 6.5v7" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="12" cy="17.25" r="1.5" fill="white" />
     </svg>
   );
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
-import { Card, PageHeader, Screen } from "@/components/ui";
+import { AlertIcon, Card, PageHeader, Screen } from "@/components/ui";
 import { snapshotVisit } from "@/lib/domain/customers";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
@@ -12,6 +12,7 @@ import type { JobAssignment } from "@/lib/domain/types";
 import { calculateConfirmedHeadcount } from "@/lib/domain/scheduling";
 import { seriesSummary } from "@/lib/mock/seed";
 import {
+  arrivalChangeSms,
   arrivalMismatchText,
   dateReinviteNeeded,
   earliestCleanerArrival,
@@ -20,13 +21,14 @@ import {
   formatDuration,
   formatLongDate,
   formatScheduleFacts,
-  hourWindowLabel,
   noticeFlagText,
   noticeGap,
   payLine,
   reinviteFlagText,
   serviceEmoji,
+  cleanerArrivalChangeSms,
   serviceLabel,
+  smsHref,
 } from "@/lib/format";
 
 export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string; fromSchedule?: boolean }) {
@@ -46,14 +48,32 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   const earliest = earliestCleanerArrival(cleanerArrivals(job, hub.assignments, hub.cleaners));
+  const customer = hub.customers.find((item) => item.customerId === job.customerId);
   const arrivalFlag =
     earliest &&
     job.arrivalWindowStart &&
     job.arrivalWindowEnd &&
     (job.arrivalWindowStart !== earliest.start || job.arrivalWindowEnd !== earliest.end)
-      ? arrivalMismatchText(earliest.firstName, hourWindowLabel(earliest.start, earliest.end))
+      ? {
+          text: arrivalMismatchText(
+            formatTimeLabel(job.arrivalWindowStart),
+            earliest.firstName,
+            formatTimeLabel(earliest.start),
+          ),
+          callHref: customer?.phone ? `tel:+1${customer.phone}` : null,
+          textHref: customer?.phone
+            ? smsHref(
+                customer.phone,
+                arrivalChangeSms({
+                  customerFirstName: customer.firstName,
+                  date: job.date,
+                  scheduledTime: formatTimeLabel(job.arrivalWindowStart),
+                  arrivalTime: formatTimeLabel(earliest.start),
+                }),
+              )
+            : null,
+        }
       : null;
-  const customer = hub.customers.find((item) => item.customerId === job.customerId);
   const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
   const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;
   const reinviteFlag = reinviteFlagText(
@@ -67,6 +87,7 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
       <PageHeader
         title={formatLongDate(job.date)}
         titleHref={fromSchedule ? `/admin/schedule?date=${job.date}&view=day` : undefined}
+        current={fromSchedule ? visit.customerDisplayName : undefined}
         crumbs={
           fromSchedule
             ? [{ href: `/admin/schedule?date=${job.date}`, label: "Schedule" }]
@@ -101,7 +122,39 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
             {job.arrivalWindowStart ? (
               <p className="mt-3 text-sm">Scheduled for {formatTimeLabel(job.arrivalWindowStart)}</p>
             ) : null}
-            {arrivalFlag ? <p className="mt-2 text-sm font-semibold text-red-700">{arrivalFlag}</p> : null}
+          </Link>
+          {arrivalFlag ? (
+            <div className="mt-3 rounded-2xl bg-red-50 p-3">
+              <p className="flex items-start gap-2 text-sm font-semibold text-red-700">
+                <AlertIcon className="mt-0.5 size-4" />
+                <span>{arrivalFlag.text}</span>
+              </p>
+              {arrivalFlag.textHref && arrivalFlag.callHref ? (
+                <div className="mt-3 flex gap-2">
+                  <a
+                    href={arrivalFlag.textHref}
+                    className="inline-flex min-h-10 items-center rounded-full bg-ink px-4 text-sm font-semibold text-white"
+                  >
+                    Text client
+                  </a>
+                  <a
+                    href={arrivalFlag.callHref}
+                    className="inline-flex min-h-10 items-center rounded-full border border-ink/20 bg-white px-4 text-sm font-semibold"
+                  >
+                    Call client
+                  </a>
+                </div>
+              ) : (
+                <Link
+                  href={`/admin/customers/${job.customerId}`}
+                  className="mt-3 inline-flex min-h-10 items-center rounded-full border border-ink/20 px-4 text-sm font-semibold"
+                >
+                  Add client phone to notify
+                </Link>
+              )}
+            </div>
+          ) : null}
+          <Link href={editPath(job.jobId, fromSchedule)} className="block">
             {reinviteFlag ? <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlag}</p> : null}
             <div className="mt-3 flex items-start justify-between gap-3">
               <div className="text-sm font-semibold">
@@ -162,34 +215,51 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
               const gap = noticeGap(false, assignment, assignment.lastNotified);
               return (
                 <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
-                  <Link href={editPath(job.jobId, fromSchedule, { assignment: assignment.assignmentId })} className="block min-w-0 flex-1">
-                    <p className="text-base font-semibold">
-                      {cleaner.firstName} {cleaner.lastName}
-                    </p>
-                    <p className={`mt-0.5 text-sm ${declined ? "" : "text-ink/55"}`}>{assignmentSubtitle(assignment)}</p>
-                    {gap ? <p className="mt-1 text-sm font-semibold text-red-700">{noticeFlagText(cleaner.firstName, gap)}</p> : null}
-                    {dateReinviteNeeded(assignment, job.date) ? (
-                      <p className="mt-1 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
+                  <div className="min-w-0 flex-1">
+                    <Link href={editPath(job.jobId, fromSchedule, { assignment: assignment.assignmentId })} className="block">
+                      <p className="text-base font-semibold">
+                        {cleaner.firstName} {cleaner.lastName}
+                      </p>
+                      <p className={`mt-0.5 text-sm ${declined ? "" : "text-ink/55"}`}>{assignmentSubtitle(assignment)}</p>
+                      {dateReinviteNeeded(assignment, job.date) ? (
+                        <p className="mt-1 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
+                      ) : null}
+                      {assignment.attentionReason ? <p className="mt-1 text-sm">{assignment.attentionReason}</p> : null}
+                      <ScheduleFacts
+                        muted={declined}
+                        date={assignment.serviceDate}
+                        arrivalWindowStart={assignment.arrivalWindowStart}
+                        arrivalWindowEnd={assignment.arrivalWindowEnd}
+                        expectedDurationMinutes={assignment.expectedDurationMinutes}
+                      />
+                    </Link>
+                    {gap ? (
+                      <NotifyCleanerNotice
+                        firstName={cleaner.firstName}
+                        gap={gap}
+                        phone={cleaner.mobilePhone}
+                        textHref={
+                          cleaner.mobilePhone
+                            ? smsHref(
+                                cleaner.mobilePhone,
+                                cleanerArrivalChangeSms({
+                                  cleanerFirstName: cleaner.firstName,
+                                  customerName: visit.customerDisplayName,
+                                  date: assignment.serviceDate,
+                                  arrivalWindowStart: assignment.arrivalWindowStart,
+                                  arrivalWindowEnd: assignment.arrivalWindowEnd,
+                                }),
+                              )
+                            : null
+                        }
+                        onContacted={() => hub.markAssignmentNotified(assignment.assignmentId)}
+                      />
                     ) : null}
-                    {assignment.attentionReason ? <p className="mt-1 text-sm">{assignment.attentionReason}</p> : null}
-                    <ScheduleFacts
-                      muted={declined}
-                      date={assignment.serviceDate}
-                      arrivalWindowStart={assignment.arrivalWindowStart}
-                      arrivalWindowEnd={assignment.arrivalWindowEnd}
-                      expectedDurationMinutes={assignment.expectedDurationMinutes}
-                    />
-                  </Link>
+                  </div>
                   <RemoveCleaner jobId={job.jobId} cleanerId={cleaner.cleanerId} />
                 </div>
               );
             })}
-            <Link
-              href={fromSchedule ? `/admin/jobs/${job.jobId}/cleaners?from=schedule` : `/admin/jobs/${job.jobId}/cleaners`}
-              className="flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
-            >
-              Add cleaner
-            </Link>
           </div>
         </Card>
         {series ? (
@@ -217,8 +287,52 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
             }}
           />
         ) : null}
+        <Link
+          href={fromSchedule ? `/admin/jobs/${job.jobId}/cleaners?from=schedule` : `/admin/jobs/${job.jobId}/cleaners`}
+          className="flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+        >
+          Add cleaner
+        </Link>
       </div>
     </Screen>
+  );
+}
+
+function NotifyCleanerNotice({
+  firstName,
+  gap,
+  phone,
+  textHref,
+  onContacted,
+}: {
+  firstName: string;
+  gap: "assignment" | "changes";
+  phone: string;
+  textHref: string | null;
+  onContacted: () => void;
+}) {
+  return (
+    <div className="mt-2">
+      <p className="text-sm font-semibold text-red-700">{noticeFlagText(firstName, gap)}</p>
+      {phone && textHref ? (
+        <div className="mt-2 flex gap-2">
+          <a
+            href={textHref}
+            onClick={onContacted}
+            className="inline-flex min-h-10 items-center rounded-full bg-ink px-4 text-sm font-semibold text-white"
+          >
+            Text {firstName}
+          </a>
+          <a
+            href={`tel:+1${phone}`}
+            onClick={onContacted}
+            className="inline-flex min-h-10 items-center rounded-full border border-ink/20 bg-white px-4 text-sm font-semibold"
+          >
+            Call {firstName}
+          </a>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -441,10 +555,28 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
               : "Need to change your schedule? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."}
           </p>
         </Card>
+        {KELSEY_PHONE ? (
+          <div className="flex gap-2">
+            <a
+              href={`tel:+1${KELSEY_PHONE}`}
+              className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+            >
+              Call Kelsey
+            </a>
+            <a
+              href={`sms:+1${KELSEY_PHONE}`}
+              className="flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-ink/20 bg-white text-base font-semibold text-ink"
+            >
+              Text Kelsey
+            </a>
+          </div>
+        ) : null}
       </div>
     </Screen>
   );
 }
+
+const KELSEY_PHONE = (process.env.NEXT_PUBLIC_KELSEY_PHONE ?? "").replace(/\D/g, "");
 
 function ServiceLine({ serviceType, prominent = false }: { serviceType: Parameters<typeof serviceLabel>[0]; prominent?: boolean }) {
   const emoji = serviceEmoji(serviceType);
@@ -473,11 +605,11 @@ function ScheduleFacts({
     ["Ends", facts.ends],
   ] as const;
   return (
-    <div className={`mt-3 grid grid-cols-3 gap-2 rounded-2xl px-3 py-2.5 ${muted ? "bg-white/50" : "bg-cream"}`}>
+    <div className={`mt-3 flex flex-wrap gap-x-6 gap-y-2 rounded-2xl px-3 py-2.5 ${muted ? "bg-white/50" : "bg-cream"}`}>
       {items.map(([label, value]) => (
         <div key={label}>
           <p className="text-xs text-ink/50">{label}</p>
-          <p className="mt-0.5 text-sm font-semibold">{value}</p>
+          <p className="mt-0.5 whitespace-nowrap text-sm font-semibold">{value}</p>
         </div>
       ))}
     </div>
