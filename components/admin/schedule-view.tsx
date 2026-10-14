@@ -33,6 +33,7 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [dayViewKey, setDayViewKey] = useState(0);
   const searchField = useRef<HTMLInputElement>(null);
   const cleaners = hub.cleaners.filter((cleaner) => cleaner.status === "ACTIVE");
   const showingAll = selectedIds.length === 0;
@@ -102,6 +103,7 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
         </div>
         {view === "day" ? (
           <DayView
+            key={dayViewKey}
             date={date}
             cleanerIds={visible.map((cleaner) => cleaner.cleanerId)}
             onDate={setDate}
@@ -119,6 +121,21 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
           />
         ) : null}
       </div>
+      )}
+      {searchOpen ? null : (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] z-20 mx-auto w-full max-w-md px-5">
+          <button
+            type="button"
+            onClick={() => {
+              setDate(hub.today);
+              setView("day");
+              setDayViewKey((key) => key + 1);
+            }}
+            className="pointer-events-auto min-h-11 rounded-full bg-ink px-5 text-base font-semibold text-cream shadow-[0_8px_24px_rgba(51,51,51,0.18)]"
+          >
+            Today
+          </button>
+        </div>
       )}
     </Screen>
   );
@@ -302,6 +319,14 @@ function DayView({
     return () => node.removeEventListener("scrollend", settleWeek);
   });
 
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node || !ready.current || node.clientWidth === 0) return;
+    const index = weeks.indexOf(sundayOf(date));
+    if (index < 0 || Math.round(node.scrollLeft / node.clientWidth) === index) return;
+    node.scrollTo({ left: index * node.clientWidth, behavior: "smooth" });
+  }, [date, weeks]);
+
   return (
     <div>
       <div className="rounded-3xl bg-white px-3 pb-4 pt-3">
@@ -343,8 +368,10 @@ function DayView({
           ))}
         </div>
       </div>
-      <p className="sticky top-0 z-10 -mx-5 bg-cream px-5 pb-3 pt-4 text-center text-base font-semibold">{dayHeading(date)}</p>
-      <DayTimeline date={date} cleanerIds={cleanerIds} />
+      <DaySwipeArea onSwipe={(step) => onDate(addDays(date, step))}>
+        <p className="sticky top-0 z-10 -mx-5 bg-cream px-5 pb-3 pt-4 text-center text-base font-semibold">{dayHeading(date)}</p>
+        <DayTimeline date={date} cleanerIds={cleanerIds} />
+      </DaySwipeArea>
     </div>
   );
 }
@@ -382,6 +409,94 @@ const ACCENT_CLASS: Record<EventTone, string> = {
   confirmed: "bg-[#8d6b16]",
   pending: "bg-[#8d6b16]",
 };
+
+const SWIPE_MIN_PX = 50;
+const WHEEL_MIN_PX = 60;
+const WHEEL_IDLE_MS = 250;
+const WHEEL_SLOW_PX = 3;
+const WHEEL_PUSH_PX = 10;
+
+function DaySwipeArea({ onSwipe, children }: { onSwipe: (step: 1 | -1) => void; children: React.ReactNode }) {
+  const swipe = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const swiped = useRef(false);
+  const area = useRef<HTMLDivElement>(null);
+  const onSwipeRef = useRef(onSwipe);
+  useEffect(() => {
+    onSwipeRef.current = onSwipe;
+  });
+
+  useEffect(() => {
+    const node = area.current;
+    if (!node) return;
+    let travel = 0;
+    let spentStep: 1 | -1 | null = null;
+    let slowed = false;
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    function onWheel(wheel: WheelEvent) {
+      if (wheel.deltaX === 0 || Math.abs(wheel.deltaX) <= Math.abs(wheel.deltaY)) return;
+      wheel.preventDefault();
+      clearTimeout(idle);
+      idle = setTimeout(() => {
+        travel = 0;
+        spentStep = null;
+      }, WHEEL_IDLE_MS);
+      const step = wheel.deltaX > 0 ? 1 : -1;
+      const speed = Math.abs(wheel.deltaX);
+      if (spentStep === step) {
+        if (speed <= WHEEL_SLOW_PX) slowed = true;
+        if (!slowed || speed < WHEEL_PUSH_PX) return;
+      }
+      if (spentStep !== null || Math.sign(travel) === -step) {
+        spentStep = null;
+        travel = 0;
+      }
+      slowed = false;
+      travel += wheel.deltaX;
+      if (Math.abs(travel) < WHEEL_MIN_PX) return;
+      spentStep = step;
+      travel = 0;
+      onSwipeRef.current(step);
+    }
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      clearTimeout(idle);
+      node.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={area}
+      className="touch-pan-y"
+      onPointerDown={(pointer) => {
+        swiped.current = false;
+        if (pointer.button !== 0) return;
+        swipe.current = { pointerId: pointer.pointerId, x: pointer.clientX, y: pointer.clientY };
+      }}
+      onPointerUp={(pointer) => {
+        const start = swipe.current;
+        swipe.current = null;
+        if (!start || start.pointerId !== pointer.pointerId) return;
+        const dx = pointer.clientX - start.x;
+        const dy = pointer.clientY - start.y;
+        if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        swiped.current = true;
+        onSwipe(dx < 0 ? 1 : -1);
+      }}
+      onPointerCancel={() => {
+        swipe.current = null;
+      }}
+      onClickCapture={(click) => {
+        if (!swiped.current) return;
+        swiped.current = false;
+        click.preventDefault();
+        click.stopPropagation();
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] }) {
   const hub = useHub();
@@ -551,7 +666,14 @@ function DraggableBooking({
   onMoved: (assignmentId: string) => void;
 }) {
   const hub = useHub();
-  const drag = useRef<{ pointerId: number; originY: number; originStart: number; moved: boolean } | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    originX: number;
+    originY: number;
+    originStart: number;
+    moved: boolean;
+    sideways: boolean;
+  } | null>(null);
   const suppressClick = useRef(false);
   const [previewStart, setPreviewStart] = useState<number | null>(null);
   const span = event.endMin - event.startMin;
@@ -562,7 +684,14 @@ function DraggableBooking({
 
   function onPointerDown(pointer: React.PointerEvent<HTMLAnchorElement>) {
     if (pointer.button !== 0) return;
-    drag.current = { pointerId: pointer.pointerId, originY: pointer.clientY, originStart: event.startMin, moved: false };
+    drag.current = {
+      pointerId: pointer.pointerId,
+      originX: pointer.clientX,
+      originY: pointer.clientY,
+      originStart: event.startMin,
+      moved: false,
+      sideways: false,
+    };
     try {
       pointer.currentTarget.setPointerCapture(pointer.pointerId);
     } catch {
@@ -574,7 +703,15 @@ function DraggableBooking({
     const state = drag.current;
     if (!state || state.pointerId !== pointer.pointerId) return;
     const delta = pointer.clientY - state.originY;
-    if (!state.moved && Math.abs(delta) < 6) return;
+    if (state.sideways) return;
+    if (!state.moved) {
+      const sideways = Math.abs(pointer.clientX - state.originX);
+      if (Math.max(sideways, Math.abs(delta)) < 6) return;
+      if (sideways > Math.abs(delta)) {
+        state.sideways = true;
+        return;
+      }
+    }
     state.moved = true;
     setPreviewStart(snappedStart(state.originStart, span, delta));
   }
@@ -583,6 +720,7 @@ function DraggableBooking({
     const state = drag.current;
     if (!state || state.pointerId !== pointer.pointerId) return;
     drag.current = null;
+    if (state.moved) pointer.stopPropagation();
     if (!commit || !state.moved || !event.assignmentId || !event.windowMinutes) {
       setPreviewStart(null);
       return;
