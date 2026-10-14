@@ -11,9 +11,9 @@ type PlacesAddressComponent = {
   types?: string[];
 };
 
-/** Server-only. Do not use NEXT_PUBLIC_* — the key must not ship to the browser bundle. */
+/** Server-only — used from API routes, never imported in client components. */
 export function googlePlacesApiKey(): string {
-  return process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  return process.env.GOOGLE_MAPS_API_KEYenv.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 }
 
 export function googlePlacesConfigured(): boolean {
