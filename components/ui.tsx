@@ -7,7 +7,7 @@ export function Screen({ children }: { children: React.ReactNode }) {
 type Crumb = { label: string; href?: string; onClick?: () => void };
 
 export function PageHeader({
-  eyebrow = "Golden Hour",
+  eyebrow = "Golden Hour Cleaning Crew",
   crumb,
   crumbs,
   title,

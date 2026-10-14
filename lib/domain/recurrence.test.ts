@@ -327,7 +327,7 @@ describe("recurring edits and staffing", () => {
     assert.match(plan.attention[0].reason, /conflicts with another confirmed job/);
   });
 
-  it("keeps a direct recurring assignment pending until that week is submitted", () => {
+  it("confirms a direct recurring assignment before that week is submitted", () => {
     const plan = planOccurrenceStaffing({
       jobId: "job-oct-6",
       serviceDate: "2026-10-06",
@@ -341,9 +341,8 @@ describe("recurring edits and staffing", () => {
       newId: () => "new",
     });
     assert.equal(plan.assignments.length, 1);
-    assert.equal(plan.assignments[0].status, "PENDING_AVAILABILITY");
-    assert.equal(plan.assignments[0].pendingCrewSize, 1);
-    assert.equal(plan.assignments[0].confirmedCrewSize, undefined);
+    assert.equal(plan.assignments[0].status, "CONFIRMED");
+    assert.equal(plan.assignments[0].confirmedCrewSize, 1);
     assert.equal(plan.attention.length, 0);
   });
 

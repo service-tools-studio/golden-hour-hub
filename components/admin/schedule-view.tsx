@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AddressLink, fullAddress } from "@/components/address-link";
 import { useHub } from "@/components/hub-provider";
+import { useNow } from "@/components/use-now";
 import { PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { personName } from "@/lib/domain/cleaners";
 import {
@@ -21,7 +23,7 @@ import {
   timeFromMinutes,
   zonedParts,
 } from "@/lib/domain/time";
-import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
+import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment, RecurringSeries } from "@/lib/domain/types";
 import { cleanerArrivalChangeSms, formatLongDate, serviceLabel, smsHref } from "@/lib/format";
 
 type View = "day" | "month";
@@ -185,7 +187,9 @@ function ScheduleSearch({
                 <span className="mt-0.5 block text-sm text-ink/70">
                   {serviceLabel(job.serviceType)} · {formatLongDate(job.date)}
                 </span>
-                <span className="mt-0.5 block text-sm text-ink/55">{job.snapshot.streetAddress}</span>
+                <span className="mt-0.5 block text-sm text-ink/55">
+                  <AddressLink address={fullAddress(job.snapshot)}>{job.snapshot.streetAddress}</AddressLink>
+                </span>
               </Link>
             </li>
           ))}
@@ -380,7 +384,7 @@ const HOUR_PX = 40;
 const GRID_PAD_TOP = 10;
 const GRID_PAD_BOTTOM = 14;
 
-type EventTone = "open" | "confirmed" | "pending";
+type EventTone = "open" | "confirmed" | "pending" | "unassigned";
 
 type DayEvent = {
   id: string;
@@ -402,12 +406,14 @@ const TONE_CLASS: Record<EventTone, string> = {
   open: "bg-mint",
   confirmed: "bg-gold",
   pending: "bg-white",
+  unassigned: "bg-red-50 ring-1 ring-inset ring-[#e15b64]/40",
 };
 
 const ACCENT_CLASS: Record<EventTone, string> = {
   open: "bg-[#12858b]",
   confirmed: "bg-[#8d6b16]",
   pending: "bg-[#8d6b16]",
+  unassigned: "bg-[#e15b64]",
 };
 
 const SWIPE_MIN_PX = 50;
@@ -510,14 +516,16 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
         jobs: hub.jobs,
         assignments: hub.assignments,
         availability: hub.availability,
+        series: hub.series,
       }),
-    [date, hub.assignments, hub.availability, hub.cleaners, hub.jobs, ids],
+    [date, hub.assignments, hub.availability, hub.cleaners, hub.jobs, hub.series, ids],
   );
   const laidOut = layoutDayEvents(built.events);
   const grid = gridBounds(built.events);
   const hours = Array.from({ length: (grid.end - grid.start) / 60 + 1 }, (_, index) => grid.start / 60 + index);
   const height = GRID_PAD_TOP + ((grid.end - grid.start) / 60) * HOUR_PX + GRID_PAD_BOTTOM;
-  const now = date === hub.today ? nowMinutes() : null;
+  const nowMs = useNow();
+  const now = date === hub.today ? nowMinutes(nowMs) : null;
   const showNow = now != null && now >= grid.start && now <= grid.end;
   const [movedAssignmentId, setMovedAssignmentId] = useState<string | null>(null);
 
@@ -566,6 +574,16 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
           {nameList(built.quiet)} {built.quiet.length === 1 ? "has" : "have"} no availability this day.
         </p>
       ) : null}
+      {built.untimed.map((job) => (
+        <Link
+          key={job.jobId}
+          href={job.href}
+          className="mx-2 mt-2 flex min-h-11 items-center justify-between gap-3 rounded-xl bg-red-50 px-3 text-sm ring-1 ring-inset ring-[#e15b64]/40"
+        >
+          <span className="font-semibold">{job.title}</span>
+          <span className="text-ink/70">No cleaner assigned · No time set</span>
+        </Link>
+      ))}
       {movedAssignmentId ? (
         <NotifyCleanerDialog assignmentId={movedAssignmentId} onClose={() => setMovedAssignmentId(null)} />
       ) : null}
@@ -811,7 +829,8 @@ function buildDayEvents(input: {
   jobs: Job[];
   assignments: JobAssignment[];
   availability: AvailabilityWindow[];
-}): { events: DayEvent[]; quiet: string[] } {
+  series: RecurringSeries[];
+}): { events: DayEvent[]; quiet: string[]; untimed: Array<{ jobId: string; title: string; href: string }> } {
   const events: DayEvent[] = [];
   const quiet: string[] = [];
   const several = input.cleanerIds.length > 1;
@@ -885,8 +904,53 @@ function buildDayEvents(input: {
     }
     if (events.length === before) quiet.push(personName(cleaner.firstName, cleaner.lastName));
   });
-  return { events, quiet };
+  const untimed: Array<{ jobId: string; title: string; href: string }> = [];
+  for (const job of input.jobs) {
+    if (job.date !== input.date || job.status === "CANCELED") continue;
+    if (input.assignments.some((assignment) => assignment.jobId === job.jobId && STAFFED_STATUSES.has(assignment.status))) {
+      continue;
+    }
+    const href = `/admin/jobs/${job.jobId}?from=schedule`;
+    const title = job.snapshot.customerDisplayName;
+    const series = job.seriesId ? input.series.find((item) => item.seriesId === job.seriesId) : undefined;
+    const arrivalStart = job.arrivalWindowStart ?? series?.defaultArrivalWindowStart;
+    const arrivalEnd = job.arrivalWindowEnd ?? series?.defaultArrivalWindowEnd;
+    const span =
+      arrivalStart && arrivalEnd
+        ? calculateBlockedRange({
+            date: job.date,
+            arrivalWindowStart: arrivalStart,
+            arrivalWindowEnd: arrivalEnd,
+            expectedDurationMinutes: job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes ?? 0,
+          }).spans.find((item) => item.date === input.date)
+        : undefined;
+    if (!span || span.endMin <= span.startMin) {
+      untimed.push({ jobId: job.jobId, title, href });
+      continue;
+    }
+    events.push({
+      id: `${job.jobId}-unassigned`,
+      cleanerId: "",
+      order: -1,
+      startMin: span.startMin,
+      endMin: span.endMin,
+      href,
+      title,
+      subtitle: "No cleaner",
+      location: job.snapshot.streetAddress,
+      time: rangeLabel(span.startMin, span.endMin),
+      tone: "unassigned",
+    });
+  }
+  return { events, quiet, untimed };
 }
+
+const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
+  "CONFIRMED",
+  "INVITED",
+  "PENDING_AVAILABILITY",
+  "NEEDS_ATTENTION",
+]);
 
 function pendingLabel(assignment: JobAssignment, firstName: string): string {
   if (assignment.attentionReason) return assignment.attentionReason;
@@ -914,8 +978,8 @@ function hourLabel(hour: number): string {
   return `${clock} ${suffix}`;
 }
 
-function nowMinutes(): number {
-  const parts = zonedParts(new Date());
+function nowMinutes(nowMs: number): number {
+  const parts = zonedParts(new Date(nowMs));
   return parts.hour * 60 + parts.minute;
 }
 

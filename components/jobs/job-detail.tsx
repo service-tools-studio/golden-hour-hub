@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
+import { AddToCalendarButton } from "@/components/add-to-calendar";
+import { AddressLink, fullAddress } from "@/components/address-link";
+import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { AlertIcon, Card, PageHeader, Screen } from "@/components/ui";
 import { snapshotVisit } from "@/lib/domain/customers";
 import { helpersApproved } from "@/lib/domain/cleaners";
@@ -27,11 +30,13 @@ import {
   reinviteFlagText,
   serviceEmoji,
   cleanerArrivalChangeSms,
+  cleanerServiceLabel,
   serviceLabel,
   smsHref,
 } from "@/lib/format";
 
-export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string; fromSchedule?: boolean }) {
+export function AdminJobDetail({ jobId, from }: { jobId: string; from?: CleaningOrigin }) {
+  const fromSchedule = from === "schedule";
   const hub = useHub();
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -91,27 +96,29 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
         crumbs={
           fromSchedule
             ? [{ href: `/admin/schedule?date=${job.date}`, label: "Schedule" }]
-            : [
-                { href: "/admin/customers", label: "Customers" },
-                { href: `/admin/customers/${job.customerId}`, label: visit.customerDisplayName },
-              ]
+            : from === "dashboard"
+              ? [{ href: "/admin", label: "Dashboard" }]
+              : [
+                  { href: "/admin/customers", label: "Customers" },
+                  { href: `/admin/customers/${job.customerId}`, label: visit.customerDisplayName },
+                ]
         }
       />
       <div className="space-y-3 px-5 pt-4">
         <Card>
-          <Link href={editPath(job.jobId, fromSchedule)} className="block">
+          <Link href={editPath(job.jobId, from)} className="block">
             <ServiceLine serviceType={job.serviceType} prominent />
             <div className="mt-3">
               <p className="font-semibold">{visit.customerDisplayName}</p>
               {visit.propertyLabel ? <p className="font-semibold">{visit.propertyLabel}</p> : null}
               <div className="flex items-start gap-2">
                 <span aria-hidden="true">📍</span>
-                <div>
-                  <p className={visit.propertyLabel ? "text-sm" : "font-semibold"}>{visit.streetAddress}</p>
-                  <p className="text-sm text-ink/70">
+                <AddressLink address={fullAddress(visit)} className="inline-block">
+                  <span className={`block ${visit.propertyLabel ? "text-sm" : "font-semibold"}`}>{visit.streetAddress}</span>
+                  <span className="block text-sm text-ink/70">
                     {visit.city}, {visit.state} {visit.zip}
-                  </p>
-                </div>
+                  </span>
+                </AddressLink>
               </div>
               <p className="mt-1 text-sm text-ink/60">
                 {visit.bedrooms} bed · {visit.bathrooms} bath · {visit.squareFeet.toLocaleString()} sq ft
@@ -154,7 +161,7 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
               )}
             </div>
           ) : null}
-          <Link href={editPath(job.jobId, fromSchedule)} className="block">
+          <Link href={editPath(job.jobId, from)} className="block">
             {reinviteFlag ? <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlag}</p> : null}
             <div className="mt-3 flex items-start justify-between gap-3">
               <div className="text-sm font-semibold">
@@ -175,7 +182,7 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
               const gap = detail ? noticeGap(true, detail) : null;
               return (
                 <div key={cleanerId} className="flex items-start justify-between gap-3">
-                  <Link href={editPath(job.jobId, fromSchedule, { cleaner: cleanerId })} className="block min-w-0 flex-1">
+                  <Link href={editPath(job.jobId, from, { cleaner: cleanerId })} className="block min-w-0 flex-1">
                     {detail ? (
                       <>
                         <p className="text-base font-semibold">
@@ -216,7 +223,7 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
               return (
                 <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
                   <div className="min-w-0 flex-1">
-                    <Link href={editPath(job.jobId, fromSchedule, { assignment: assignment.assignmentId })} className="block">
+                    <Link href={editPath(job.jobId, from, { assignment: assignment.assignmentId })} className="block">
                       <p className="text-base font-semibold">
                         {cleaner.firstName} {cleaner.lastName}
                       </p>
@@ -265,12 +272,13 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
         {series ? (
           <RecurringCard
             jobId={job.jobId}
-            fromSchedule={fromSchedule}
+            from={from}
             customerId={job.customerId}
             dateLabel={formatLongDate(job.date)}
             seriesId={series.seriesId}
             summary={seriesSummary(series)}
             place={seriesPlace(hub.properties, series.propertyId, job.snapshot.streetAddress)}
+            placeAddress={fullAddress(hub.properties.find((property) => property.propertyId === series.propertyId) ?? job.snapshot)}
             detail={`${series.status === "ACTIVE" ? "Active" : "Paused"} · Headcount ${series.defaultHeadcountNeeded}`}
             confirmDelete={confirmDelete}
             onAskDelete={() => setConfirmDelete(true)}
@@ -288,7 +296,7 @@ export function AdminJobDetail({ jobId, fromSchedule = false }: { jobId: string;
           />
         ) : null}
         <Link
-          href={fromSchedule ? `/admin/jobs/${job.jobId}/cleaners?from=schedule` : `/admin/jobs/${job.jobId}/cleaners`}
+          href={withOrigin(`/admin/jobs/${job.jobId}/cleaners`, from)}
           className="flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
         >
           Add cleaner
@@ -346,11 +354,8 @@ function WarningIcon() {
   );
 }
 
-function editPath(jobId: string, fromSchedule: boolean, params: Record<string, string> = {}) {
-  const search = new URLSearchParams(params);
-  if (fromSchedule) search.set("from", "schedule");
-  const query = search.toString();
-  return `/admin/jobs/${jobId}/edit${query ? `?${query}` : ""}`;
+function editPath(jobId: string, from: CleaningOrigin | undefined, params: Record<string, string> = {}) {
+  return withOrigin(`/admin/jobs/${jobId}/edit`, from, params);
 }
 
 function cleanerArrivals(
@@ -390,11 +395,12 @@ function seriesPlace(
 function RecurringCard({
   jobId,
   customerId,
-  fromSchedule = false,
+  from,
   dateLabel,
   seriesId,
   summary,
   place,
+  placeAddress,
   detail,
   confirmDelete,
   onAskDelete,
@@ -404,11 +410,12 @@ function RecurringCard({
 }: {
   jobId: string;
   customerId: string;
-  fromSchedule?: boolean;
+  from?: CleaningOrigin;
   dateLabel: string;
   seriesId: string;
   summary: string;
   place: string;
+  placeAddress: string;
   detail: string;
   confirmDelete: boolean;
   onAskDelete: () => void;
@@ -416,14 +423,16 @@ function RecurringCard({
   onDeleteCleaning: () => void;
   onDeleteSchedule: () => void;
 }) {
-  const back = fromSchedule ? `/admin/jobs/${jobId}?from=schedule` : `/admin/jobs/${jobId}`;
+  const back = withOrigin(`/admin/jobs/${jobId}`, from);
   const editHref = `/admin/customers/${customerId}?series=${encodeURIComponent(seriesId)}&returnTo=${encodeURIComponent(back)}`;
   return (
     <>
       <Card>
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Recurring</p>
         <p className="mt-1 text-lg font-semibold">{summary}</p>
-        <p className="mt-1 text-sm text-ink/70">{place}</p>
+        <p className="mt-1 text-sm text-ink/70">
+          <AddressLink address={placeAddress}>{place}</AddressLink>
+        </p>
         <p className="text-sm text-ink/70">{detail}</p>
         <Link
           href={editHref}
@@ -521,23 +530,26 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
       <PageHeader eyebrow="Confirmed job" title={job.snapshot.customerDisplayName} subtitle={formatLongDate(job.date)} />
       <div className="space-y-3 px-5 pt-4">
         <Card>
-          <ServiceLine serviceType={job.serviceType} />
+          <ServiceLine serviceType={job.serviceType} forCleaner />
           <p className="mt-3 text-sm text-ink/60">Arrival window</p>
           <p className="text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
           <p className="text-sm text-ink/70">{formatDuration(assignment.expectedDurationMinutes)}</p>
-          <p className="mt-4 flex items-start gap-2 text-base">
+          <div className="mt-4 flex items-start gap-2 text-base">
             <span aria-hidden="true">📍</span>
-            <span>
+            <AddressLink address={fullAddress(job.snapshot)}>
               {job.snapshot.streetAddress}
               <br />
               {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
-            </span>
-          </p>
+            </AddressLink>
+          </div>
           <p className="mt-3 text-sm">
             {job.snapshot.bedrooms} bed · {job.snapshot.bathrooms} bath · {job.snapshot.squareFeet.toLocaleString()} sq ft
           </p>
           {job.snapshot.preferences ? <p className="mt-3 text-sm">Preferences: {job.snapshot.preferences}</p> : null}
           {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
+          <div className="mt-4">
+            <AddToCalendarButton job={job} assignment={assignment} />
+          </div>
         </Card>
         <Card>
           {helpersApproved(cleaner.maxHelperCount) ? (
@@ -578,12 +590,20 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
 
 const KELSEY_PHONE = (process.env.NEXT_PUBLIC_KELSEY_PHONE ?? "").replace(/\D/g, "");
 
-function ServiceLine({ serviceType, prominent = false }: { serviceType: Parameters<typeof serviceLabel>[0]; prominent?: boolean }) {
+function ServiceLine({
+  serviceType,
+  prominent = false,
+  forCleaner = false,
+}: {
+  serviceType: Parameters<typeof serviceLabel>[0];
+  prominent?: boolean;
+  forCleaner?: boolean;
+}) {
   const emoji = serviceEmoji(serviceType);
   return (
     <p className={`flex items-start gap-2 ${prominent ? "text-lg font-semibold" : "text-base"}`}>
       {emoji ? <span aria-hidden="true">{emoji}</span> : null}
-      <span>{serviceLabel(serviceType)}</span>
+      <span>{forCleaner ? cleanerServiceLabel(serviceType) : serviceLabel(serviceType)}</span>
     </p>
   );
 }

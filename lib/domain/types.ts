@@ -206,6 +206,8 @@ export type JobAssignment = {
   confirmedCrewSize?: number;
   /** Why a recurring assignment could not be schedule-confirmed. */
   attentionReason?: string;
+  /** Week start (YYYY-MM-DD) when submitted availability did not cover this assignment. */
+  availabilityConflictWeekStart?: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
   expectedDurationMinutes: number;

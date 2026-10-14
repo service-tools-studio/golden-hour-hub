@@ -41,7 +41,6 @@ describe("invitation acceptance", () => {
       jobAssignments: [invite()],
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
-      availabilitySubmitted: true,
     });
     assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 1, confirmedTotalPayCents: 5_000 });
   });
@@ -55,7 +54,6 @@ describe("invitation acceptance", () => {
       jobAssignments: [invite()],
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
-      availabilitySubmitted: true,
     });
     assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 3, confirmedTotalPayCents: 15_000 });
   });
@@ -74,7 +72,6 @@ describe("invitation acceptance", () => {
       jobAssignments: [],
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
-      availabilitySubmitted: true,
     });
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.message, "You can only attend on your own for this job.");
@@ -93,7 +90,6 @@ describe("invitation acceptance", () => {
       jobAssignments: [],
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
-      availabilitySubmitted: true,
     });
     assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 1, confirmedTotalPayCents: 5_000 });
   });
@@ -107,12 +103,11 @@ describe("invitation acceptance", () => {
       jobAssignments: [],
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
-      availabilitySubmitted: true,
     });
     assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 2, confirmedTotalPayCents: 7_000 });
   });
 
-  it("keeps an accepted future job pending until that week's availability exists", () => {
+  it("confirms an accepted job before that week's availability is submitted", () => {
     const result = validateInvitationAcceptance({
       assignment: invite({ serviceDate: "2026-11-02" }),
       job: { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 3 },
@@ -121,9 +116,8 @@ describe("invitation acceptance", () => {
       jobAssignments: [invite({ serviceDate: "2026-11-02" })],
       cleanerConfirmedAssignments: [],
       availabilityWindows: [],
-      availabilitySubmitted: false,
     });
-    assert.deepEqual(result, { ok: true, status: "PENDING_AVAILABILITY", pendingCrewSize: 2 });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 2, confirmedTotalPayCents: 10_000 });
   });
 
   it("rechecks the current helper maximum when an old invitation is accepted", () => {
@@ -135,7 +129,6 @@ describe("invitation acceptance", () => {
       jobAssignments: [],
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
-      availabilitySubmitted: true,
     });
     assert.equal(tooLarge.ok, false);
     if (!tooLarge.ok) assert.equal(tooLarge.message, "Your approved crew size is 2.");
@@ -147,7 +140,6 @@ describe("invitation acceptance", () => {
       jobAssignments: [],
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
-      availabilitySubmitted: true,
     });
     assert.equal(withinNewMax.ok, true);
     if (withinNewMax.ok && withinNewMax.status === "CONFIRMED") assert.equal(withinNewMax.confirmedCrewSize, 2);
@@ -178,7 +170,7 @@ describe("invitation acceptance", () => {
     });
     const settled = revalidatePendingAssignments({
       assignments: [pending, historical, outside],
-      cleaner: { cleanerId: "claudia", status: "ACTIVE", maxHelperCount: 1 },
+      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 1 },
       weekStart: "2026-09-28",
       weekEnd: "2026-10-04",
       windows: openWindow,
@@ -195,9 +187,33 @@ describe("invitation acceptance", () => {
     assert.equal(confirmed?.status, "NEEDS_ATTENTION");
     assert.match(confirmed?.attentionReason ?? "", /approved crew size is 2/);
     assert.equal(flagged?.status, "NEEDS_ATTENTION");
-    assert.match(flagged?.attentionReason ?? "", /outside the cleaner's submitted availability/);
+    assert.match(flagged?.attentionReason ?? "", /Follow up with Claudia\./);
+    assert.equal(flagged?.availabilityConflictWeekStart, "2026-09-28");
     assert.equal(history?.status, "CONFIRMED");
     assert.equal(history?.confirmedCrewSize, 3);
+  });
+
+  it("flags a confirmed assignment when submitted availability does not cover it", () => {
+    const confirmed = invite({
+      status: "CONFIRMED",
+      confirmedCrewSize: 1,
+      confirmedTotalPayCents: 5_000,
+      serviceDate: "2026-10-03",
+      arrivalWindowStart: "09:00",
+      arrivalWindowEnd: "10:00",
+    });
+    const settled = revalidatePendingAssignments({
+      assignments: [confirmed],
+      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 0 },
+      weekStart: "2026-09-28",
+      weekEnd: "2026-10-04",
+      windows: [{ date: "2026-10-03", start: "15:00", end: "18:00" }],
+      jobs: [{ jobId: "job-1", status: "SCHEDULED", headcountNeeded: 1 }],
+      nowIso: "2026-09-27T00:00:00.000Z",
+    });
+    assert.equal(settled[0].status, "NEEDS_ATTENTION");
+    assert.match(settled[0].attentionReason ?? "", /falls outside those hours/);
+    assert.equal(settled[0].availabilityConflictWeekStart, "2026-09-28");
   });
 
   it("confirms a pending assignment on a covered day outside the submitted week", () => {
@@ -221,7 +237,7 @@ describe("invitation acceptance", () => {
     });
     const settled = revalidatePendingAssignments({
       assignments: [pending, untouched],
-      cleaner: { cleanerId: "claudia", status: "ACTIVE", maxHelperCount: 0 },
+      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 0 },
       weekStart: "2026-10-05",
       weekEnd: "2026-10-11",
       windows: [{ date: "2026-10-04", start: "00:00", end: "24:00" }],
@@ -245,7 +261,7 @@ describe("invitation acceptance", () => {
     });
     const settled = revalidatePendingAssignments({
       assignments: [pending],
-      cleaner: { cleanerId: "claudia", status: "ACTIVE", maxHelperCount: 2 },
+      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 },
       weekStart: "2026-09-28",
       weekEnd: "2026-10-04",
       windows: openWindow,

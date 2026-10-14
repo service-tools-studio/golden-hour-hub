@@ -1,4 +1,5 @@
 import { AdminJobDetail } from "@/components/jobs/job-detail";
+import { cleaningOrigin } from "@/components/jobs/origin";
 
 export default async function AdminJobPage({
   params,
@@ -9,5 +10,5 @@ export default async function AdminJobPage({
 }) {
   const { jobId } = await params;
   const query = await searchParams;
-  return <AdminJobDetail jobId={jobId} fromSchedule={query.from === "schedule"} />;
+  return <AdminJobDetail jobId={jobId} from={cleaningOrigin(query.from)} />;
 }

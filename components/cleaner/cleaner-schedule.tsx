@@ -5,7 +5,7 @@ import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "@/lib/domain/scheduling";
 import { addDays, formatTimeLabel } from "@/lib/domain/time";
-import { formatArrival, formatLongDate, serviceLabel } from "@/lib/format";
+import { formatArrival, formatLongDate, cleanerServiceLabel } from "@/lib/format";
 
 export function CleanerSchedule() {
   const hub = useHub();
@@ -43,7 +43,7 @@ export function CleanerSchedule() {
                   return (
                     <Link key={assignment.assignmentId} href={`/cleaner/jobs/${job.jobId}`} className="block rounded-2xl bg-ink px-3 py-3 text-cream">
                       <p className="font-semibold">{job.snapshot.customerDisplayName}</p>
-                      <p className="text-sm text-cream/80">{serviceLabel(job.serviceType)}</p>
+                      <p className="text-sm text-cream/80">{cleanerServiceLabel(job.serviceType)}</p>
                       <p className="text-sm text-cream/80">
                         Arrival window:{" "}
                         <span className="whitespace-nowrap">

@@ -12,7 +12,6 @@ import {
   validateInvitationAcceptance,
   withAssignmentConfirmed,
   withAssignmentDeclined,
-  withAssignmentPendingAvailability,
 } from "@/lib/domain/invitations";
 import { dateMatchesRule, mergeRecurringHorizon, planOccurrenceStaffing, validateRecurrenceRule } from "@/lib/domain/recurrence";
 import {
@@ -297,37 +296,42 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       availabilityWindows: data.availability
         .filter((window) => window.cleanerId === cleaner.cleanerId)
         .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-      availabilitySubmitted: data.submissions.some(
-        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
-      ),
     });
     if (!decision.ok) return decision;
     const now = new Date().toISOString();
-    const updated =
-      decision.status === "PENDING_AVAILABILITY"
-        ? withAssignmentPendingAvailability(jobAssignments, assignmentId, decision.pendingCrewSize, now)
-        : expireRemainingInvitationsWhenFilled(
-            withAssignmentConfirmed(
-              jobAssignments,
-              assignmentId,
-              decision.confirmedCrewSize,
-              decision.confirmedTotalPayCents,
-              now,
-            ),
-            job.headcountNeeded,
-            now,
-          );
+    const updated = expireRemainingInvitationsWhenFilled(
+      withAssignmentConfirmed(
+        jobAssignments,
+        assignmentId,
+        decision.confirmedCrewSize,
+        decision.confirmedTotalPayCents,
+        now,
+      ),
+      job.headcountNeeded,
+      now,
+    );
+    let assignments = [...data.assignments.filter((item) => item.jobId !== job.jobId), ...updated];
+    const submitted = data.submissions.some(
+      (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
+    );
+    if (submitted) {
+      assignments = revalidatePendingAssignments({
+        assignments,
+        cleaner,
+        weekStart,
+        weekEnd: addDays(weekStart, 6),
+        windows: data.availability
+          .filter((window) => window.cleanerId === cleaner.cleanerId)
+          .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+        jobs: data.jobs,
+        nowIso: now,
+      });
+    }
     setState({
       ...data,
-      assignments: [...data.assignments.filter((item) => item.jobId !== job.jobId), ...updated],
+      assignments,
     });
-    return {
-      ok: true,
-      message:
-        decision.status === "PENDING_AVAILABILITY"
-          ? "Saved. This cleaning is confirmed after your availability for that week fits."
-          : undefined,
-    };
+    return { ok: true };
   }
 
   function declineInvitation(assignmentId: string): ActionResult {
@@ -891,10 +895,27 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       },
       nextAssignments,
     );
+    let assignments = nextAssignments;
+    if (
+      savedAssignment.status === "CONFIRMED" &&
+      data.submissions.some((submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart)
+    ) {
+      assignments = revalidatePendingAssignments({
+        assignments,
+        cleaner,
+        weekStart,
+        weekEnd: addDays(weekStart, 6),
+        windows: data.availability
+          .filter((window) => window.cleanerId === cleaner.cleanerId)
+          .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+        jobs: data.jobs,
+        nowIso: now,
+      });
+    }
     setState({
       ...data,
       jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-      assignments: nextAssignments,
+      assignments,
     });
     const message =
       savedAssignment.status === "CONFIRMED"

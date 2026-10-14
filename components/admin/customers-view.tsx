@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
+import { AddressLink, fullAddress } from "@/components/address-link";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
@@ -62,7 +63,9 @@ export function CustomersView() {
                 {homes.map((home) => (
                   <p key={home.propertyId} className="text-sm text-ink/70">
                     {home.label ? `${home.label} · ` : ""}
-                    {home.streetAddress}, {home.city}
+                    <AddressLink address={fullAddress(home)}>
+                      {home.streetAddress}, {home.city}
+                    </AddressLink>
                   </p>
                 ))}
                 {customer.phone ? (
@@ -305,7 +308,9 @@ export function CustomerDetail({
               <Pencil />
               <p className="pr-6 font-semibold">{home.label ?? home.streetAddress}</p>
               <p className="text-sm text-ink/70">
-                {home.streetAddress}, {home.city} {home.state} {home.zip}
+                <AddressLink address={fullAddress(home)}>
+                  {home.streetAddress}, {home.city} {home.state} {home.zip}
+                </AddressLink>
               </p>
               <p className="mt-2 text-sm">
                 {home.bedrooms} bed · {home.bathrooms} bath · {home.squareFeet.toLocaleString()} sq ft
@@ -328,7 +333,11 @@ export function CustomerDetail({
             >
               <Pencil />
               <p className="pr-6 text-lg font-semibold">{seriesSummary(item)}</p>
-              {place ? <p className="text-sm text-ink/70">{place}</p> : null}
+              {place && home ? (
+                <p className="text-sm text-ink/70">
+                  <AddressLink address={fullAddress(home)}>{place}</AddressLink>
+                </p>
+              ) : null}
               <p className="text-sm text-ink/70">{item.status === "ACTIVE" ? "Active" : "Paused"} · Headcount {item.defaultHeadcountNeeded}</p>
             </Card>
           );
@@ -340,7 +349,9 @@ export function CustomerDetail({
             <Card>
               <p className="font-semibold">{formatLongDate(job.date)}</p>
               <p className="text-sm text-ink/70">{job.status === "DRAFT" ? `Draft · ${serviceLabel(job.serviceType)}` : serviceLabel(job.serviceType)}</p>
-              <p className="text-sm text-ink/70">{job.snapshot.streetAddress}</p>
+              <p className="text-sm text-ink/70">
+                <AddressLink address={fullAddress(job.snapshot)}>{job.snapshot.streetAddress}</AddressLink>
+              </p>
             </Card>
           </Link>
         ))}
@@ -351,7 +362,9 @@ export function CustomerDetail({
             <Card>
               <p className="font-semibold">{formatLongDate(job.date)}</p>
               <p className="text-sm text-ink/70">{serviceLabel(job.serviceType)}</p>
-              <p className="text-sm text-ink/70">{job.snapshot.streetAddress}</p>
+              <p className="text-sm text-ink/70">
+                <AddressLink address={fullAddress(job.snapshot)}>{job.snapshot.streetAddress}</AddressLink>
+              </p>
             </Card>
           </Link>
         ))}

@@ -6,9 +6,14 @@ import { InvitationCard } from "@/components/cleaner/invitation-card";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import { calculateBlockedRange, isWithinRange } from "@/lib/domain/scheduling";
-import { formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
+import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
-import { formatArrival, formatLongDate, serviceLabel } from "@/lib/format";
+import { formatArrival, formatLongDate, cleanerServiceLabel } from "@/lib/format";
+
+const KELSEY_PHONE = (process.env.NEXT_PUBLIC_KELSEY_PHONE ?? "").replace(/\D/g, "");
+
+const AVAILABILITY_MISMATCH_MESSAGE =
+  "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
 
 function inProgress(assignment: JobAssignment, now: number): boolean {
   return isWithinRange(
@@ -28,7 +33,7 @@ function JobCard({ assignment, job }: { assignment: JobAssignment; job: Job }) {
       <Card>
         <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
         <p className="text-sm text-ink/70">
-          {serviceLabel(job.serviceType)} · {formatLongDate(job.date)}
+          {cleanerServiceLabel(job.serviceType)} · {formatLongDate(job.date)}
         </p>
         <p className="mt-2 text-base">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
       </Card>
@@ -41,10 +46,7 @@ export function CleanerHome() {
   const now = useNow();
   const cleaner = hub.cleaners.find((item) => item.cleanerId === hub.cleanerId);
   if (!cleaner) return null;
-  const week = nextAvailabilityWeek(hub.today);
-  const submitted = hub.submissions.some(
-    (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === week.weekStart,
-  );
+  const availabilityWeeks = editableAvailabilityWeeks(hub.today);
   const invitations = hub.assignments.filter(
     (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "INVITED",
   );
@@ -70,7 +72,7 @@ export function CleanerHome() {
 
   return (
     <Screen>
-      <PageHeader title={`Hi ${cleaner.firstName}`} subtitle="Your jobs and availability" />
+      <PageHeader title={`What up, ${cleaner.firstName}!`} subtitle="Your jobs and availability" />
       <div className="space-y-4 px-5 pt-5">
         {happening.length > 0 ? (
           <section className="space-y-3">
@@ -123,11 +125,42 @@ export function CleanerHome() {
             {flagged.map((assignment) => {
               const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
               if (!job) return null;
+              const availabilityMismatch = Boolean(assignment.availabilityConflictWeekStart);
               return (
                 <Card key={assignment.assignmentId}>
                   <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
                   <p className="text-sm text-ink/70">{formatLongDate(job.date)}</p>
-                  <p className="mt-2 text-sm">{assignment.attentionReason ?? "This cleaning needs a schedule change before it can be confirmed."}</p>
+                  <p className="mt-2 text-sm leading-5">
+                    {availabilityMismatch
+                      ? AVAILABILITY_MISMATCH_MESSAGE
+                      : (assignment.attentionReason ?? "This cleaning needs a schedule change before it can be confirmed.")}
+                  </p>
+                  {availabilityMismatch ? (
+                    <div className="mt-4 space-y-2">
+                      <Link
+                        href={`/cleaner/availability?week=${assignment.availabilityConflictWeekStart ?? mondayOf(assignment.serviceDate)}`}
+                        className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+                      >
+                        Edit availability
+                      </Link>
+                      {KELSEY_PHONE ? (
+                        <div className="flex gap-2">
+                          <a
+                            href={`tel:+1${KELSEY_PHONE}`}
+                            className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+                          >
+                            Call Kelsey
+                          </a>
+                          <a
+                            href={`sms:+1${KELSEY_PHONE}`}
+                            className="flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-ink/20 bg-white text-base font-semibold text-ink"
+                          >
+                            Text Kelsey
+                          </a>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </Card>
               );
             })}
@@ -148,17 +181,27 @@ export function CleanerHome() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Next Week Availability</h2>
-          <Card>
-            <p className="text-xl font-semibold">{formatWeekRange(week.weekStart, week.weekEnd)}</p>
-            <p className="mt-2 text-base">{submitted ? "✓ Submitted" : "⚠ Not submitted yet"}</p>
-            <Link
-              href="/cleaner/availability"
-              className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
-            >
-              {submitted ? "Edit availability" : "Submit availability"}
-            </Link>
-          </Card>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Availability</h2>
+          {availabilityWeeks.map((week, index) => {
+            const submitted = hub.submissions.some(
+              (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === week.weekStart,
+            );
+            return (
+              <Card key={week.weekStart}>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/50">
+                  {index === 0 ? "Current week" : "Next week"}
+                </p>
+                <p className="mt-1 text-xl font-semibold">{formatWeekRange(week.weekStart, week.weekEnd)}</p>
+                <p className="mt-2 text-base">{submitted ? "✓ Submitted" : "⚠ Not submitted yet"}</p>
+                <Link
+                  href={`/cleaner/availability?week=${week.weekStart}`}
+                  className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+                >
+                  {submitted ? "Edit availability" : "Submit availability"}
+                </Link>
+              </Card>
+            );
+          })}
         </section>
       </div>
     </Screen>

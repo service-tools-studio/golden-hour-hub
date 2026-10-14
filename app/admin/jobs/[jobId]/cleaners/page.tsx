@@ -1,4 +1,5 @@
 import { AddCleanerView } from "@/components/admin/add-cleaner-view";
+import { cleaningOrigin } from "@/components/jobs/origin";
 
 export default async function AddCleanerPage({
   params,
@@ -9,5 +10,5 @@ export default async function AddCleanerPage({
 }) {
   const { jobId } = await params;
   const query = await searchParams;
-  return <AddCleanerView jobId={jobId} fromSchedule={query.from === "schedule"} />;
+  return <AddCleanerView jobId={jobId} from={cleaningOrigin(query.from)} />;
 }

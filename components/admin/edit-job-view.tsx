@@ -2,16 +2,19 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { sendCleanerText } from "@/app/actions/notifications";
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
+import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
 import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
-import type { Job, PayType } from "@/lib/domain/types";
+import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
 import {
   assignmentFormStatus,
   dateReinviteNeeded,
+  directAssignmentSms,
   formatLongDate,
   formatTimeLabel,
   hourWindowLabel,
@@ -21,15 +24,52 @@ import {
   reinviteFlagText,
 } from "@/lib/format";
 
-function cleaningHref(jobId: string, fromSchedule: boolean) {
-  return fromSchedule ? `/admin/jobs/${jobId}?from=schedule` : `/admin/jobs/${jobId}`;
+const DEFAULT_PAY_TYPE: PayType = "HOURLY";
+const DEFAULT_PAY = "30";
+
+function cleaningHref(jobId: string, from: CleaningOrigin | undefined) {
+  return withOrigin(`/admin/jobs/${jobId}`, from);
 }
 
-function cleaningSubtitle(job: Job): string {
-  const when = job.arrivalWindowStart
-    ? `${formatLongDate(job.date)} at ${formatTimeLabel(job.arrivalWindowStart)}`
-    : formatLongDate(job.date);
+function textDirectAssignment(
+  cleaner: CleanerProfile,
+  job: Job,
+  arrivalWindowStart: string,
+  arrivalWindowEnd: string,
+  flash: (message: string) => void,
+) {
+  const body = directAssignmentSms({
+    cleanerFirstName: cleaner.firstName,
+    customerName: job.snapshot.customerDisplayName,
+    streetAddress: job.snapshot.streetAddress,
+    date: job.date,
+    arrivalWindowStart,
+    arrivalWindowEnd,
+  });
+  void sendCleanerText(cleaner.mobilePhone, body).then((result) =>
+    flash(result.ok ? `Assigned. Text sent to ${cleaner.firstName}.` : result.message),
+  );
+}
+
+function cleaningSubtitle(job: Job, start: string | undefined): string {
+  const when = start ? `${formatLongDate(job.date)} at ${formatTimeLabel(start)}` : formatLongDate(job.date);
   return `${job.snapshot.customerDisplayName} · ${when}`;
+}
+
+function cleaningStart(
+  job: Job | undefined,
+  hub: Pick<ReturnType<typeof useHub>, "series" | "assignments" | "cleaners">,
+  cleanerId: string,
+): string | undefined {
+  if (!job) return undefined;
+  if (job.arrivalWindowStart) return job.arrivalWindowStart;
+  const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
+  if (series?.defaultArrivalWindowStart) return series.defaultArrivalWindowStart;
+  const others = cleanerArrivals(job, hub.assignments, hub.cleaners)
+    .filter((arrival) => arrival.cleanerId !== cleanerId && arrival.start)
+    .map((arrival) => arrival.start)
+    .sort();
+  return others[0];
 }
 
 function dollarsToCents(value: string): number | null {
@@ -106,13 +146,13 @@ export function EditJobView({
   assignmentId,
   cleanerId = "",
   customerId = "",
-  fromSchedule = false,
+  from,
 }: {
   jobId: string;
   assignmentId: string;
   cleanerId?: string;
   customerId?: string;
-  fromSchedule?: boolean;
+  from?: CleaningOrigin;
 }) {
   const hub = useHub();
   const router = useRouter();
@@ -125,12 +165,13 @@ export function EditJobView({
     job?.date ?? "",
     assignment ? { start: assignment.arrivalWindowStart, end: assignment.arrivalWindowEnd } : undefined,
   );
-  const initialArrival = defaultArrival(arrivalWindows, job?.arrivalWindowStart);
+  const jobStart = cleaningStart(job, hub, assignment?.cleanerId ?? "");
+  const initialArrival = defaultArrival(arrivalWindows, jobStart);
   const [arrivalStart, setArrivalStart] = useState(assignment?.arrivalWindowStart ?? initialArrival?.start ?? "");
   const [arrivalEnd, setArrivalEnd] = useState(assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "");
   const [crew, setCrew] = useState(assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1);
-  const [payType, setPayType] = useState<PayType>(assignment?.payType ?? "FLAT");
-  const [pay, setPay] = useState(assignment ? centsToInput(assignment.payPerPersonCents) : "");
+  const [payType, setPayType] = useState<PayType>(assignment?.payType ?? DEFAULT_PAY_TYPE);
+  const [pay, setPay] = useState(assignment ? centsToInput(assignment.payPerPersonCents) : DEFAULT_PAY);
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const assignmentSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, crew, payType, pay });
@@ -177,7 +218,8 @@ export function EditJobView({
       return false;
     }
     if (result.message) hub.flash(result.message);
-    router.push(nextHref ?? cleaningHref(jobId, fromSchedule));
+    if (mode === "DIRECT") textDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
+    router.push(nextHref ?? cleaningHref(jobId, from));
     return true;
   }
 
@@ -186,11 +228,11 @@ export function EditJobView({
   }
 
   if (cleanerId && !assignment) {
-    return <DraftStaffingForm jobId={jobId} cleanerId={cleanerId} fromSchedule={fromSchedule} />;
+    return <DraftStaffingForm jobId={jobId} cleanerId={cleanerId} from={from} />;
   }
 
   if (!assignmentId && !cleanerId) {
-    return <VisitEditForm jobId={jobId} customerId={customerId} fromSchedule={fromSchedule} />;
+    return <VisitEditForm jobId={jobId} customerId={customerId} from={from} />;
   }
 
   if (!job || !assignment || !cleaner) {
@@ -208,8 +250,8 @@ export function EditJobView({
     <Screen>
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
-        subtitle={cleaningSubtitle(job)}
-        crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
+        subtitle={cleaningSubtitle(job, jobStart)}
+        crumb={{ href: cleaningHref(job.jobId, from), label: "Cleaning" }}
       />
       <form
         className="space-y-4 px-5 pt-4"
@@ -279,10 +321,10 @@ export function EditJobView({
           </div>
         </Group>
         <AssignmentSaveChoices
-          weekNote={
+          directAssignNote={
             weekSubmitted
               ? null
-              : `${cleaner.firstName} has not submitted this week yet. Assigning directly keeps ${cleaner.firstName} on the cleaning and confirms it once availability is in.`
+              : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
           }
           onSave={submit}
         />
@@ -301,7 +343,7 @@ export function EditJobView({
   );
 }
 
-function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId: string; customerId?: string; fromSchedule?: boolean }) {
+function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; customerId?: string; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
@@ -357,7 +399,7 @@ function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId
     });
     if (!result.ok) return { ok: false, message: result.message };
     if (result.message) hub.flash(result.message);
-    router.push(nextHref ?? cleaningHref(cleaning.jobId, fromSchedule));
+    router.push(nextHref ?? cleaningHref(cleaning.jobId, from));
     return { ok: true };
   }
 
@@ -373,7 +415,7 @@ function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId
       <PageHeader
         title={job.snapshot.customerDisplayName}
         subtitle={formatLongDate(pickedDate ?? job.date)}
-        crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
+        crumb={{ href: cleaningHref(job.jobId, from), label: "Cleaning" }}
       />
       <CleaningForm
         initial={{
@@ -397,7 +439,7 @@ function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId
         leadCleanerId={leadCleanerId}
         canClearCleaners
         onDateChange={setPickedDate}
-        newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(`/admin/jobs/${job.jobId}/edit${fromSchedule ? "?from=schedule" : ""}`)}`}
+        newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(withOrigin(`/admin/jobs/${job.jobId}/edit`, from))}`}
         onSubmit={submit}
         afterDate={(date) => {
           const flag = reinviteFlagText(
@@ -422,7 +464,7 @@ function VisitEditForm({ jobId, customerId = "", fromSchedule = false }: { jobId
   );
 }
 
-function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: string; cleanerId: string; fromSchedule?: boolean }) {
+function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerId: string; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
@@ -436,12 +478,13 @@ function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: 
     job?.date ?? "",
     savedDetail ? { start: savedDetail.arrivalWindowStart, end: savedDetail.arrivalWindowEnd } : undefined,
   );
-  const initialArrival = defaultArrival(windows, job?.arrivalWindowStart);
+  const jobStart = cleaningStart(job, hub, cleanerId);
+  const initialArrival = defaultArrival(windows, jobStart);
   const [arrivalStart, setArrivalStart] = useState(savedDetail?.arrivalWindowStart ?? initialArrival?.start ?? "");
   const [arrivalEnd, setArrivalEnd] = useState(savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "");
   const [crew, setCrew] = useState(savedDetail?.proposedCrewSize ?? usualCrew);
-  const [payType, setPayType] = useState<PayType>(savedDetail?.payType ?? "FLAT");
-  const [pay, setPay] = useState(savedDetail ? centsToInput(savedDetail.payPerPersonCents) : "50");
+  const [payType, setPayType] = useState<PayType>(savedDetail?.payType ?? DEFAULT_PAY_TYPE);
+  const [pay, setPay] = useState(savedDetail ? centsToInput(savedDetail.payPerPersonCents) : DEFAULT_PAY);
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const draftSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, crew, payType, pay });
@@ -484,7 +527,8 @@ function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: 
       return false;
     }
     if (result.message) hub.flash(result.message);
-    router.push(nextHref ?? cleaningHref(job.jobId, fromSchedule));
+    if (mode === "DIRECT") textDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
+    router.push(nextHref ?? cleaningHref(job.jobId, from));
     return true;
   }
 
@@ -507,8 +551,8 @@ function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: 
     <Screen>
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
-        subtitle={cleaningSubtitle(job)}
-        crumb={{ href: cleaningHref(job.jobId, fromSchedule), label: "Cleaning" }}
+        subtitle={cleaningSubtitle(job, jobStart)}
+        crumb={{ href: cleaningHref(job.jobId, from), label: "Cleaning" }}
       />
       <form
         className="space-y-4 px-5 pt-4"
@@ -578,10 +622,10 @@ function DraftStaffingForm({ jobId, cleanerId, fromSchedule = false }: { jobId: 
           </div>
         </Group>
         <AssignmentSaveChoices
-          weekNote={
+          directAssignNote={
             weekSubmitted
               ? null
-              : `${cleaner.firstName} has not submitted this week yet. Assigning directly keeps ${cleaner.firstName} on the cleaning and confirms it once availability is in.`
+              : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
           }
           onSave={submit}
         />
@@ -629,10 +673,10 @@ function AssignmentStatus({ label, flag }: { label: string; flag: string | null 
 }
 
 function AssignmentSaveChoices({
-  weekNote,
+  directAssignNote,
   onSave,
 }: {
-  weekNote: string | null;
+  directAssignNote: string | null;
   onSave: (mode: "DRAFT" | "INVITE" | "DIRECT") => void;
 }) {
   return (
@@ -641,14 +685,16 @@ function AssignmentSaveChoices({
       <PrimaryButton type="button" onClick={() => onSave("INVITE")}>
         Save and send invite
       </PrimaryButton>
-      <button
-        type="button"
-        onClick={() => onSave("DIRECT")}
-        className="flex min-h-12 w-full items-center justify-center font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4"
-      >
-        Save and assign directly
-      </button>
-      {weekNote ? <p className="text-sm text-ink/70">{weekNote}</p> : null}
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => onSave("DIRECT")}
+          className="flex min-h-12 w-full items-center justify-center font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4"
+        >
+          Assign directly and notify
+        </button>
+        {directAssignNote ? <p className="text-sm text-ink/70">{directAssignNote}</p> : null}
+      </div>
     </div>
   );
 }

@@ -275,24 +275,6 @@ export function planOccurrenceStaffing(input: {
       continue;
     }
 
-    const availability = input.availabilityByCleaner[cleaner.cleanerId];
-    if (!availability?.submitted) {
-      assignments.push(
-        buildAssignment(
-          {
-            jobId: input.jobId,
-            serviceDate: input.serviceDate,
-            mode: "DIRECT",
-            nowIso: input.nowIso,
-            newId: input.newId,
-            pendingAvailability: true,
-          },
-          entry,
-        ),
-      );
-      continue;
-    }
-
     if (confirmedPeople + entry.proposedCrewSize > input.headcountNeeded) {
       const reason = `${cleaner.firstName}'s crew does not fit the remaining headcount.`;
       attention.push({ cleanerId: cleaner.cleanerId, reason });
@@ -306,12 +288,6 @@ export function planOccurrenceStaffing(input: {
       arrivalWindowEnd: entry.arrivalWindowEnd,
       expectedDurationMinutes: entry.expectedDurationMinutes,
     });
-    if (!availabilityCoversBlockedRange(availability.windows, blocked)) {
-      const reason = `This schedule is outside ${cleaner.firstName}'s submitted availability.`;
-      attention.push({ cleanerId: cleaner.cleanerId, reason });
-      assignments.push(flaggedAssignment(input, entry, reason));
-      continue;
-    }
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: cleaner.cleanerId,
       blocked,

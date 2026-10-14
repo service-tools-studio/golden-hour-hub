@@ -1,4 +1,5 @@
 import { EditJobView } from "@/components/admin/edit-job-view";
+import { cleaningOrigin } from "@/components/jobs/origin";
 
 export default async function EditJobPage({
   params,
@@ -18,7 +19,7 @@ export default async function EditJobPage({
       assignmentId={assignmentId}
       cleanerId={cleanerId}
       customerId={customerId}
-      fromSchedule={query.from === "schedule"}
+      from={cleaningOrigin(query.from)}
     />
   );
 }

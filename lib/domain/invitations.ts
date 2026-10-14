@@ -8,11 +8,11 @@ import {
   validateRequestedCrewSize,
   type ScheduleWindow,
 } from "./scheduling.ts";
+import { formatLongDate } from "./time.ts";
 import type { CleanerProfile, Job, JobAssignment, Result } from "./types.ts";
 
 export type InvitationDecision =
   | { ok: true; status: "CONFIRMED"; confirmedCrewSize: number; confirmedTotalPayCents: number }
-  | { ok: true; status: "PENDING_AVAILABILITY"; pendingCrewSize: number }
   | { ok: false; message: string };
 
 export function validateInvitationAcceptance(input: {
@@ -23,8 +23,6 @@ export function validateInvitationAcceptance(input: {
   jobAssignments: JobAssignment[];
   cleanerConfirmedAssignments: JobAssignment[];
   availabilityWindows: ScheduleWindow[];
-  /** False when this cleaner has not submitted the week that contains the job date. */
-  availabilitySubmitted: boolean;
 }): InvitationDecision {
   if (input.assignment.status !== "INVITED") {
     return { ok: false, message: "This invitation is no longer available." };
@@ -53,19 +51,12 @@ export function validateInvitationAcceptance(input: {
   });
   if (!crew.ok) return crew;
 
-  if (!input.availabilitySubmitted) {
-    return { ok: true, status: "PENDING_AVAILABILITY", pendingCrewSize: input.requestedCrewSize };
-  }
-
   const blocked = calculateBlockedRange({
     date: input.assignment.serviceDate,
     arrivalWindowStart: input.assignment.arrivalWindowStart,
     arrivalWindowEnd: input.assignment.arrivalWindowEnd,
     expectedDurationMinutes: input.assignment.expectedDurationMinutes,
   });
-  if (!availabilityCoversBlockedRange(input.availabilityWindows, blocked)) {
-    return { ok: false, message: "This schedule is outside your submitted availability." };
-  }
   const conflict = detectConfirmedAssignmentConflict({
     cleanerId: input.cleaner.cleanerId,
     blocked,
@@ -162,15 +153,25 @@ export function expireRemainingInvitationsWhenFilled(
   );
 }
 
+export function availabilityFollowUpReason(
+  firstName: string,
+  weekStart: string,
+  kind: "outside" | "conflict",
+): string {
+  const week = formatLongDate(weekStart);
+  if (kind === "outside") {
+    return `${firstName} submitted availability for the week of ${week}, but this cleaning falls outside those hours. Follow up with ${firstName}.`;
+  }
+  return `${firstName}'s submitted availability for the week of ${week} conflicts with another confirmed cleaning. Follow up with ${firstName}.`;
+}
+
 /**
- * After a week of availability is submitted, finish or flag assignments that were
- * accepted or directly reserved before that week existed. A pending cleaning on
- * any day these windows already cover is settled too.
- * Confirmed history is left unchanged.
+ * After a week of availability is submitted, confirm pending rows that fit and flag
+ * confirmed or pending assignments that no longer fit the submitted windows.
  */
 export function revalidatePendingAssignments(input: {
   assignments: JobAssignment[];
-  cleaner: Pick<CleanerProfile, "cleanerId" | "status" | "maxHelperCount">;
+  cleaner: Pick<CleanerProfile, "cleanerId" | "firstName" | "status" | "maxHelperCount">;
   weekStart: string;
   weekEnd: string;
   windows: ScheduleWindow[];
@@ -180,22 +181,24 @@ export function revalidatePendingAssignments(input: {
   const jobs = new Map(input.jobs.map((job) => [job.jobId, job]));
   let next = input.assignments.map((assignment) => ({ ...assignment }));
   const coveredDates = new Set(input.windows.map((window) => window.date));
-  const pending = next
+  const inWeek = next
     .filter(
       (assignment) =>
         assignment.cleanerId === input.cleaner.cleanerId &&
-        assignment.status === "PENDING_AVAILABILITY" &&
+        (assignment.status === "PENDING_AVAILABILITY" ||
+          assignment.status === "CONFIRMED" ||
+          assignment.status === "NEEDS_ATTENTION") &&
         ((assignment.serviceDate >= input.weekStart && assignment.serviceDate <= input.weekEnd) ||
           coveredDates.has(assignment.serviceDate)),
     )
     .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate) || a.assignmentId.localeCompare(b.assignmentId));
 
-  for (const pendingAssignment of pending) {
-    const index = next.findIndex((assignment) => assignment.assignmentId === pendingAssignment.assignmentId);
+  for (const row of inWeek) {
+    const index = next.findIndex((assignment) => assignment.assignmentId === row.assignmentId);
     const current = next[index];
-    const crewSize = current.pendingCrewSize ?? current.proposedCrewSize;
+    const crewSize = current.confirmedCrewSize ?? current.pendingCrewSize ?? current.proposedCrewSize;
     const job = jobs.get(current.jobId);
-    const reason = pendingFailureReason({
+    const failure = pendingFailureReason({
       assignment: current,
       job,
       cleaner: input.cleaner,
@@ -203,13 +206,22 @@ export function revalidatePendingAssignments(input: {
       windows: input.windows,
       assignments: next,
     });
-    if (reason) {
+    if (failure) {
+      const attentionReason =
+        failure.kind === "outside"
+          ? availabilityFollowUpReason(input.cleaner.firstName, input.weekStart, "outside")
+          : failure.kind === "conflict"
+            ? availabilityFollowUpReason(input.cleaner.firstName, input.weekStart, "conflict")
+            : failure.message;
       next[index] = {
         ...current,
         status: "NEEDS_ATTENTION",
-        attentionReason: reason,
+        attentionReason,
+        availabilityConflictWeekStart:
+          failure.kind === "outside" || failure.kind === "conflict" ? input.weekStart : undefined,
         confirmedCrewSize: undefined,
         confirmedTotalPayCents: undefined,
+        pendingCrewSize: undefined,
         updatedAt: input.nowIso,
       };
       continue;
@@ -220,6 +232,15 @@ export function revalidatePendingAssignments(input: {
       confirmedCrewSize: crewSize,
     });
     next = withAssignmentConfirmed(next, current.assignmentId, crewSize, confirmedTotalPayCents, input.nowIso);
+    const settledIndex = next.findIndex((assignment) => assignment.assignmentId === current.assignmentId);
+    if (settledIndex >= 0) {
+      next[settledIndex] = {
+        ...next[settledIndex],
+        attentionReason: undefined,
+        availabilityConflictWeekStart: undefined,
+        pendingCrewSize: undefined,
+      };
+    }
     if (job) {
       const onJob = next.filter((assignment) => assignment.jobId === job.jobId);
       const settled = expireRemainingInvitationsWhenFilled(onJob, job.headcountNeeded, input.nowIso);
@@ -236,22 +257,25 @@ function pendingFailureReason(input: {
   crewSize: number;
   windows: ScheduleWindow[];
   assignments: JobAssignment[];
-}): string | null {
+}): { kind: "outside" | "conflict" | "other"; message: string } | null {
   if (!input.job || input.job.status !== "SCHEDULED") {
-    return "This cleaning is no longer scheduled.";
+    return { kind: "other", message: "This cleaning is no longer scheduled." };
   }
   if (input.cleaner.status !== "ACTIVE") {
-    return "This cleaner is not active.";
+    return { kind: "other", message: "This cleaner is not active." };
   }
   const crew = validateRequestedCrewSize({
     maxHelperCount: input.cleaner.maxHelperCount,
     requestedCrewSize: input.crewSize,
     remainingHeadcount: calculateRemainingHeadcount(
       input.job.headcountNeeded,
-      input.assignments.filter((assignment) => assignment.jobId === input.job!.jobId),
+      input.assignments.filter(
+        (assignment) =>
+          assignment.jobId === input.job!.jobId && assignment.assignmentId !== input.assignment.assignmentId,
+      ),
     ),
   });
-  if (!crew.ok) return crew.message;
+  if (!crew.ok) return { kind: "other", message: crew.message };
   const blocked = calculateBlockedRange({
     date: input.assignment.serviceDate,
     arrivalWindowStart: input.assignment.arrivalWindowStart,
@@ -259,7 +283,7 @@ function pendingFailureReason(input: {
     expectedDurationMinutes: input.assignment.expectedDurationMinutes,
   });
   if (!availabilityCoversBlockedRange(input.windows, blocked)) {
-    return "This schedule is outside the cleaner's submitted availability.";
+    return { kind: "outside", message: "This schedule is outside the cleaner's submitted availability." };
   }
   const conflict = detectConfirmedAssignmentConflict({
     cleanerId: input.cleaner.cleanerId,
@@ -269,6 +293,6 @@ function pendingFailureReason(input: {
       .map(toAssignmentSchedule),
     ignoreAssignmentId: input.assignment.assignmentId,
   });
-  if (conflict) return "This cleaning conflicts with another confirmed job.";
+  if (conflict) return { kind: "conflict", message: "This cleaning conflicts with another confirmed job." };
   return null;
 }

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { AddressLink, fullAddress } from "@/components/address-link";
 import { useHub } from "@/components/hub-provider";
 import { Card, Notice, PrimaryButton, SecondaryButton } from "@/components/ui";
 import { helpersApproved, maxCrewSize } from "@/lib/domain/cleaners";
 import { confirmedCompensationCents, formatMoney } from "@/lib/domain/compensation";
 import { calculateRemainingHeadcount } from "@/lib/domain/scheduling";
 import { mondayOf } from "@/lib/domain/time";
-import { formatArrival, formatDuration, formatLongDate, serviceLabel } from "@/lib/format";
+import { formatArrival, formatDuration, formatLongDate, cleanerServiceLabel } from "@/lib/format";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
 export function InvitationCard({
@@ -53,9 +54,17 @@ export function InvitationCard({
     <Card>
       <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">New job available</p>
       <h3 className="mt-1 text-xl font-semibold">
-        {job.snapshot.customerDisplayName} {serviceLabel(job.serviceType)}
+        {job.snapshot.customerDisplayName} {cleanerServiceLabel(job.serviceType)}
       </h3>
       <p className="mt-1 text-base text-ink/70">{formatLongDate(job.date)}</p>
+      <div className="mt-3 flex items-start gap-2 text-base">
+        <span aria-hidden="true">📍</span>
+        <AddressLink address={fullAddress(job.snapshot)}>
+          {job.snapshot.streetAddress}
+          <br />
+          {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
+        </AddressLink>
+      </div>
       {job.seriesId ? (
         <p className="mt-2 text-sm text-ink/60">Recurring customer. You are accepting this cleaning only.</p>
       ) : null}
@@ -109,7 +118,7 @@ export function InvitationCard({
       )}
       {!weekSubmitted ? (
         <p className="mt-3 text-sm text-ink/70">
-          Availability for this week is not in yet. Accepting saves your intent. The cleaning is confirmed once that week fits this schedule.
+          Availability for this week is not in yet. Accepting confirms this cleaning on your schedule.
         </p>
       ) : null}
       {message ? (

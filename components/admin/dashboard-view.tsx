@@ -129,9 +129,10 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
   const confirmed = calculateConfirmedHeadcount(assignments);
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
+  const availabilityFollowUp = assignments.some((item) => item.availabilityConflictWeekStart);
   return (
-    <Link href={`/admin/jobs/${job.jobId}`} className="block">
-      <Card className={full ? "ring-2 ring-mint" : ""}>
+    <Link href={`/admin/jobs/${job.jobId}?from=dashboard`} className="block">
+      <Card className={full ? "ring-2 ring-mint" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
@@ -139,9 +140,16 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
               {serviceLabel(job.serviceType)} · {relativeDay(job.date, hub.today)}
             </p>
           </div>
-          {full ? (
-            <span className="rounded-full bg-mint px-3 py-1 text-sm font-semibold">Fully Staffed</span>
-          ) : null}
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            {availabilityFollowUp ? (
+              <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-800 ring-1 ring-inset ring-red-600/35">
+                Availability follow-up
+              </span>
+            ) : null}
+            {full ? (
+              <span className="rounded-full bg-mint px-3 py-1 text-sm font-semibold">Fully Staffed</span>
+            ) : null}
+          </div>
         </div>
         <p className="mt-3 text-base font-medium">
           {draft ? "Draft" : `Headcount: ${confirmed} / ${job.headcountNeeded} confirmed`}
@@ -149,13 +157,21 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
         <ul className="mt-2 space-y-1 text-sm text-ink/80">
           {assignments.length === 0 && pendingCleaners.length === 0 ? <li>No cleaners assigned yet</li> : null}
           {pendingCleaners.map((cleaner) => (
-            <li key={cleaner.cleanerId}>{cleaner.firstName}</li>
+            <li key={cleaner.cleanerId}>
+              <span role="img" aria-label="Draft">📝</span> {cleaner.firstName}  —  Draft
+            </li>
           ))}
           {assignments.map((assignment) => {
             const cleaner = hub.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
             if (!cleaner) return null;
             const mark =
-              assignment.status === "CONFIRMED" ? "✓" : assignment.status === "DECLINED" ? "✕" : "⏳";
+              assignment.availabilityConflictWeekStart
+                ? "⚠"
+                : assignment.status === "CONFIRMED"
+                  ? "✓"
+                  : assignment.status === "DECLINED"
+                    ? "✕"
+                    : "⏳";
             return (
               <li key={assignment.assignmentId}>
                 {mark} {crewLine(cleaner, assignment)}

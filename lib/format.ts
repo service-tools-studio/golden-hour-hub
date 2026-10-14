@@ -39,6 +39,11 @@ export function serviceLabel(serviceType: ServiceType): string {
   }
 }
 
+/** Cleaners see recurring visits as a standard clean; recurrence is an admin scheduling detail. */
+export function cleanerServiceLabel(serviceType: ServiceType): string {
+  return serviceType === "RECURRING" ? "Standard clean" : serviceLabel(serviceType);
+}
+
 export function serviceEmoji(serviceType: ServiceType): string | null {
   switch (serviceType) {
     case "DEEP_CLEAN":
@@ -222,6 +227,17 @@ export function cleanerArrivalChangeSms(input: {
   arrivalWindowEnd: string;
 }): string {
   return `Hi ${input.cleanerFirstName}! Golden Hour here. Your arrival time for ${input.customerName} on ${formatLongDate(input.date)} is now ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}.`;
+}
+
+export function directAssignmentSms(input: {
+  cleanerFirstName: string;
+  customerName: string;
+  streetAddress: string;
+  date: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+}): string {
+  return `Hi ${input.cleanerFirstName}! Golden Hour here. You're assigned to ${input.customerName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Hub.`;
 }
 
 export function smsHref(phone: string, body: string): string {

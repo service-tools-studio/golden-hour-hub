@@ -260,22 +260,19 @@ function spanCovered(target: MinuteSpan, available: MinuteSpan[]): boolean {
 
 export function validateAvailabilityEdit(input: {
   newWindows: ScheduleWindow[];
-  confirmedAssignments: AssignmentSchedule[];
+  confirmedAssignments?: AssignmentSchedule[];
 }): Result<{ ok: true }> {
-  const windowsValid = validateAvailabilityWindows(input.newWindows);
-  if (!windowsValid.ok) return windowsValid;
-  for (const assignment of input.confirmedAssignments) {
-    if (assignment.status !== "CONFIRMED") continue;
-    const blocked = calculateBlockedRange(assignmentToBlock(assignment));
-    if (!availabilityCoversBlockedRange(input.newWindows, blocked)) {
-      return {
-        ok: false,
-        message:
-          "You already have a cleaning scheduled during this time. Please call Kelsey if you need to change your availability.",
-      };
-    }
-  }
-  return { ok: true };
+  void input.confirmedAssignments;
+  return validateAvailabilityWindows(input.newWindows);
+}
+
+export function assignmentUncoveredByAvailability(
+  assignment: AssignmentSchedule,
+  windows: ScheduleWindow[],
+): boolean {
+  if (assignment.status !== "CONFIRMED") return false;
+  const blocked = calculateBlockedRange(assignmentToBlock(assignment));
+  return !availabilityCoversBlockedRange(windows, blocked);
 }
 
 export function subtractConfirmedBookingsFromAvailability(

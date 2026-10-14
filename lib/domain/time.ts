@@ -108,6 +108,23 @@ export function nextAvailabilityWeek(today: string): { weekStart: string; weekEn
   return { weekStart, weekEnd: addDays(weekStart, 6) };
 }
 
+/** Monday–Sunday week containing weekStart. */
+export function availabilityWeekBounds(weekStart: string): { weekStart: string; weekEnd: string } {
+  return { weekStart, weekEnd: addDays(weekStart, 6) };
+}
+
+/** Weeks cleaners can edit on the availability tab: this week and the following week. */
+export function editableAvailabilityWeeks(today: string): { weekStart: string; weekEnd: string }[] {
+  const current = mondayOf(today);
+  return [availabilityWeekBounds(current), availabilityWeekBounds(addDays(current, 7))];
+}
+
+export function normalizeAvailabilityWeekStart(today: string, candidate?: string | null): string {
+  const weeks = editableAvailabilityWeeks(today);
+  if (candidate && weeks.some((week) => week.weekStart === candidate)) return candidate;
+  return weeks[0].weekStart;
+}
+
 export function todayInBusinessZone(now = new Date()): string {
   const parts = zonedParts(now);
   return formatYmd(parts.year, parts.month, parts.day);

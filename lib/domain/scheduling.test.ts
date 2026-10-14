@@ -30,7 +30,14 @@ import {
   validateRequestedCrewSize,
   type AssignmentSchedule,
 } from "./scheduling.ts";
-import { addDays, nextAvailabilityWeek, zonedParts, zonedToUtc } from "./time.ts";
+import {
+  addDays,
+  editableAvailabilityWeeks,
+  nextAvailabilityWeek,
+  normalizeAvailabilityWeekStart,
+  zonedParts,
+  zonedToUtc,
+} from "./time.ts";
 import type { AvailabilityWindow, Customer } from "./types.ts";
 
 function schedule(overrides: Partial<AssignmentSchedule> = {}): AssignmentSchedule {
@@ -115,18 +122,12 @@ describe("blocked time and effective availability", () => {
     ]);
   });
 
-  it("rejects an availability edit that uncovers a confirmed cleaning", () => {
+  it("allows an availability edit even when confirmed cleanings fall outside the new windows", () => {
     const result = validateAvailabilityEdit({
       newWindows: [{ date: "2026-10-06", start: "15:00", end: "18:00" }],
       confirmedAssignments: [schedule(), schedule({ assignmentId: "invite", status: "INVITED", serviceDate: "2026-10-07" })],
     });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(
-        result.message,
-        "You already have a cleaning scheduled during this time. Please call Kelsey if you need to change your availability.",
-      );
-    }
+    assert.equal(result.ok, true);
   });
 
   it("allows an availability edit when confirmed work still fits", () => {
@@ -314,6 +315,15 @@ describe("weekly submission", () => {
       weekStart: "2026-09-28",
       weekEnd: "2026-10-04",
     });
+  });
+
+  it("lists the current and next calendar weeks for editing", () => {
+    assert.deepEqual(editableAvailabilityWeeks("2026-10-13"), [
+      { weekStart: "2026-10-12", weekEnd: "2026-10-18" },
+      { weekStart: "2026-10-19", weekEnd: "2026-10-25" },
+    ]);
+    assert.equal(normalizeAvailabilityWeekStart("2026-10-13", "2026-10-19"), "2026-10-19");
+    assert.equal(normalizeAvailabilityWeekStart("2026-10-13", "2026-11-02"), "2026-10-12");
   });
 
   it("counts a week as submitted even when the cleaner has zero availability", () => {
