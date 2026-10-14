@@ -65,6 +65,6 @@ See [.env.example](.env.example).
 | `COGNITO_REGION` | Usually `us-west-2` |
 | `SMS_PROVIDER` | `mock` locally |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Address typeahead on customer properties (enable **Places API (New)**; billing required) |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Server-only key for address typeahead (**Places API (New)**; restrict by API, not HTTP referrer) |
 | `GOOGLE_CALENDAR_ENABLED` | Leave `false` until sync is built |
 | `GOOGLE_CALENDAR_ID` | Target calendar, later |

@@ -3,8 +3,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ParsedAddress } from "@/lib/google-places-api";
 
-const PLACES_ENABLED = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
-
 type PlaceSuggestion = {
   placeId: string;
   label: string;
@@ -35,7 +33,6 @@ export function AddressAutocomplete({
   const skipFetchForValue = useRef(false);
 
   useEffect(() => {
-    if (!PLACES_ENABLED) return;
     if (skipFetchForValue.current) {
       skipFetchForValue.current = false;
       return;
@@ -131,9 +128,9 @@ export function AddressAutocomplete({
         aria-expanded={open}
         autoComplete="off"
         role="combobox"
-        placeholder={PLACES_ENABLED ? "Start typing an address…" : undefined}
+        placeholder="Start typing an address…"
       />
-      {PLACES_ENABLED && open && suggestions.length > 0 ? (
+      {open && suggestions.length > 0 ? (
         <ul
           id={listId}
           role="listbox"
@@ -155,7 +152,7 @@ export function AddressAutocomplete({
           ))}
         </ul>
       ) : null}
-      {PLACES_ENABLED && loading ? (
+      {loading ? (
         <p className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink/40">…</p>
       ) : null}
     </div>

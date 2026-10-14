@@ -56,28 +56,28 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
   const customer = hub.customers.find((item) => item.customerId === job.customerId);
   const arrivalFlag =
     earliest &&
-    job.arrivalWindowStart &&
-    job.arrivalWindowEnd &&
-    (job.arrivalWindowStart !== earliest.start || job.arrivalWindowEnd !== earliest.end)
+      job.arrivalWindowStart &&
+      job.arrivalWindowEnd &&
+      (job.arrivalWindowStart !== earliest.start || job.arrivalWindowEnd !== earliest.end)
       ? {
-          text: arrivalMismatchText(
-            formatTimeLabel(job.arrivalWindowStart),
-            earliest.firstName,
-            formatTimeLabel(earliest.start),
-          ),
-          callHref: customer?.phone ? `tel:+1${customer.phone}` : null,
-          textHref: customer?.phone
-            ? smsHref(
-                customer.phone,
-                arrivalChangeSms({
-                  customerFirstName: customer.firstName,
-                  date: job.date,
-                  scheduledTime: formatTimeLabel(job.arrivalWindowStart),
-                  arrivalTime: formatTimeLabel(earliest.start),
-                }),
-              )
-            : null,
-        }
+        text: arrivalMismatchText(
+          formatTimeLabel(job.arrivalWindowStart),
+          earliest.firstName,
+          formatTimeLabel(earliest.start),
+        ),
+        callHref: customer?.phone ? `tel:+1${customer.phone}` : null,
+        textHref: customer?.phone
+          ? smsHref(
+            customer.phone,
+            arrivalChangeSms({
+              customerFirstName: customer.firstName,
+              date: job.date,
+              scheduledTime: formatTimeLabel(job.arrivalWindowStart),
+              arrivalTime: formatTimeLabel(earliest.start),
+            }),
+          )
+          : null,
+      }
       : null;
   const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
   const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;
@@ -99,9 +99,9 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
             : from === "dashboard"
               ? [{ href: "/admin", label: "Dashboard" }]
               : [
-                  { href: "/admin/customers", label: "Customers" },
-                  { href: `/admin/customers/${job.customerId}`, label: visit.customerDisplayName },
-                ]
+                { href: "/admin/customers", label: "Customers" },
+                { href: `/admin/customers/${job.customerId}`, label: visit.customerDisplayName },
+              ]
         }
       />
       <div className="space-y-3 px-5 pt-4">
@@ -248,15 +248,15 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
                         textHref={
                           cleaner.mobilePhone
                             ? smsHref(
-                                cleaner.mobilePhone,
-                                cleanerArrivalChangeSms({
-                                  cleanerFirstName: cleaner.firstName,
-                                  customerName: visit.customerDisplayName,
-                                  date: assignment.serviceDate,
-                                  arrivalWindowStart: assignment.arrivalWindowStart,
-                                  arrivalWindowEnd: assignment.arrivalWindowEnd,
-                                }),
-                              )
+                              cleaner.mobilePhone,
+                              cleanerArrivalChangeSms({
+                                cleanerFirstName: cleaner.firstName,
+                                customerName: visit.customerDisplayName,
+                                date: assignment.serviceDate,
+                                arrivalWindowStart: assignment.arrivalWindowStart,
+                                arrivalWindowEnd: assignment.arrivalWindowEnd,
+                              }),
+                            )
                             : null
                         }
                         onContacted={() => hub.markAssignmentNotified(assignment.assignmentId)}
@@ -588,7 +588,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
   );
 }
 
-const KELSEY_PHONE = (process.env.NEXT_PUBLIC_KELSEY_PHONE ?? "").replace(/\D/g, "");
+const KELSEY_PHONE = (process.env.KELSEY_PHONE ?? "").replace(/\D/g, "");
 
 function ServiceLine({
   serviceType,

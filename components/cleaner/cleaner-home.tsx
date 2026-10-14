@@ -10,7 +10,7 @@ import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/doma
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { formatArrival, formatLongDate, cleanerServiceLabel } from "@/lib/format";
 
-const KELSEY_PHONE = (process.env.NEXT_PUBLIC_KELSEY_PHONE ?? "").replace(/\D/g, "");
+const KELSEY_PHONE = (process.env.KELSEY_PHONE ?? "").replace(/\D/g, "");
 
 const AVAILABILITY_MISMATCH_MESSAGE =
   "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
