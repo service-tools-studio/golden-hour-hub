@@ -4,6 +4,7 @@ import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Field, fieldClass } from "@/components/ui";
 import { validateCustomerInput } from "@/lib/domain/customers";
 import type { Customer, Property } from "@/lib/domain/types";
@@ -383,10 +384,11 @@ export function CustomerForm({
               </div>
               {locked ? <p className="text-sm text-ink/60">Scheduled cleanings use this property.</p> : null}
               <Field id={`property-${property.key}-streetAddress`} label="Street" error={streetError}>
-                <input
+                <AddressAutocomplete
                   className={inputClass(Boolean(streetError))}
                   value={property.streetAddress}
-                  onChange={(event) => updateProperty(property.key, { streetAddress: event.target.value })}
+                  onChange={(streetAddress) => updateProperty(property.key, { streetAddress })}
+                  onSelect={(address) => updateProperty(property.key, address)}
                   aria-invalid={Boolean(streetError)}
                 />
               </Field>
