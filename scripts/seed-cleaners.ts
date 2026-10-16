@@ -56,6 +56,7 @@ const CLEANERS: CleanerProfile[] = [
   profile("shariese", "Shariese", "Miles", "3233763753", 1, 0, 3000),
   profile("keshawna", "Keshawna", "Arrollado", "3233763753", 1, 0, 3000),
   profile("tricia", "Tricia", "Oguaghamba", "3233763753", 1, 0, 3000),
+  profile("ashley", "Ashley", "Smith", "3233763753", 1, 0, 3000),
   profile("jasmin", "Jasmin", "Heart", "3233763753", 1, 0, 15000),
   profile("kelsey", "Kelsey", "Collins", "5039335444", 1, 0, 15000),
 ];

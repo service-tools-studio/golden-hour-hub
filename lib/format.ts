@@ -255,7 +255,7 @@ export function directAssignmentSms(input: {
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour here. You're assigned to ${input.customerName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Hub.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour here. You're assigned to ${input.customerName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Cleaning Crew app.`;
 }
 
 export function inviteAssignmentSms(input: {
@@ -265,11 +265,11 @@ export function inviteAssignmentSms(input: {
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour here. You have a cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub to accept or decline as soon as you can.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour here. You have a cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Cleaning Crew app to accept or decline as soon as you can.`;
 }
 
 export function inviteFollowUpSms(input: { cleanerFirstName: string; customerName: string; date: string }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour reminder: please accept or decline your cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)} in the Golden Hour Hub as soon as possible.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour reminder: please accept or decline your cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)} in the Golden Hour Cleaning Crew app as soon as possible.`;
 }
 
 export function smsHref(phone: string, body: string): string {
