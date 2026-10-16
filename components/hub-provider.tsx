@@ -22,8 +22,8 @@ import {
   toAssignmentSchedule,
   validateAvailabilityEdit,
 } from "@/lib/domain/scheduling";
-import { addDays, isValidDate, isValidLocalTime, minutesFromTime, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
-import { buildSeed, type HubData } from "@/lib/mock/seed";
+import { addDays, dayOfWeek, isValidDate, isValidLocalTime, minutesFromTime, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
+import { emptyHub, type HubData } from "@/lib/mock/seed";
 import type {
   AppRole,
   AvailabilityWindow,
@@ -35,6 +35,7 @@ import type {
   PayType,
   Property,
   RecurrenceRule,
+  RecurringSeries,
   SeriesStatus,
   ServiceType,
 } from "@/lib/domain/types";
@@ -60,6 +61,8 @@ export type CreateJobInput = {
   expectedDurationMinutes: number;
   cleanerIds: string[];
   specialInstructions: string;
+  pricePerVisitCents?: number;
+  recurringSchedule?: { interval: 1 | 2 | 4 };
 };
 
 export type SaveCleanerDetailsInput = {
@@ -99,6 +102,7 @@ export type UpdateVisitInput = {
   specialInstructions: string;
   cleanerIds: string[];
   cleanerArrivals?: { cleanerId: string; arrivalWindowStart: string; arrivalWindowEnd: string }[];
+  pricePerVisitCents?: number;
 };
 
 export type UpdateJobInput = {
@@ -132,6 +136,7 @@ type HubContextValue = HubState & {
       propertyId: string;
       recurrence: RecurrenceRule;
       defaultHeadcountNeeded: number;
+      defaultPricePerVisitCents?: number;
       status: SeriesStatus;
     },
   ) => ActionResult;
@@ -156,9 +161,19 @@ type HubContextValue = HubState & {
   markAssignmentNotified: (assignmentId: string) => ActionResult;
   deleteJob: (jobId: string) => ActionResult;
   deleteSeries: (seriesId: string) => ActionResult;
+  /** Extend recurring job occurrences through the current horizon (safe to call often). */
+  refreshRecurringHorizon: () => void;
 };
 
 const HubContext = createContext<HubContextValue | null>(null);
+
+function validatePricePerVisitCents(cents?: number): ActionResult | null {
+  if (cents === undefined) return null;
+  if (!Number.isInteger(cents) || cents < 0) {
+    return { ok: false, message: "Enter a valid price per visit." };
+  }
+  return null;
+}
 
 function assignmentNotice(input: {
   arrivalWindowStart: string;
@@ -205,7 +220,7 @@ function readPreview(): HubState {
       typicalHourlyRateCents:
         typeof cleaner.typicalHourlyRateCents === "number" && cleaner.typicalHourlyRateCents >= 0
           ? cleaner.typicalHourlyRateCents
-          : 5_000,
+          : 3000,
     }));
     return {
       ...withCurrentHorizon({ ...parsed, cleaners }),
@@ -219,7 +234,7 @@ function readPreview(): HubState {
 
 function createState(): HubState {
   const today = todayInBusinessZone();
-  return { ...buildSeed(today), role: null, cleanerId: null };
+  return { ...emptyHub(today), role: null, cleanerId: null };
 }
 
 function withCurrentHorizon(data: HubData): HubData {
@@ -518,9 +533,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       propertyId: string;
       recurrence: RecurrenceRule;
       defaultHeadcountNeeded: number;
+      defaultPricePerVisitCents?: number;
       status: SeriesStatus;
     },
   ): ActionResult {
+    const priceCheck = validatePricePerVisitCents(input.defaultPricePerVisitCents);
+    if (priceCheck && !priceCheck.ok) return priceCheck;
     const series = data.series.find((item) => item.seriesId === seriesId);
     if (!series) return { ok: false, message: "That recurring service could not be found." };
     const home = data.properties.find(
@@ -541,22 +559,32 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       }
     }
     const now = new Date().toISOString();
+    const nextSeries = data.series.map((item) =>
+      item.seriesId === seriesId
+        ? {
+            ...item,
+            propertyId: input.propertyId,
+            recurrence: input.recurrence,
+            defaultHeadcountNeeded: input.defaultHeadcountNeeded,
+            defaultPricePerVisitCents: input.defaultPricePerVisitCents,
+            status: input.status,
+            startDate,
+            updatedAt: now,
+            updatedBy: "kelsey",
+          }
+        : item,
+    );
+    const base = { ...data, series: nextSeries };
+    const generated = mergeRecurringHorizon({
+      ...base,
+      today: data.today,
+      nowIso: now,
+    });
     setState({
-      ...data,
-      series: data.series.map((item) =>
-        item.seriesId === seriesId
-          ? {
-              ...item,
-              propertyId: input.propertyId,
-              recurrence: input.recurrence,
-              defaultHeadcountNeeded: input.defaultHeadcountNeeded,
-              status: input.status,
-              startDate,
-              updatedAt: now,
-              updatedBy: "kelsey",
-            }
-          : item,
-      ),
+      ...base,
+      series: generated.series,
+      jobs: generated.jobs,
+      assignments: generated.assignments,
     });
     return { ok: true };
   }
@@ -596,6 +624,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }
 
   function createJob(input: CreateJobInput): ActionResult {
+    const priceCheck = validatePricePerVisitCents(input.pricePerVisitCents);
+    if (priceCheck && !priceCheck.ok) return priceCheck;
     const cleanerIds = [...new Set(input.cleanerIds)];
     const cleaners = cleanerIds.map((cleanerId) => data.cleaners.find((item) => item.cleanerId === cleanerId));
     if (cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
@@ -624,29 +654,91 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     ) {
       return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
     }
+    if (input.recurringSchedule) {
+      if (input.serviceType !== "RECURRING") {
+        return { ok: false, message: "Recurring schedule applies only to recurring cleans." };
+      }
+      const headcountForSeries = input.headcountNeeded > 0 ? input.headcountNeeded : 1;
+      if (headcountForSeries < 1) {
+        return { ok: false, message: "Choose headcount before creating a recurring schedule." };
+      }
+    }
     const now = new Date().toISOString();
     const jobId = `job-${Date.now()}`;
+    const withSeries = Boolean(input.recurringSchedule);
     const job: Job = {
       jobId,
       customerId: customer.customerId,
       propertyId: property.propertyId,
       serviceType: input.serviceType,
       date: input.date,
-      headcountNeeded: input.headcountNeeded,
+      headcountNeeded: input.headcountNeeded > 0 ? input.headcountNeeded : withSeries ? 1 : 0,
       expectedDurationMinutes: input.expectedDurationMinutes,
       arrivalWindowStart: input.arrivalWindowStart,
       arrivalWindowEnd: input.arrivalWindowEnd,
       draftCleanerIds: cleanerIds,
       snapshot: snapshotVisit(customer, property),
       specialInstructions: input.specialInstructions.trim(),
-      status: "DRAFT",
+      pricePerVisitCents: input.pricePerVisitCents,
+      status: withSeries ? "SCHEDULED" : "DRAFT",
       createdAt: now,
       createdBy: "kelsey",
       updatedAt: now,
       updatedBy: "kelsey",
     };
-    setState({ ...data, jobs: [job, ...data.jobs] });
-    return { ok: true, jobId, message: "Cleaning saved." };
+    if (!input.recurringSchedule) {
+      setState({ ...data, jobs: [job, ...data.jobs] });
+      return { ok: true, jobId, message: "Cleaning saved." };
+    }
+    const recurrence: RecurrenceRule = {
+      frequency: "WEEK",
+      interval: input.recurringSchedule.interval,
+      daysOfWeek: [dayOfWeek(input.date)],
+    };
+    const rule = validateRecurrenceRule(recurrence, input.date);
+    if (!rule.ok) return rule;
+    const seriesId = `series-${Date.now()}`;
+    const series: RecurringSeries = {
+      seriesId,
+      customerId: customer.customerId,
+      propertyId: property.propertyId,
+      recurrence,
+      startDate: input.date,
+      endMode: "UNTIL_CANCELED",
+      defaultHeadcountNeeded: job.headcountNeeded,
+      defaultArrivalWindowStart: input.arrivalWindowStart,
+      defaultArrivalWindowEnd: input.arrivalWindowEnd,
+      defaultExpectedDurationMinutes: input.expectedDurationMinutes,
+      defaultServiceType: "RECURRING",
+      defaultSpecialInstructions: input.specialInstructions.trim() || undefined,
+      defaultPricePerVisitCents: input.pricePerVisitCents,
+      staffingTemplateMode: "BLANK",
+      staffingTemplate: [],
+      status: "ACTIVE",
+      generatedThroughDate: input.date,
+      createdAt: now,
+      createdBy: "kelsey",
+      updatedAt: now,
+      updatedBy: "kelsey",
+    };
+    const linkedJob: Job = { ...job, seriesId };
+    const base = {
+      ...data,
+      series: [...data.series, series],
+      jobs: [linkedJob, ...data.jobs],
+    };
+    const generated = mergeRecurringHorizon({
+      ...base,
+      today: data.today,
+      nowIso: now,
+    });
+    setState({
+      ...base,
+      series: generated.series,
+      jobs: generated.jobs,
+      assignments: generated.assignments,
+    });
+    return { ok: true, jobId, message: "Recurring cleaning and schedule saved." };
   }
 
   function saveCleanerDetails(input: SaveCleanerDetailsInput): ActionResult {
@@ -776,8 +868,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       newId: () => `as-${Date.now()}`,
     });
     if (plan.attention.length > 0) return { ok: false, message: plan.attention[0].reason };
-    const assignment = plan.assignments[0];
-    if (!assignment) return { ok: false, message: "The cleaning could not be assigned." };
+    const planned = plan.assignments[0];
+    if (!planned) return { ok: false, message: "The cleaning could not be assigned." };
+    const assignment: JobAssignment = {
+      ...planned,
+      lastNotified: assignmentNotice(detail),
+      notifiedServiceDate: job.date,
+    };
     const nextAssignments = [...data.assignments, assignment];
     const next = withEarliestArrival(
       {
@@ -1032,6 +1129,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }
 
   function updateVisit(input: UpdateVisitInput): ActionResult {
+    const priceCheck = validatePricePerVisitCents(input.pricePerVisitCents);
+    if (priceCheck && !priceCheck.ok) return priceCheck;
     const job = data.jobs.find((item) => item.jobId === input.jobId);
     if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
     const customer = data.customers.find((item) => item.customerId === input.customerId && item.status === "ACTIVE");
@@ -1101,47 +1200,6 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       if (minutesFromTime(arrival.arrivalWindowEnd) <= minutesFromTime(arrival.arrivalWindowStart)) {
         return { ok: false, message: "The arrival window must end after it starts." };
       }
-      const assignment = data.assignments.find(
-        (item) =>
-          item.jobId === job.jobId &&
-          item.cleanerId === arrival.cleanerId &&
-          item.status !== "CANCELED" &&
-          item.status !== "EXPIRED_JOB_FILLED" &&
-          item.status !== "DECLINED",
-      );
-      if (!assignment || assignment.status !== "CONFIRMED") continue;
-      if (
-        assignment.arrivalWindowStart === arrival.arrivalWindowStart &&
-        assignment.arrivalWindowEnd === arrival.arrivalWindowEnd
-      ) {
-        continue;
-      }
-      const cleaner = data.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
-      if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
-      const weekStart = mondayOf(input.date);
-      const submitted = data.submissions.some(
-        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
-      );
-      if (!submitted) return { ok: false, message: `${cleaner.firstName} has not submitted this week.` };
-      const blocked = calculateBlockedRange({
-        date: input.date,
-        arrivalWindowStart: arrival.arrivalWindowStart,
-        arrivalWindowEnd: arrival.arrivalWindowEnd,
-        expectedDurationMinutes: assignment.expectedDurationMinutes,
-      });
-      const windows = data.availability
-        .filter((window) => window.cleanerId === cleaner.cleanerId)
-        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
-      if (!availabilityCoversBlockedRange(windows, blocked)) {
-        return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
-      }
-      const conflict = detectConfirmedAssignmentConflict({
-        cleanerId: cleaner.cleanerId,
-        blocked,
-        confirmedAssignments: data.assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
-        ignoreAssignmentId: assignment.assignmentId,
-      });
-      if (conflict) return { ok: false, message: `This conflicts with another confirmed job for ${cleaner.firstName}.` };
     }
     const now = new Date().toISOString();
     const arrival = { start: input.arrivalWindowStart, end: input.arrivalWindowEnd };
@@ -1164,7 +1222,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         item.serviceDate !== input.date ||
         Boolean(item.needsDateReinvite) !== needsReinvite ||
         item.notifiedServiceDate !== notifiedServiceDate;
-      if (!dateChangedForCleaner && !arrivalChanged) return item;
+      const onVisit =
+        selected.has(item.cleanerId) &&
+        item.status !== "CANCELED" &&
+        item.status !== "EXPIRED_JOB_FILLED";
+      const durationOutOfSync = onVisit && item.expectedDurationMinutes !== input.expectedDurationMinutes;
+      if (!dateChangedForCleaner && !arrivalChanged && !durationOutOfSync) return item;
       return {
         ...item,
         serviceDate: input.date,
@@ -1172,6 +1235,9 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         needsDateReinvite: needsReinvite ? true : undefined,
         arrivalWindowStart: requested?.arrivalWindowStart ?? item.arrivalWindowStart,
         arrivalWindowEnd: requested?.arrivalWindowEnd ?? item.arrivalWindowEnd,
+        expectedDurationMinutes: onVisit ? input.expectedDurationMinutes : item.expectedDurationMinutes,
+        lastNotified:
+          durationOutOfSync && !item.lastNotified ? assignmentNotice(item) : item.lastNotified,
         updatedAt: now,
       };
     });
@@ -1212,15 +1278,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
                 .filter((detail) => draftCleanerIds.includes(detail.cleanerId))
                 .map((detail) => {
                   const requested = requestedArrivals.get(detail.cleanerId);
-                  if (!requested) return detail;
                   return {
                     ...detail,
-                    arrivalWindowStart: requested.arrivalWindowStart,
-                    arrivalWindowEnd: requested.arrivalWindowEnd,
+                    arrivalWindowStart: requested?.arrivalWindowStart ?? detail.arrivalWindowStart,
+                    arrivalWindowEnd: requested?.arrivalWindowEnd ?? detail.arrivalWindowEnd,
+                    expectedDurationMinutes: input.expectedDurationMinutes,
                   };
                 }),
               snapshot: snapshotVisit(customer, property),
               specialInstructions: input.specialInstructions.trim(),
+              pricePerVisitCents: input.pricePerVisitCents,
               updatedAt: now,
               updatedBy: "kelsey",
             }
@@ -1457,6 +1524,32 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     return { ok: true, message: "Cleaning deleted." };
   }
 
+  function refreshRecurringHorizon(): void {
+    if (data.series.length === 0) return;
+    const today = todayInBusinessZone();
+    const generated = mergeRecurringHorizon({
+      ...data,
+      today,
+      nowIso: new Date().toISOString(),
+    });
+    if (
+      generated.jobs.length === data.jobs.length &&
+      generated.assignments.length === data.assignments.length &&
+      generated.series.every(
+        (item, index) => item.generatedThroughDate === data.series[index]?.generatedThroughDate,
+      )
+    ) {
+      return;
+    }
+    setState({
+      ...data,
+      today,
+      series: generated.series,
+      jobs: generated.jobs,
+      assignments: generated.assignments,
+    });
+  }
+
   function deleteSeries(seriesId: string): ActionResult {
     const series = data.series.find((item) => item.seriesId === seriesId);
     if (!series) return { ok: false, message: "That recurring schedule could not be deleted." };
@@ -1498,6 +1591,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     markAssignmentNotified,
     deleteJob,
     deleteSeries,
+    refreshRecurringHorizon,
   };
 
   return (

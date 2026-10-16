@@ -2,7 +2,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { BatchWriteCommand, DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { mergeRecurringHorizon } from "../domain/recurrence.ts";
 import { todayInBusinessZone } from "../domain/time.ts";
-import { buildSeed, type HubData } from "../mock/seed.ts";
+import { emptyHub, type HubData } from "../mock/seed.ts";
 import { hubToItems, itemsToHub, type DynamoItem } from "./items.ts";
 
 const BATCH_SIZE = 25;
@@ -24,13 +24,12 @@ function client(): DynamoDBDocumentClient {
   );
 }
 
+/** Load hub data from DynamoDB. Never writes mock seed data; use scripts/seed-cleaners.ts for cleaners. */
 export async function loadHub(): Promise<HubData> {
   const items = await scanAll();
   const today = todayInBusinessZone();
-  if (!items.some((item) => item.entity === "cleaner")) {
-    const seeded = buildSeed(today);
-    await saveHub(seeded);
-    return seeded;
+  if (items.length === 0) {
+    return emptyHub(today);
   }
   const data = itemsToHub(items, today);
   const generated = mergeRecurringHorizon({ ...data, today, nowIso: new Date().toISOString() });
@@ -39,6 +38,19 @@ export async function loadHub(): Promise<HubData> {
     await saveHub(next);
   }
   return next;
+}
+
+export async function putItems(items: DynamoItem[]): Promise<void> {
+  if (items.length === 0) return;
+  await writeBatches(items.map((item) => ({ PutRequest: { Item: item } })));
+}
+
+/** Remove every item in the table. Use before a clean seed. */
+export async function clearTable(): Promise<number> {
+  const existing = await scanAll();
+  if (existing.length === 0) return 0;
+  await writeBatches(existing.map((item) => ({ DeleteRequest: { Key: { pk: item.pk, sk: item.sk } } })));
+  return existing.length;
 }
 
 export async function saveHub(data: HubData): Promise<void> {

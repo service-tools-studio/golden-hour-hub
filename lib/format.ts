@@ -39,6 +39,11 @@ export function serviceLabel(serviceType: ServiceType): string {
   }
 }
 
+export function propertySizeLabel(bedrooms: number, bathrooms: number, squareFeet: number): string | null {
+  if (bedrooms === 0 && bathrooms === 0 && squareFeet === 0) return null;
+  return `${bedrooms} bed · ${bathrooms} bath · ${squareFeet.toLocaleString()} sq ft`;
+}
+
 /** Cleaners see recurring visits as a standard clean; recurrence is an admin scheduling detail. */
 export function cleanerServiceLabel(serviceType: ServiceType): string {
   return serviceType === "RECURRING" ? "Standard clean" : serviceLabel(serviceType);
@@ -227,6 +232,19 @@ export function cleanerArrivalChangeSms(input: {
   arrivalWindowEnd: string;
 }): string {
   return `Hi ${input.cleanerFirstName}! Golden Hour here. Your arrival time for ${input.customerName} on ${formatLongDate(input.date)} is now ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}.`;
+}
+
+export function cleanerAssignmentChangeSms(input: {
+  cleanerFirstName: string;
+  customerName: string;
+  date: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+}): string {
+  const window = hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd);
+  const duration = formatDuration(input.expectedDurationMinutes);
+  return `Hi ${input.cleanerFirstName}! Golden Hour here. Your cleaning for ${input.customerName} on ${formatLongDate(input.date)} is now ${window} · ${duration} on site.`;
 }
 
 export function directAssignmentSms(input: {

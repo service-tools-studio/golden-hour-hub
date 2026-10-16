@@ -294,18 +294,18 @@ describe("headcount and helper approval", () => {
 
 describe("compensation", () => {
   it("derives flat per-person pay from the proposed total", () => {
-    assert.equal(calculateFlatPayPerPerson(10_000, 2), 5_000);
+    assert.equal(calculateFlatPayPerPerson(10000, 2), 5000);
   });
 
   it("scales flat pay with the confirmed crew", () => {
-    const perPerson = calculateFlatPayPerPerson(10_000, 2);
-    assert.equal(calculateConfirmedFlatPay(perPerson, 1), 5_000);
-    assert.equal(calculateConfirmedFlatPay(perPerson, 2), 10_000);
-    assert.equal(calculateConfirmedFlatPay(perPerson, 3), 15_000);
+    const perPerson = calculateFlatPayPerPerson(10000, 2);
+    assert.equal(calculateConfirmedFlatPay(perPerson, 1), 5000);
+    assert.equal(calculateConfirmedFlatPay(perPerson, 2), 10000);
+    assert.equal(calculateConfirmedFlatPay(perPerson, 3), 15000);
   });
 
   it("scales hourly pay per person", () => {
-    assert.equal(calculateConfirmedHourlyCrewRate(3_500, 2), 7_000);
+    assert.equal(calculateConfirmedHourlyCrewRate(3500, 2), 7000);
   });
 });
 

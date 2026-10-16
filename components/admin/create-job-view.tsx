@@ -52,6 +52,8 @@ export function CreateJobView({
       expectedDurationMinutes: values.expectedDurationMinutes,
       cleanerIds: values.cleanerIds,
       specialInstructions: values.specialInstructions,
+      pricePerVisitCents: values.pricePerVisitCents,
+      recurringSchedule: values.recurringSchedule,
     });
     if (!result.ok || !result.jobId) {
       return { ok: false, message: result.ok ? "The cleaning could not be created." : result.message };
@@ -100,6 +102,7 @@ export function CreateJobView({
         onDateChange={setShownDate}
         newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(returnTo)}`}
         customerEditReturnTo={returnTo}
+        allowRecurringSchedule
         onSubmit={submit}
       />
     </Screen>

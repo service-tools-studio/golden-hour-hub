@@ -158,6 +158,8 @@ export type Job = {
   draftCleanerDetails?: DraftCleanerDetail[];
   snapshot: JobCustomerSnapshot;
   specialInstructions: string;
+  /** Customer price for this visit. Admin only; never shown to cleaners. */
+  pricePerVisitCents?: number;
   status: JobStatus;
   createdAt: string;
   createdBy: string;
@@ -262,6 +264,8 @@ export type RecurringSeries = {
   defaultExpectedDurationMinutes: number;
   defaultServiceType: ServiceType;
   defaultSpecialInstructions?: string;
+  /** Default customer price for generated visits. Admin only. */
+  defaultPricePerVisitCents?: number;
   staffingTemplateMode: StaffingTemplateMode;
   staffingTemplate: StaffingTemplateEntry[];
   status: SeriesStatus;

@@ -71,7 +71,7 @@ function template(overrides: Partial<StaffingTemplateEntry> = {}): StaffingTempl
     arrivalWindowEnd: "10:00",
     expectedDurationMinutes: 240,
     payType: "FLAT",
-    payPerPersonCents: 5_000,
+    payPerPersonCents: 5000,
     ...overrides,
   };
 }
@@ -221,9 +221,9 @@ describe("recurring edits and staffing", () => {
       nowIso: "2026-09-26T00:00:00.000Z",
       newId: () => `b-${n++}`,
     });
-    entry.payPerPersonCents = 9_999;
+    entry.payPerPersonCents = 9999;
     first[0].payPerPersonCents = 1;
-    assert.equal(second[0].payPerPersonCents, 5_000);
+    assert.equal(second[0].payPerPersonCents, 5000);
     assert.equal(second[0].jobId, "job-oct-20");
     assert.equal(first[0].jobId, "job-oct-6");
     assert.equal(first[0].status, "INVITED");
@@ -282,8 +282,8 @@ describe("recurring edits and staffing", () => {
     assert.equal(plan.assignments.length, 1);
     assert.equal(plan.assignments[0].status, "INVITED");
     assert.equal(plan.assignments[0].confirmedCrewSize, undefined);
-    assert.equal(plan.assignments[0].payPerPersonCents, 5_000);
-    assert.equal(plan.assignments[0].proposedTotalPayCents, 10_000);
+    assert.equal(plan.assignments[0].payPerPersonCents, 5000);
+    assert.equal(plan.assignments[0].proposedTotalPayCents, 10000);
   });
 
   it("does not directly assign a cleaner onto a conflicting confirmed job", () => {
@@ -299,9 +299,9 @@ describe("recurring edits and staffing", () => {
       arrivalWindowEnd: "10:00",
       expectedDurationMinutes: 240,
       payType: "FLAT",
-      payPerPersonCents: 5_000,
-      proposedTotalPayCents: 5_000,
-      confirmedTotalPayCents: 5_000,
+      payPerPersonCents: 5000,
+      proposedTotalPayCents: 5000,
+      confirmedTotalPayCents: 5000,
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     };
@@ -310,7 +310,7 @@ describe("recurring edits and staffing", () => {
       serviceDate: "2026-10-06",
       headcountNeeded: 2,
       mode: "DIRECT",
-      template: [template({ proposedCrewSize: 1, payPerPersonCents: 5_000 })],
+      template: [template({ proposedCrewSize: 1, payPerPersonCents: 5000 })],
       cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
       availabilityByCleaner: {
         claudia: {

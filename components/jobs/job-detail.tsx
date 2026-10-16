@@ -32,9 +32,10 @@ import {
   noticeFlagText,
   noticeGap,
   payLine,
+  propertySizeLabel,
   reinviteFlagText,
   serviceEmoji,
-  cleanerArrivalChangeSms,
+  cleanerAssignmentChangeSms,
   cleanerServiceLabel,
   serviceLabel,
   smsHref,
@@ -77,10 +78,15 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
   );
 }
 
+function assignmentNoticeDismissKey(assignment: JobAssignment): string {
+  return `${assignment.assignmentId}:${assignment.updatedAt}`;
+}
+
 function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [dismissedNotices, setDismissedNotices] = useState<Set<string>>(() => new Set());
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
   const assignments = hub.assignments.filter(
     (item) => item.jobId === job.jobId && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED",
@@ -120,6 +126,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
       : null;
   const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
   const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;
+  const sizeLine = propertySizeLabel(visit.bedrooms, visit.bathrooms, visit.squareFeet);
   const reinviteFlag = reinviteFlagText(
     assignments
       .filter((assignment) => dateReinviteNeeded(assignment, job.date))
@@ -143,14 +150,17 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                   </span>
                 </span>
               </div>
-              <p className="mt-1 text-sm text-ink/60">
-                {visit.bedrooms} bed · {visit.bathrooms} bath · {visit.squareFeet.toLocaleString()} sq ft
-              </p>
+              {sizeLine ? <p className="mt-1 text-sm text-ink/60">{sizeLine}</p> : null}
             </div>
-            {visit.preferences ? <p className="mt-3 text-sm">Preferences: {visit.preferences}</p> : null}
+            {visit.preferences ? (
+              <p className="mt-3 whitespace-pre-line text-sm">Preferences: {visit.preferences}</p>
+            ) : null}
             {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
             {job.arrivalWindowStart ? (
               <p className="mt-3 text-sm">Scheduled for {formatTimeLabel(job.arrivalWindowStart)}</p>
+            ) : null}
+            {job.pricePerVisitCents !== undefined ? (
+              <p className="mt-2 text-sm text-ink/70">Price per visit: {formatMoney(job.pricePerVisitCents)}</p>
             ) : null}
           </Link>
           {arrivalFlag ? (
@@ -243,6 +253,8 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               if (!cleaner) return null;
               const declined = assignment.status === "DECLINED";
               const gap = noticeGap(false, assignment, assignment.lastNotified);
+              const noticeKey = assignmentNoticeDismissKey(assignment);
+              const showNotice = Boolean(gap) && !dismissedNotices.has(noticeKey);
               return (
                 <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
                   <div className="min-w-0 flex-1">
@@ -251,6 +263,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         {cleaner.firstName} {cleaner.lastName}
                       </p>
                       <p className={`mt-0.5 text-sm ${declined ? "" : "text-ink/55"}`}>{assignmentSubtitle(assignment)}</p>
+                      {showNotice ? (
+                        <p className="mt-1 text-sm font-semibold text-red-700">{noticeFlagText(cleaner.firstName, gap!)}</p>
+                      ) : null}
                       {dateReinviteNeeded(assignment, job.date) ? (
                         <p className="mt-1 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
                       ) : null}
@@ -263,26 +278,33 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         expectedDurationMinutes={assignment.expectedDurationMinutes}
                       />
                     </Link>
-                    {gap ? (
+                    {showNotice ? (
                       <NotifyCleanerNotice
                         firstName={cleaner.firstName}
-                        gap={gap}
                         phone={cleaner.mobilePhone}
                         textHref={
                           cleaner.mobilePhone
                             ? smsHref(
                               cleaner.mobilePhone,
-                              cleanerArrivalChangeSms({
+                              cleanerAssignmentChangeSms({
                                 cleanerFirstName: cleaner.firstName,
                                 customerName: visit.customerDisplayName,
                                 date: assignment.serviceDate,
                                 arrivalWindowStart: assignment.arrivalWindowStart,
                                 arrivalWindowEnd: assignment.arrivalWindowEnd,
+                                expectedDurationMinutes: assignment.expectedDurationMinutes,
                               }),
                             )
                             : null
                         }
                         onContacted={() => hub.markAssignmentNotified(assignment.assignmentId)}
+                        onDismiss={() =>
+                          setDismissedNotices((current) => {
+                            const next = new Set(current);
+                            next.add(noticeKey);
+                            return next;
+                          })
+                        }
                       />
                     ) : null}
                   </div>
@@ -308,7 +330,15 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             summary={seriesSummary(series)}
             place={seriesPlace(hub.properties, series.propertyId, job.snapshot.streetAddress)}
             placeAddress={fullAddress(hub.properties.find((property) => property.propertyId === series.propertyId) ?? job.snapshot)}
-            detail={`${series.status === "ACTIVE" ? "Active" : "Paused"} · Headcount ${series.defaultHeadcountNeeded}`}
+            detail={[
+              series.status === "ACTIVE" ? "Active" : "Paused",
+              `Headcount ${series.defaultHeadcountNeeded}`,
+              series.defaultPricePerVisitCents !== undefined
+                ? `${formatMoney(series.defaultPricePerVisitCents)} per visit`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
             confirmDelete={confirmDelete}
             onAskDelete={() => setConfirmDelete(true)}
             onCloseDelete={() => setConfirmDelete(false)}
@@ -344,38 +374,48 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
 
 function NotifyCleanerNotice({
   firstName,
-  gap,
   phone,
   textHref,
   onContacted,
+  onDismiss,
 }: {
   firstName: string;
-  gap: "assignment" | "changes";
   phone: string;
   textHref: string | null;
   onContacted: () => void;
+  onDismiss: () => void;
 }) {
+  const pillClass =
+    "flex min-h-10 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-full px-1 text-sm font-semibold";
   return (
-    <div className="mt-2">
-      <p className="text-sm font-semibold text-red-700">{noticeFlagText(firstName, gap)}</p>
+    <div className="mt-2 flex flex-nowrap items-center gap-2">
       {phone && textHref ? (
-        <div className="mt-2 flex gap-2">
+        <>
           <a
             href={textHref}
             onClick={onContacted}
-            className="inline-flex min-h-10 items-center rounded-full bg-ink px-4 text-sm font-semibold text-white"
+            aria-label={`Text ${firstName}`}
+            className={`${pillClass} bg-ink text-white`}
           >
-            Text {firstName}
+            Text
           </a>
           <a
             href={`tel:+1${phone}`}
             onClick={onContacted}
-            className="inline-flex min-h-10 items-center rounded-full border border-ink/20 bg-white px-4 text-sm font-semibold"
+            aria-label={`Call ${firstName}`}
+            className={`${pillClass} border border-ink/20 bg-white text-ink`}
           >
-            Call {firstName}
+            Call
           </a>
-        </div>
+        </>
       ) : null}
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="shrink-0 px-1 text-sm font-semibold text-ink/70 underline decoration-ink/40 decoration-2 underline-offset-4"
+      >
+        Dismiss
+      </button>
     </div>
   );
 }
@@ -561,6 +601,11 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
   if (!cleaner || !job || !assignment) {
     return <Missing label="That confirmed cleaning could not be found." href="/cleaner" />;
   }
+  const snapshotSizeLine = propertySizeLabel(
+    job.snapshot.bedrooms,
+    job.snapshot.bathrooms,
+    job.snapshot.squareFeet,
+  );
   return (
     <Screen>
       <PageHeader eyebrow="Confirmed job" title={job.snapshot.customerDisplayName} subtitle={formatLongDate(job.date)} />
@@ -578,10 +623,10 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
               {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
             </AddressLink>
           </div>
-          <p className="mt-3 text-sm">
-            {job.snapshot.bedrooms} bed · {job.snapshot.bathrooms} bath · {job.snapshot.squareFeet.toLocaleString()} sq ft
-          </p>
-          {job.snapshot.preferences ? <p className="mt-3 text-sm">Preferences: {job.snapshot.preferences}</p> : null}
+          {snapshotSizeLine ? <p className="mt-3 text-sm">{snapshotSizeLine}</p> : null}
+          {job.snapshot.preferences ? (
+            <p className="mt-3 whitespace-pre-line text-sm">Preferences: {job.snapshot.preferences}</p>
+          ) : null}
           {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
           <div className="mt-4">
             <AddToCalendarButton job={job} assignment={assignment} />

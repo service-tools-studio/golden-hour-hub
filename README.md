@@ -15,7 +15,7 @@ The app is a mobile-first preview on sample data, plus the scheduling rules as t
 - Cleaner home, confirmed schedule, and weekly availability
 - Invitations, crew size, and pay checks for helper-approved and solo cleaners
 
-Sign-in and live SMS are not connected yet. The app uses the preview store unless `DYNAMODB_TABLE_NAME` is set and the table can be reached. The table design is in [docs/data-model.md](docs/data-model.md). Scheduling behavior is in [docs/scheduling-rules.md](docs/scheduling-rules.md).
+Sign-in and live SMS are not connected yet. With `DYNAMODB_TABLE_NAME` set, data lives in DynamoDB; without it, the preview store in the browser starts empty (no mock seed on load). Load cleaners with `npm run seed:cleaners`. The table design is in [docs/data-model.md](docs/data-model.md). Scheduling behavior is in [docs/scheduling-rules.md](docs/scheduling-rules.md).
 
 ## Local setup
 
@@ -42,7 +42,8 @@ The DynamoDB repository is wired. Cognito is not.
 1. Create a DynamoDB table named `GoldenHourHub` in `us-west-2` with `pk` and `sk`, plus GSI1 (`gsi1pk`, `gsi1sk`) and GSI2 (`gsi2pk`, `gsi2sk`), as in [docs/data-model.md](docs/data-model.md).
 2. Put `AWS_REGION` and `DYNAMODB_TABLE_NAME` in `.env.local` using [.env.example](.env.example). Leave the table name empty to stay on the preview store.
 3. Give the Next.js server permission to read and write the table. The browser must not hold those credentials.
-4. Create a Cognito user pool with groups `ADMIN` and `CLEANER`. Do not allow public sign-up. That sign-in step is still separate from the table.
+4. To start from real cleaner profiles only: `npm run dynamo:clear` (wipes the table), then `npm run seed:cleaners`, then open the app. The seed script does not create jobs; if you opened the app earlier on an empty table, an older build may have written the full mock dataset—clear and seed again. Edit `scripts/seed-cleaners.ts` to change names, rates, or crew limits.
+5. Create a Cognito user pool with groups `ADMIN` and `CLEANER`. Do not allow public sign-up. That sign-in step is still separate from the table.
 
 ## First admin
 

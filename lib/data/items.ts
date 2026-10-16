@@ -68,7 +68,7 @@ export function itemsToHub(items: DynamoItem[], today: string): HubData {
   return data;
 }
 
-function cleanerItem(cleaner: CleanerProfile): DynamoItem {
+export function cleanerToItem(cleaner: CleanerProfile): DynamoItem {
   return {
     pk: `CLEANER#${cleaner.cleanerId}`,
     sk: "PROFILE",
@@ -77,6 +77,10 @@ function cleanerItem(cleaner: CleanerProfile): DynamoItem {
     gsi1sk: `${cleaner.lastName.toLowerCase()}#${cleaner.cleanerId}`,
     ...cleaner,
   };
+}
+
+function cleanerItem(cleaner: CleanerProfile): DynamoItem {
+  return cleanerToItem(cleaner);
 }
 
 function availabilityItem(window: AvailabilityWindow): DynamoItem {
@@ -237,7 +241,7 @@ function readCleaner(item: DynamoItem): CleanerProfile {
     typicalHourlyRateCents:
       typeof item.typicalHourlyRateCents === "number" && item.typicalHourlyRateCents >= 0
         ? item.typicalHourlyRateCents
-        : 5_000,
+        : 3000,
     createdAt: stringField(item, "createdAt"),
     createdBy: stringField(item, "createdBy"),
     updatedAt: stringField(item, "updatedAt"),
@@ -297,6 +301,7 @@ function readSeries(item: DynamoItem): RecurringSeries {
     defaultExpectedDurationMinutes: numberField(item, "defaultExpectedDurationMinutes"),
     defaultServiceType: item.defaultServiceType as RecurringSeries["defaultServiceType"],
     defaultSpecialInstructions: optionalString(item, "defaultSpecialInstructions"),
+    defaultPricePerVisitCents: optionalNumber(item, "defaultPricePerVisitCents"),
     staffingTemplateMode: item.staffingTemplateMode as RecurringSeries["staffingTemplateMode"],
     staffingTemplate: (item.staffingTemplate as RecurringSeries["staffingTemplate"]) ?? [],
     status: item.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
@@ -322,6 +327,7 @@ function readJob(item: DynamoItem): Job {
     headcountNeeded: numberField(item, "headcountNeeded"),
     snapshot: item.snapshot as Job["snapshot"],
     specialInstructions: stringField(item, "specialInstructions"),
+    pricePerVisitCents: optionalNumber(item, "pricePerVisitCents"),
     arrivalWindowStart: optionalString(item, "arrivalWindowStart"),
     arrivalWindowEnd: optionalString(item, "arrivalWindowEnd"),
     expectedDurationMinutes: optionalNumber(item, "expectedDurationMinutes"),

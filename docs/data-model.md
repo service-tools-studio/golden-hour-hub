@@ -43,7 +43,7 @@ Helper authorization is `maxHelperCount`. It is not a stored boolean. `maxHelper
 
 Claudia stores `typicalHelperCount = 1` and `maxHelperCount = 2`, so her usual crew is 2 and her maximum crew is 3. Maria stores both counts as 0, so she is always a crew of 1 and the crew stepper is not shown.
 
-`typicalHourlyRateCents` is the admin-set default per-person hourly rate for staffing (integer cents, at least 0). Older stored profiles without the field read back as `5000` ($50/hour per person).
+`typicalHourlyRateCents` is the admin-set default per-person hourly rate for staffing (integer cents, at least 0). Profiles without the field read back as `3000` ($30/hour per person).
 
 Acceptance, direct assignment, and any move into `PENDING_AVAILABILITY` or `CONFIRMED` reload this profile and use the current `maxHelperCount`. An older invitation does not keep a higher crew. A confirmed assignment is not rewritten when the maximum later changes.
 
@@ -94,7 +94,7 @@ customerId cust-jeff
 
 `customerId` is stored on the item as well as in the key. The customer profile loads with one query: `pk = CUSTOMER#id`, which returns `PROFILE` and every `PROPERTY#` row.
 
-Fields: `propertyId`, optional `label` (for example “Hawthorne”), `streetAddress`, `city`, `state` (two letters), `zip` (5 digits when entered), `bedrooms` (integer 0–20), `bathrooms` (0–20, halves allowed), `squareFeet` (integer, at least 1), `preferences`, `status` (`ACTIVE` or `INACTIVE`), and the audit fields.
+Fields: `propertyId`, optional `label` (for example “Hawthorne”), `streetAddress`, `city`, `state` (two letters), `zip` (5 digits when entered), `bedrooms` (integer 0–20), `bathrooms` (0–20, halves allowed), `squareFeet` (integer, 0 or more), `preferences`, `status` (`ACTIVE` or `INACTIVE`), and the audit fields.
 
 House preferences live here: side gate, fragrance-free products, the cat. Visit-only notes stay on the job as special instructions.
 
@@ -145,7 +145,7 @@ dayOfMonth    optional, e.g. 15
 
 Weekly rules use `daysOfWeek`. Monthly rules use either `dayOfMonth` or `weekOrdinals` plus `daysOfWeek`, not both. The screen shows a sentence such as “Every 1st and 3rd Saturday of the month.” It does not show a recurrence-rule string. The start date has to fall on that pattern.
 
-Also stored: `customerId`, `propertyId`, `startDate`, `endMode` (`UNTIL_CANCELED` or `END_ON_DATE`), optional `endDate`, `defaultHeadcountNeeded`, default arrival window, `defaultExpectedDurationMinutes`, `defaultServiceType`, optional `defaultSpecialInstructions`, `staffingTemplateMode` (`INVITE`, `DIRECT`, or `BLANK`), `staffingTemplate`, `status` (`ACTIVE` or `INACTIVE`), optional `skippedDates` (dates removed from the series that must not be generated again), optional `generatedThroughDate`, and audit fields.
+Also stored: `customerId`, `propertyId`, `startDate`, `endMode` (`UNTIL_CANCELED` or `END_ON_DATE`), optional `endDate`, `defaultHeadcountNeeded`, default arrival window, `defaultExpectedDurationMinutes`, `defaultServiceType`, optional `defaultSpecialInstructions`, optional `defaultPricePerVisitCents` (customer price in cents for newly generated visits; admin-only in the app), `staffingTemplateMode` (`INVITE`, `DIRECT`, or `BLANK`), `staffingTemplate`, `status` (`ACTIVE` or `INACTIVE`), optional `skippedDates` (dates removed from the series that must not be generated again), optional `generatedThroughDate`, and audit fields.
 
 A series belongs to one property. New occurrences copy that property.
 
@@ -174,7 +174,7 @@ gsi2pk CUSTOMER#cust-jeff
 gsi2sk JOB#2026-10-20#job-johnson
 ```
 
-Fields: `jobId`, `customerId`, `propertyId`, optional `seriesId`, `serviceType`, `date`, `headcountNeeded`, `snapshot`, `specialInstructions`, `status` (`DRAFT`, `SCHEDULED`, or `CANCELED`), and audit fields.
+Fields: `jobId`, `customerId`, `propertyId`, optional `seriesId`, `serviceType`, `date`, `headcountNeeded`, `snapshot`, `specialInstructions`, optional `pricePerVisitCents` (customer price for this visit in cents; admin-only in the app), `status` (`DRAFT`, `SCHEDULED`, or `CANCELED`), and audit fields.
 
 A `DRAFT` visit is work in progress before it is booked. `headcountNeeded` may be `0` until the admin chooses crew size. Optional job-level `arrivalWindowStart`, `arrivalWindowEnd`, and `expectedDurationMinutes` describe the visit window before every cleaner is staffed. Optional `draftCleanerIds` lists cleaners named on the visit. Optional `draftCleanerDetails` holds per-cleaner arrival, duration, crew, and pay saved before invite or direct assignment (same shape as the fields on an assignment row).
 

@@ -1,6 +1,7 @@
 "use server";
 
-import { buildSeed } from "@/lib/mock/seed";
+import { dynamoConfigured, loadHub } from "@/lib/data/repository";
+import { emptyHub } from "@/lib/mock/seed";
 import { sendSms } from "@/lib/services/sms";
 import { formatWeekRange, nextAvailabilityWeek, todayInBusinessZone } from "@/lib/domain/time";
 
@@ -10,14 +11,14 @@ export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
 > {
   try {
     const today = todayInBusinessZone();
-    const seed = buildSeed(today);
+    const hub = dynamoConfigured() ? await loadHub() : emptyHub(today);
     const week = nextAvailabilityWeek(today);
     const sent: string[] = [];
 
     for (const cleanerId of cleanerIds) {
-      const cleaner = seed.cleaners.find((item) => item.cleanerId === cleanerId && item.status === "ACTIVE");
+      const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId && item.status === "ACTIVE");
       if (!cleaner) continue;
-      const submitted = seed.submissions.some(
+      const submitted = hub.submissions.some(
         (submission) => submission.cleanerId === cleanerId && submission.weekStart === week.weekStart,
       );
       if (submitted) continue;

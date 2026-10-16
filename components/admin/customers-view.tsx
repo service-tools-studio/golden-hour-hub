@@ -9,8 +9,9 @@ import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
 import { searchCustomers } from "@/lib/domain/customers";
+import { formatMoney } from "@/lib/domain/compensation";
 import { seriesSummary } from "@/lib/mock/seed";
-import { formatLongDate, formatPhone, serviceLabel } from "@/lib/format";
+import { formatLongDate, formatPhone, propertySizeLabel, serviceLabel } from "@/lib/format";
 
 function Pencil() {
   return (
@@ -296,7 +297,9 @@ export function CustomerDetail({
           </Card>
           <h2 className="pt-2 text-lg font-semibold">Properties</h2>
           {homes.length === 0 ? <p className="text-sm text-ink/60">No properties yet.</p> : null}
-          {homes.map((home) => (
+          {homes.map((home) => {
+            const sizeLine = propertySizeLabel(home.bedrooms, home.bathrooms, home.squareFeet);
+            return (
             <Card
               key={home.propertyId}
               className="relative"
@@ -310,12 +313,13 @@ export function CustomerDetail({
               <p className="text-sm text-ink/70">
                 {home.streetAddress}, {home.city} {home.state} {home.zip}
               </p>
-              <p className="mt-2 text-sm">
-                {home.bedrooms} bed · {home.bathrooms} bath · {home.squareFeet.toLocaleString()} sq ft
-              </p>
-              {home.preferences ? <p className="mt-2 text-sm">Preferences: {home.preferences}</p> : null}
+              {sizeLine ? <p className="mt-2 text-sm">{sizeLine}</p> : null}
+              {home.preferences ? (
+                <p className="mt-2 whitespace-pre-line text-sm">Preferences: {home.preferences}</p>
+              ) : null}
             </Card>
-          ))}
+            );
+          })}
         {series.length > 0 ? <h2 className="pt-2 text-lg font-semibold">Recurring service</h2> : null}
         {series.map((item) => {
           const home = homes.find((property) => property.propertyId === item.propertyId);
@@ -336,7 +340,17 @@ export function CustomerDetail({
                   {place}
                 </p>
               ) : null}
-              <p className="text-sm text-ink/70">{item.status === "ACTIVE" ? "Active" : "Paused"} · Headcount {item.defaultHeadcountNeeded}</p>
+              <p className="text-sm text-ink/70">
+                {[
+                  item.status === "ACTIVE" ? "Active" : "Paused",
+                  `Headcount ${item.defaultHeadcountNeeded}`,
+                  item.defaultPricePerVisitCents !== undefined
+                    ? `${formatMoney(item.defaultPricePerVisitCents)} per visit`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
             </Card>
           );
         })}

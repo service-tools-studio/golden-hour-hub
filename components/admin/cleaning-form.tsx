@@ -9,9 +9,11 @@ import { Field, Notice, PrimaryButton, fieldClass } from "@/components/ui";
 import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availability";
 import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "@/lib/domain/scheduling";
 import { searchCustomers } from "@/lib/domain/customers";
-import { addDays, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
+import { recurrenceSummary } from "@/lib/domain/recurrence";
+import { addDays, dayOfWeek, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
 import type { Property, ServiceType } from "@/lib/domain/types";
-import { hourWindowLabel, serviceLabel } from "@/lib/format";
+import { formatLongDate, hourWindowLabel, serviceLabel } from "@/lib/format";
+import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { calculateQuoteEstimate, type CleanType, type QuoteEstimate } from "@/lib/portableQuoteEstimate";
 
 const SERVICES: ServiceType[] = ["DEEP_CLEAN", "RECURRING", "MOVE_OUT", "POST_CONSTRUCTION", "OTHER"];
@@ -36,6 +38,9 @@ export type CleaningValues = {
   specialInstructions: string;
   cleanerIds: string[];
   cleanerArrivals?: CleanerArrival[];
+  pricePerVisitCents?: number;
+  /** When booking a recurring clean, create a standing schedule from this visit. */
+  recurringSchedule?: { interval: 1 | 2 | 4 };
 };
 
 function roundUpToHour(hours: number): number {
@@ -102,11 +107,13 @@ export function CleaningForm({
   afterDate,
   afterArrival,
   trailing,
+  allowRecurringSchedule = false,
 }: {
   initial: CleaningValues;
   leadCleanerId?: string;
   canClearCleaners?: boolean;
   estimateOnLoad?: boolean;
+  allowRecurringSchedule?: boolean;
   newCustomerHref: string;
   customerEditReturnTo?: string;
   onSubmit: (values: CleaningValues, nextHref?: string) => { ok: boolean; message?: string };
@@ -135,6 +142,11 @@ export function CleaningForm({
   const [cleanerArrivals, setCleanerArrivals] = useState<CleanerArrival[]>(initial.cleanerArrivals ?? []);
   const [arrivalEditor, setArrivalEditor] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringInterval, setRecurringInterval] = useState<1 | 2 | 4>(2);
+  const [pricePerVisit, setPricePerVisit] = useState(
+    initial.pricePerVisitCents !== undefined ? formatCentsToDollarsInput(initial.pricePerVisitCents) : "",
+  );
 
   const matches = useMemo(
     () => (query.trim() ? searchCustomers(hub.customers, hub.properties, query) : []),
@@ -184,6 +196,9 @@ export function CleaningForm({
     duration,
     draftCleanerIds: [...draftCleanerIds].sort(),
     cleanerArrivals,
+    recurringEnabled,
+    recurringInterval,
+    pricePerVisit,
   });
   const baseline = useRef<string | null>(null);
   const settled = headcountFor === suggestionKey;
@@ -262,11 +277,35 @@ export function CleaningForm({
       specialInstructions: instructions,
       cleanerIds: draftCleanerIds,
       cleanerArrivals: cleanerArrivals.filter((arrival) => draftCleanerIds.includes(arrival.cleanerId)),
+      recurringSchedule:
+        allowRecurringSchedule && serviceType === "RECURRING" && recurringEnabled
+          ? { interval: recurringInterval }
+          : undefined,
     };
   }
 
+  const recurringPreview =
+    allowRecurringSchedule && serviceType === "RECURRING" && recurringEnabled
+      ? recurrenceSummary({
+          frequency: "WEEK",
+          interval: recurringInterval,
+          daysOfWeek: [dayOfWeek(date)],
+        })
+      : null;
+
+  function pricePerVisitCentsFromInput(): number | undefined | null {
+    const trimmed = pricePerVisit.trim();
+    if (!trimmed) return undefined;
+    return parseDollarsToCents(trimmed);
+  }
+
   function submit(nextHref?: string) {
-    const result = onSubmit(values(), nextHref);
+    const parsedPrice = pricePerVisitCentsFromInput();
+    if (parsedPrice === null) {
+      setMessage("Enter a valid price per visit.");
+      return false;
+    }
+    const result = onSubmit({ ...values(), pricePerVisitCents: parsedPrice }, nextHref);
     if (!result.ok) {
       setMessage(result.message ?? "The cleaning could not be saved.");
       return false;
@@ -410,6 +449,54 @@ export function CleaningForm({
               </div>
             </Group>
 
+            {allowRecurringSchedule && serviceType === "RECURRING" ? (
+              <div className="rounded-2xl bg-white p-4 ring-1 ring-ink/15">
+                <button
+                  type="button"
+                  aria-pressed={recurringEnabled}
+                  onClick={() => {
+                    setRecurringEnabled((on) => !on);
+                    setMessage(null);
+                  }}
+                  className="flex w-full items-start justify-between gap-3 text-left"
+                >
+                  <span>
+                    <span className="block text-base font-semibold">Create recurring schedule</span>
+                    <span className="mt-1 block text-sm text-ink/70">
+                      Use this cleaning as the first visit and generate future dates automatically.
+                    </span>
+                  </span>
+                  <span
+                    className={`mt-0.5 flex h-7 w-12 shrink-0 rounded-full p-0.5 ${recurringEnabled ? "bg-ink" : "bg-ink/25"}`}
+                  >
+                    <span
+                      className={`block size-6 rounded-full bg-white shadow transition-transform ${recurringEnabled ? "translate-x-5" : ""}`}
+                    />
+                  </span>
+                </button>
+                {recurringEnabled ? (
+                  <div className="mt-4 space-y-2">
+                    <label className="block text-sm font-medium">Repeat</label>
+                    <select
+                      className={fieldClass}
+                      value={recurringInterval}
+                      onChange={(event) => {
+                        setRecurringInterval(Number(event.target.value) as 1 | 2 | 4);
+                        setMessage(null);
+                      }}
+                    >
+                      <option value={1}>Every week</option>
+                      <option value={2}>Every 2 weeks</option>
+                      <option value={4}>Every 4 weeks</option>
+                    </select>
+                    {recurringPreview ? (
+                      <p className="text-sm text-ink/70">{recurringPreview}, starting {formatLongDate(date)}.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <ArrivalStart
               date={date}
               start={arrivalStart}
@@ -476,14 +563,34 @@ export function CleaningForm({
                     +
                   </button>
                 </div>
-                <p className="mt-2 text-sm text-ink/70">
-                  {property.bedrooms} bed, {property.bathrooms} bath, {property.squareFeet.toLocaleString()} sq ft
-                </p>
-                <p className="text-sm text-ink/70">
-                  Estimated time on site is {estimate.text} with {headcount} {headcount === 1 ? "cleaner" : "cleaners"}.
-                </p>
+                {property.bedrooms !== 0 || property.bathrooms !== 0 || property.squareFeet !== 0 ? (
+                  <>
+                    <p className="mt-2 text-sm text-ink/70">
+                      {property.bedrooms} bed, {property.bathrooms} bath, {property.squareFeet.toLocaleString()} sq ft
+                    </p>
+                    <p className="text-sm text-ink/70">
+                      Estimated time on site is {estimate.text} with {headcount}{" "}
+                      {headcount === 1 ? "cleaner" : "cleaners"}.
+                    </p>
+                  </>
+                ) : null}
               </div>
             ) : null}
+
+            <Field label="Price per visit (optional)">
+              <input
+                type="text"
+                inputMode="decimal"
+                className={fieldClass}
+                placeholder="e.g. 185"
+                value={pricePerVisit}
+                onChange={(event) => {
+                  setPricePerVisit(event.target.value);
+                  setMessage(null);
+                }}
+              />
+              <p className="mt-1.5 text-sm text-ink/60">Admin only. Cleaners never see this.</p>
+            </Field>
 
             <Field label="Cleaning duration">
               <select

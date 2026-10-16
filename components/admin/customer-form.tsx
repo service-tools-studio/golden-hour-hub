@@ -135,9 +135,9 @@ function blankProperty(): PropertyDraft {
     city: "Portland",
     state: "OR",
     zip: "",
-    bedrooms: 2,
-    bathrooms: 1,
-    squareFeet: 1000,
+    bedrooms: 0,
+    bathrooms: 0,
+    squareFeet: 0,
     preferences: "",
   };
 }
@@ -447,7 +447,7 @@ export function CustomerForm({
                   id={`property-${property.key}-squareFeet`}
                   label="Sq ft"
                   value={property.squareFeet}
-                  min={1}
+                  min={0}
                   step={50}
                   error={squareFeetError}
                   onChange={(value) => updateProperty(property.key, { squareFeet: value })}

@@ -27,7 +27,7 @@ import {
 } from "@/lib/format";
 
 const DEFAULT_PAY_TYPE: PayType = "HOURLY";
-const DEFAULT_PAY = "30";
+const FALLBACK_HOURLY_RATE_CENTS = 3000;
 
 function cleaningHref(jobId: string, from: CleaningOrigin | undefined) {
   return withOrigin(`/admin/jobs/${jobId}`, from);
@@ -114,6 +114,14 @@ function dollarsToCents(value: string): number | null {
 function centsToInput(cents: number): string {
   const dollars = cents / 100;
   return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+}
+
+function defaultPayForCleaner(cleaner: CleanerProfile | undefined): string {
+  const cents =
+    cleaner && Number.isInteger(cleaner.typicalHourlyRateCents) && cleaner.typicalHourlyRateCents >= 0
+      ? cleaner.typicalHourlyRateCents
+      : FALLBACK_HOURLY_RATE_CENTS;
+  return centsToInput(cents);
 }
 
 function arrivalChoicesFor(
@@ -203,7 +211,9 @@ export function EditJobView({
   const [arrivalEnd, setArrivalEnd] = useState(assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "");
   const [crew, setCrew] = useState(assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1);
   const [payType, setPayType] = useState<PayType>(assignment?.payType ?? DEFAULT_PAY_TYPE);
-  const [pay, setPay] = useState(assignment ? centsToInput(assignment.payPerPersonCents) : DEFAULT_PAY);
+  const [pay, setPay] = useState(
+    assignment ? centsToInput(assignment.payPerPersonCents) : defaultPayForCleaner(cleaner),
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const assignmentSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, crew, payType, pay });
@@ -455,6 +465,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
       specialInstructions: values.specialInstructions,
       cleanerIds: values.cleanerIds,
       cleanerArrivals: values.cleanerArrivals,
+      pricePerVisitCents: values.pricePerVisitCents,
     });
     if (!result.ok) return { ok: false, message: result.message };
     if (result.message) hub.flash(result.message);
@@ -487,6 +498,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
           expectedDurationMinutes: job.expectedDurationMinutes ?? 240,
           headcountNeeded: job.headcountNeeded,
           specialInstructions: job.specialInstructions,
+          pricePerVisitCents: job.pricePerVisitCents,
           cleanerIds,
           cleanerArrivals: cleanerArrivals(job, hub.assignments, hub.cleaners).map((arrival) => ({
             cleanerId: arrival.cleanerId,
@@ -544,9 +556,12 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const [arrivalEnd, setArrivalEnd] = useState(savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "");
   const [crew, setCrew] = useState(savedDetail?.proposedCrewSize ?? usualCrew);
   const [payType, setPayType] = useState<PayType>(savedDetail?.payType ?? DEFAULT_PAY_TYPE);
-  const [pay, setPay] = useState(savedDetail ? centsToInput(savedDetail.payPerPersonCents) : DEFAULT_PAY);
+  const [pay, setPay] = useState(
+    savedDetail ? centsToInput(savedDetail.payPerPersonCents) : defaultPayForCleaner(cleaner),
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const [navigatingAway, setNavigatingAway] = useState(false);
   const draftSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, crew, payType, pay });
   const draftBaseline = useRef<string | null>(null);
   if (job && cleaner && draftBaseline.current === null) draftBaseline.current = draftSnapshot;
@@ -589,6 +604,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     if (result.message) hub.flash(result.message);
     if (mode === "DIRECT") textDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
     if (mode === "INVITE") textInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
+    setNavigatingAway(true);
     router.push(nextHref ?? cleaningHref(job.jobId, from));
     return true;
   }
@@ -596,6 +612,8 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   function saveAndLeave() {
     if (!submit("DRAFT", leaveHref ?? undefined)) setLeaveHref(null);
   }
+
+  if (navigatingAway) return null;
 
   if (!job || !cleaner) {
     return (

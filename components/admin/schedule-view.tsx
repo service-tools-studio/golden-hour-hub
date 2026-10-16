@@ -29,6 +29,10 @@ type View = "day" | "month";
 
 export function ScheduleView({ initialDate, initialView = "month" }: { initialDate?: string; initialView?: View }) {
   const hub = useHub();
+  useEffect(() => {
+    if (!hub.ready) return;
+    hub.refreshRecurringHorizon();
+  }, [hub.ready, hub.refreshRecurringHorizon]);
   const [view, setView] = useState<View>(initialView);
   const [date, setDate] = useState(initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : hub.today);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -292,6 +296,7 @@ function DayView({
 }) {
   const hub = useHub();
   const openings = useDatesWithCleanerOpenings(cleanerIds);
+  const scheduled = useDatesWithScheduledJobs();
   const scroller = useRef<HTMLDivElement>(null);
   const ready = useRef(false);
   const lock = useRef(false);
@@ -384,7 +389,11 @@ function DayView({
                     >
                       {Number(day.slice(8))}
                     </span>
-                    {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" aria-hidden="true" /> : <span className="size-1.5" />}
+                    <span className="flex h-1.5 items-center justify-center gap-0.5" aria-hidden="true">
+                      {scheduled.has(day) ? <span className="size-1.5 rounded-full bg-gold" /> : null}
+                      {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" /> : null}
+                      {!scheduled.has(day) && !openings.has(day) ? <span className="size-1.5" /> : null}
+                    </span>
                   </button>
                 );
               })}
@@ -956,7 +965,7 @@ function buildDayEvents(input: {
       endMin: span.endMin,
       href,
       title,
-      subtitle: "No cleaner",
+      subtitle: "No cleaner assigned",
       location: job.snapshot.streetAddress,
       time: rangeLabel(span.startMin, span.endMin),
       tone: "unassigned",
@@ -1151,6 +1160,18 @@ function useDatesWithCleanerOpenings(cleanerIds: string[]) {
   }, [hub.assignments, hub.availability, ids]);
 }
 
+function useDatesWithScheduledJobs() {
+  const hub = useHub();
+  return useMemo(() => {
+    const dates = new Set<string>();
+    for (const job of hub.jobs) {
+      if (job.status === "CANCELED") continue;
+      dates.add(job.date);
+    }
+    return dates;
+  }, [hub.jobs]);
+}
+
 function MonthView({
   date,
   cleanerIds,
@@ -1162,6 +1183,7 @@ function MonthView({
 }) {
   const hub = useHub();
   const openings = useDatesWithCleanerOpenings(cleanerIds);
+  const scheduled = useDatesWithScheduledJobs();
   const scroller = useRef<HTMLDivElement>(null);
   const focus = `${date.slice(0, 7)}-01`;
   const months = [-1, 0, 1, 2, 3].map((delta) => shiftMonth(focus, delta));
@@ -1205,7 +1227,11 @@ function MonthView({
                       >
                         {Number(day.slice(8))}
                       </span>
-                      {openings.has(day) ? <span className="mt-0.5 size-1.5 rounded-full bg-mint" aria-hidden="true" /> : <span className="mt-0.5 size-1.5" />}
+                      <span className="mt-0.5 flex h-1.5 items-center justify-center gap-0.5" aria-hidden="true">
+                        {scheduled.has(day) ? <span className="size-1.5 rounded-full bg-gold" /> : null}
+                        {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" /> : null}
+                        {!scheduled.has(day) && !openings.has(day) ? <span className="size-1.5" /> : null}
+                      </span>
                     </button>
                   ) : (
                     <span key={`${month}-empty-${rowIndex}-${dayIndex}`} />

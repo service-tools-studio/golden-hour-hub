@@ -4,6 +4,7 @@ import { useImperativeHandle, useRef, useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { Field, fieldClass } from "@/components/ui";
 import type { CustomerFormHandle } from "@/components/admin/customer-form";
+import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { validateRecurrenceRule } from "@/lib/domain/recurrence";
 import type { DayOfWeek, Property, RecurringSeries, SeriesStatus } from "@/lib/domain/types";
 
@@ -49,6 +50,10 @@ export function SeriesForm({
     days: series.recurrence.daysOfWeek ?? [],
     headcount: series.defaultHeadcountNeeded,
     status: series.status,
+    pricePerVisit:
+      series.defaultPricePerVisitCents !== undefined
+        ? formatCentsToDollarsInput(series.defaultPricePerVisitCents)
+        : "",
   });
   const initial = useRef(form);
   const latest = useRef(form);
@@ -72,10 +77,21 @@ export function SeriesForm({
       setMessage(decision.message);
       return false;
     }
+    const trimmedPrice = current.pricePerVisit.trim();
+    let defaultPricePerVisitCents: number | undefined;
+    if (trimmedPrice) {
+      const cents = parseDollarsToCents(trimmedPrice);
+      if (cents === null) {
+        setMessage("Enter a valid price per visit.");
+        return false;
+      }
+      defaultPricePerVisitCents = cents;
+    }
     const result = hub.saveSeries(series.seriesId, {
       propertyId: current.propertyId,
       recurrence,
       defaultHeadcountNeeded: current.headcount,
+      defaultPricePerVisitCents,
       status: current.status,
     });
     if (!result.ok) {
@@ -182,6 +198,20 @@ export function SeriesForm({
           </button>
         </div>
       </div>
+      <Field label="Price per visit (optional)">
+        <input
+          type="text"
+          inputMode="decimal"
+          className={fieldClass}
+          placeholder="e.g. 185"
+          value={form.pricePerVisit}
+          onChange={(event) => {
+            setForm((current) => ({ ...current, pricePerVisit: event.target.value }));
+            setMessage(null);
+          }}
+        />
+        <p className="mt-1.5 text-sm text-ink/60">Used for new visits on this schedule. Admin only.</p>
+      </Field>
       <div>
         <p className="mb-1.5 text-sm font-medium text-ink/80">Status</p>
         <div className="grid grid-cols-2 gap-2">

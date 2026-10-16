@@ -20,8 +20,8 @@ function invite(overrides: Partial<JobAssignment> = {}): JobAssignment {
     arrivalWindowEnd: "10:00",
     expectedDurationMinutes: 240,
     payType: "FLAT",
-    payPerPersonCents: 5_000,
-    proposedTotalPayCents: 10_000,
+    payPerPersonCents: 5000,
+    proposedTotalPayCents: 10000,
     invitedAt: "2026-09-26T00:00:00.000Z",
     createdAt: "2026-09-26T00:00:00.000Z",
     updatedAt: "2026-09-26T00:00:00.000Z",
@@ -42,7 +42,7 @@ describe("invitation acceptance", () => {
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
     });
-    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 1, confirmedTotalPayCents: 5_000 });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 1, confirmedTotalPayCents: 5000 });
   });
 
   it("lets a helper-approved cleaner increase the crew when headcount allows", () => {
@@ -55,7 +55,7 @@ describe("invitation acceptance", () => {
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
     });
-    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 3, confirmedTotalPayCents: 15_000 });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 3, confirmedTotalPayCents: 15000 });
   });
 
   it("rejects a manipulated crew size for a cleaner who is not helper-approved", () => {
@@ -63,8 +63,8 @@ describe("invitation acceptance", () => {
       assignment: invite({
         cleanerId: "maria",
         proposedCrewSize: 1,
-        payPerPersonCents: 5_000,
-        proposedTotalPayCents: 5_000,
+        payPerPersonCents: 5000,
+        proposedTotalPayCents: 5000,
       }),
       job: { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 3 },
       cleaner: { cleanerId: "maria", status: "ACTIVE", maxHelperCount: 0 },
@@ -82,7 +82,7 @@ describe("invitation acceptance", () => {
       assignment: invite({
         cleanerId: "maria",
         proposedCrewSize: 1,
-        proposedTotalPayCents: 5_000,
+        proposedTotalPayCents: 5000,
       }),
       job: { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 3 },
       cleaner: { cleanerId: "maria", status: "ACTIVE", maxHelperCount: 0 },
@@ -91,12 +91,12 @@ describe("invitation acceptance", () => {
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
     });
-    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 1, confirmedTotalPayCents: 5_000 });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 1, confirmedTotalPayCents: 5000 });
   });
 
   it("uses the stored rate for hourly crew pay", () => {
     const result = validateInvitationAcceptance({
-      assignment: invite({ payType: "HOURLY", payPerPersonCents: 3_500, proposedTotalPayCents: 7_000 }),
+      assignment: invite({ payType: "HOURLY", payPerPersonCents: 3500, proposedTotalPayCents: 7000 }),
       job: { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 3 },
       cleaner: { cleanerId: "claudia", status: "ACTIVE", maxHelperCount: 2 },
       requestedCrewSize: 2,
@@ -104,7 +104,7 @@ describe("invitation acceptance", () => {
       cleanerConfirmedAssignments: [],
       availabilityWindows: openWindow,
     });
-    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 2, confirmedTotalPayCents: 7_000 });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 2, confirmedTotalPayCents: 7000 });
   });
 
   it("confirms an accepted job before that week's availability is submitted", () => {
@@ -117,12 +117,12 @@ describe("invitation acceptance", () => {
       cleanerConfirmedAssignments: [],
       availabilityWindows: [],
     });
-    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 2, confirmedTotalPayCents: 10_000 });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 2, confirmedTotalPayCents: 10000 });
   });
 
   it("rechecks the current helper maximum when an old invitation is accepted", () => {
     const tooLarge = validateInvitationAcceptance({
-      assignment: invite({ proposedCrewSize: 3, proposedTotalPayCents: 15_000 }),
+      assignment: invite({ proposedCrewSize: 3, proposedTotalPayCents: 15000 }),
       job: { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 4 },
       cleaner: { cleanerId: "claudia", status: "ACTIVE", maxHelperCount: 1 },
       requestedCrewSize: 3,
@@ -133,7 +133,7 @@ describe("invitation acceptance", () => {
     assert.equal(tooLarge.ok, false);
     if (!tooLarge.ok) assert.equal(tooLarge.message, "Your approved crew size is 2.");
     const withinNewMax = validateInvitationAcceptance({
-      assignment: invite({ proposedCrewSize: 3, proposedTotalPayCents: 15_000 }),
+      assignment: invite({ proposedCrewSize: 3, proposedTotalPayCents: 15000 }),
       job: { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 4 },
       cleaner: { cleanerId: "claudia", status: "ACTIVE", maxHelperCount: 1 },
       requestedCrewSize: 2,
@@ -158,7 +158,7 @@ describe("invitation acceptance", () => {
       status: "CONFIRMED",
       serviceDate: "2026-09-04",
       confirmedCrewSize: 3,
-      confirmedTotalPayCents: 15_000,
+      confirmedTotalPayCents: 15000,
     });
     const outside = invite({
       assignmentId: "outside",
@@ -197,7 +197,7 @@ describe("invitation acceptance", () => {
     const confirmed = invite({
       status: "CONFIRMED",
       confirmedCrewSize: 1,
-      confirmedTotalPayCents: 5_000,
+      confirmedTotalPayCents: 5000,
       serviceDate: "2026-10-03",
       arrivalWindowStart: "09:00",
       arrivalWindowEnd: "10:00",
@@ -222,7 +222,7 @@ describe("invitation acceptance", () => {
       serviceDate: "2026-10-04",
       pendingCrewSize: 1,
       proposedCrewSize: 1,
-      proposedTotalPayCents: 5_000,
+      proposedTotalPayCents: 5000,
       arrivalWindowStart: "18:00",
       arrivalWindowEnd: "19:00",
       expectedDurationMinutes: 300,
@@ -270,7 +270,7 @@ describe("invitation acceptance", () => {
     });
     assert.equal(settled[0].status, "CONFIRMED");
     assert.equal(settled[0].confirmedCrewSize, 2);
-    assert.equal(settled[0].confirmedTotalPayCents, 10_000);
+    assert.equal(settled[0].confirmedTotalPayCents, 10000);
     assert.equal(settled[0].pendingCrewSize, undefined);
   });
 
@@ -298,7 +298,7 @@ describe("invitation acceptance", () => {
       ],
       "oct-6",
       2,
-      10_000,
+      10000,
       now,
     );
     assert.equal(updated[0].status, "CONFIRMED");

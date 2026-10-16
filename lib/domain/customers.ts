@@ -111,7 +111,7 @@ function validateProperty(input: PropertyInput, index: number): Result<{ value: 
   if (typeof input.bathrooms !== "number" || input.bathrooms < 0 || input.bathrooms > 20) {
     return { ok: false, field: propertyField(index, "bathrooms"), message: "Enter the number of bathrooms." };
   }
-  if (!Number.isInteger(input.squareFeet) || input.squareFeet < 1) {
+  if (!Number.isInteger(input.squareFeet) || input.squareFeet < 0) {
     return { ok: false, field: propertyField(index, "squareFeet"), message: "Enter the square footage." };
   }
   return {

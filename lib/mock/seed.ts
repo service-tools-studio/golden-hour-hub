@@ -31,6 +31,20 @@ export type HubData = {
   submissions: AvailabilitySubmission[];
 };
 
+export function emptyHub(today: string): HubData {
+  return {
+    today,
+    cleaners: [],
+    customers: [],
+    properties: [],
+    series: [],
+    jobs: [],
+    assignments: [],
+    availability: [],
+    submissions: [],
+  };
+}
+
 const STAMP = "2026-09-20T16:00:00.000Z";
 
 function nextWeekdayOnOrAfter(date: string): string {
@@ -150,12 +164,12 @@ export function buildSeed(today: string): HubData {
   ];
 
   const assignments: JobAssignment[] = [
-    assignment("as-claudia-johnson", "job-johnson", "claudia", johnsonDate, "CONFIRMED", 2, 2, 5_000, 10_000, 10_000),
-    assignment("as-mariana-johnson", "job-johnson", "mariana", johnsonDate, "INVITED", 1, undefined, 5_000, 5_000),
-    assignment("as-shariese-johnson", "job-johnson", "shariese", johnsonDate, "DECLINED", 1, undefined, 5_000, 5_000),
-    assignment("as-mariana-priya", "job-priya", "mariana", priyaDate, "CONFIRMED", 1, 1, 5_000, 5_000, 5_000, "13:00", "13:30", 180),
-    assignment("as-claudia-luis", "job-luis", "claudia", luisDate, "INVITED", 2, undefined, 5_000, 10_000),
-    assignment("as-claudia-past", "job-jeff-past", "claudia", pastDate, "CONFIRMED", 2, 2, 5_000, 10_000, 10_000),
+    assignment("as-claudia-johnson", "job-johnson", "claudia", johnsonDate, "CONFIRMED", 2, 2, 5000, 10000, 10000),
+    assignment("as-mariana-johnson", "job-johnson", "mariana", johnsonDate, "INVITED", 1, undefined, 5000, 5000),
+    assignment("as-shariese-johnson", "job-johnson", "shariese", johnsonDate, "DECLINED", 1, undefined, 5000, 5000),
+    assignment("as-mariana-priya", "job-priya", "mariana", priyaDate, "CONFIRMED", 1, 1, 5000, 5000, 5000, "13:00", "13:30", 180),
+    assignment("as-claudia-luis", "job-luis", "claudia", luisDate, "INVITED", 2, undefined, 5000, 10000),
+    assignment("as-claudia-past", "job-jeff-past", "claudia", pastDate, "CONFIRMED", 2, 2, 5000, 10000, 10000),
   ];
 
   const availability = [johnsonDate, priyaDate, luisDate, pastDate].reduce(
@@ -242,7 +256,7 @@ function cleaner(
   email: string,
   typicalHelperCount: number,
   maxHelperCount: number,
-  typicalHourlyRateCents = 5_000,
+  typicalHourlyRateCents = 5000,
 ): CleanerProfile {
   return {
     cleanerId,
