@@ -348,6 +348,7 @@ function readAssignment(item: DynamoItem): JobAssignment {
     pendingCrewSize: optionalNumber(item, "pendingCrewSize"),
     confirmedCrewSize: optionalNumber(item, "confirmedCrewSize"),
     attentionReason: optionalString(item, "attentionReason"),
+    availabilityConflictWeekStart: optionalString(item, "availabilityConflictWeekStart"),
     arrivalWindowStart: stringField(item, "arrivalWindowStart"),
     arrivalWindowEnd: stringField(item, "arrivalWindowEnd"),
     expectedDurationMinutes: numberField(item, "expectedDurationMinutes"),

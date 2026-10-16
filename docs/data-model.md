@@ -43,6 +43,8 @@ Helper authorization is `maxHelperCount`. It is not a stored boolean. `maxHelper
 
 Claudia stores `typicalHelperCount = 1` and `maxHelperCount = 2`, so her usual crew is 2 and her maximum crew is 3. Maria stores both counts as 0, so she is always a crew of 1 and the crew stepper is not shown.
 
+`typicalHourlyRateCents` is the admin-set default per-person hourly rate for staffing (integer cents, at least 0). Older stored profiles without the field read back as `5000` ($50/hour per person).
+
 Acceptance, direct assignment, and any move into `PENDING_AVAILABILITY` or `CONFIRMED` reload this profile and use the current `maxHelperCount`. An older invitation does not keep a higher crew. A confirmed assignment is not rewritten when the maximum later changes.
 
 ### Availability window
@@ -92,7 +94,7 @@ customerId cust-jeff
 
 `customerId` is stored on the item as well as in the key. The customer profile loads with one query: `pk = CUSTOMER#id`, which returns `PROFILE` and every `PROPERTY#` row.
 
-Fields: `propertyId`, optional `label` (for example “Hawthorne”), `streetAddress`, `city`, `state` (two letters), `zip` (5 digits), `bedrooms` (integer 0–20), `bathrooms` (0–20, halves allowed), `squareFeet` (integer, at least 1), `preferences`, `status` (`ACTIVE` or `INACTIVE`), and the audit fields.
+Fields: `propertyId`, optional `label` (for example “Hawthorne”), `streetAddress`, `city`, `state` (two letters), `zip` (5 digits when entered), `bedrooms` (integer 0–20), `bathrooms` (0–20, halves allowed), `squareFeet` (integer, at least 1), `preferences`, `status` (`ACTIVE` or `INACTIVE`), and the audit fields.
 
 House preferences live here: side gate, fragrance-free products, the cat. Visit-only notes stay on the job as special instructions.
 
@@ -143,7 +145,7 @@ dayOfMonth    optional, e.g. 15
 
 Weekly rules use `daysOfWeek`. Monthly rules use either `dayOfMonth` or `weekOrdinals` plus `daysOfWeek`, not both. The screen shows a sentence such as “Every 1st and 3rd Saturday of the month.” It does not show a recurrence-rule string. The start date has to fall on that pattern.
 
-Also stored: `customerId`, `propertyId`, `startDate`, `endMode` (`UNTIL_CANCELED` or `END_ON_DATE`), optional `endDate`, `defaultHeadcountNeeded`, default arrival window, `defaultExpectedDurationMinutes`, `defaultServiceType`, optional `defaultSpecialInstructions`, `staffingTemplateMode` (`INVITE`, `DIRECT`, or `BLANK`), `staffingTemplate`, `status` (`ACTIVE` or `INACTIVE`), optional `generatedThroughDate`, and audit fields.
+Also stored: `customerId`, `propertyId`, `startDate`, `endMode` (`UNTIL_CANCELED` or `END_ON_DATE`), optional `endDate`, `defaultHeadcountNeeded`, default arrival window, `defaultExpectedDurationMinutes`, `defaultServiceType`, optional `defaultSpecialInstructions`, `staffingTemplateMode` (`INVITE`, `DIRECT`, or `BLANK`), `staffingTemplate`, `status` (`ACTIVE` or `INACTIVE`), optional `skippedDates` (dates removed from the series that must not be generated again), optional `generatedThroughDate`, and audit fields.
 
 A series belongs to one property. New occurrences copy that property.
 
@@ -172,7 +174,9 @@ gsi2pk CUSTOMER#cust-jeff
 gsi2sk JOB#2026-10-20#job-johnson
 ```
 
-Fields: `jobId`, `customerId`, `propertyId`, optional `seriesId`, `serviceType`, `date`, `headcountNeeded`, `snapshot`, `specialInstructions`, `status` (`SCHEDULED` or `CANCELED`), and audit fields.
+Fields: `jobId`, `customerId`, `propertyId`, optional `seriesId`, `serviceType`, `date`, `headcountNeeded`, `snapshot`, `specialInstructions`, `status` (`DRAFT`, `SCHEDULED`, or `CANCELED`), and audit fields.
+
+A `DRAFT` visit is work in progress before it is booked. `headcountNeeded` may be `0` until the admin chooses crew size. Optional job-level `arrivalWindowStart`, `arrivalWindowEnd`, and `expectedDurationMinutes` describe the visit window before every cleaner is staffed. Optional `draftCleanerIds` lists cleaners named on the visit. Optional `draftCleanerDetails` holds per-cleaner arrival, duration, crew, and pay saved before invite or direct assignment (same shape as the fields on an assignment row).
 
 Confirmed headcount is not stored. It is the sum of `confirmedCrewSize` on `CONFIRMED` assignments for that job.
 
@@ -197,11 +201,11 @@ gsi1pk CLEANER#claudia
 gsi1sk 2026-10-20#as-claudia-johnson
 ```
 
-Fields: `assignmentId`, `jobId`, `cleanerId`, `serviceDate`, `status`, `proposedCrewSize`, optional `pendingCrewSize`, optional `confirmedCrewSize`, optional `attentionReason`, `arrivalWindowStart`, `arrivalWindowEnd`, `expectedDurationMinutes`, `payType` (`FLAT` or `HOURLY`), `payPerPersonCents`, `proposedTotalPayCents`, optional `confirmedTotalPayCents`, optional `invitedAt`, optional `respondedAt`, `createdAt`, `updatedAt`.
+Fields: `assignmentId`, `jobId`, `cleanerId`, `serviceDate`, `status`, `proposedCrewSize`, optional `pendingCrewSize`, optional `confirmedCrewSize`, optional `attentionReason`, optional `availabilityConflictWeekStart`, `arrivalWindowStart`, `arrivalWindowEnd`, `expectedDurationMinutes`, `payType` (`FLAT` or `HOURLY`), `payPerPersonCents`, `proposedTotalPayCents`, optional `confirmedTotalPayCents`, optional `lastNotified` (arrival, duration, crew, and pay last sent to the cleaner), optional `notifiedServiceDate`, optional `needsDateReinvite`, optional `invitedAt`, optional `respondedAt`, `createdAt`, `updatedAt`.
 
 Statuses: `INVITED`, `PENDING_AVAILABILITY`, `CONFIRMED`, `NEEDS_ATTENTION`, `DECLINED`, `CANCELED`, `EXPIRED_JOB_FILLED`.
 
-`pendingCrewSize` is the crew the cleaner or admin committed before that week’s availability could be checked. `confirmedCrewSize` is set only when the status is `CONFIRMED`. `attentionReason` is set when the status is `NEEDS_ATTENTION`. Confirmed headcount ignores every status except `CONFIRMED`.
+`pendingCrewSize` is the crew the cleaner or admin committed before that week’s availability could be checked. `confirmedCrewSize` is set only when the status is `CONFIRMED`. `attentionReason` is set when the status is `NEEDS_ATTENTION`. `availabilityConflictWeekStart` is the Monday (`YYYY-MM-DD`) of the week whose submitted availability failed a schedule check; the app uses it for admin and cleaner follow-up and clears it when the assignment later confirms. `lastNotified` and `notifiedServiceDate` record what was texted on invite or follow-up so later edits can show “changes not sent.” `needsDateReinvite` is set when the job date moves after that cleaner was invited or confirmed. Confirmed headcount ignores every status except `CONFIRMED`.
 
 There is no recurring-assignment record. A series template is copied into a new assignment per job. `serviceDate` is the job date, stored here so a cleaner’s week can be loaded from GSI1 without reading every job first.
 
@@ -273,7 +277,7 @@ If that week is submitted, the blocked range must sit inside the submitted windo
 
 If the confirmed people now meet `headcountNeeded`, the other `INVITED` and `PENDING_AVAILABILITY` assignments on that job become `EXPIRED_JOB_FILLED` in the same update.
 
-After a cleaner submits a week, each of that cleaner’s `PENDING_AVAILABILITY` rows in that Monday–Sunday week is checked again with the current profile. A row that fits becomes `CONFIRMED`. A row that does not fit becomes `NEEDS_ATTENTION` with `attentionReason`. Confirmed history is not rewritten.
+After a cleaner submits a week, each of that cleaner’s `PENDING_AVAILABILITY` rows in that Monday–Sunday week is checked again with the current profile. A row that fits becomes `CONFIRMED`. A row that does not fit becomes `NEEDS_ATTENTION` with `attentionReason` and, when the failure is schedule-related, `availabilityConflictWeekStart` set to that week’s Monday. Confirmed history is not rewritten.
 
 The preview does this in one memory update. A database write has to apply the same headcount check atomically, so two cleaners cannot both take the last open spots. The second one sees “This job was just filled.”
 
@@ -281,7 +285,7 @@ The preview does this in one memory update. A database write has to apply the sa
 
 Once a day, and again whenever the app loads, each `ACTIVE` series is filled through today + 56 days (`today + 8 weeks`), stopping earlier at `endDate` when there is one. Dates before today are not backfilled. An `INACTIVE` series gets no new jobs. Existing jobs and assignments stay.
 
-For each date the recurrence rule produces inside that window, skip it when that series already has the date. Otherwise one transaction:
+For each date the recurrence rule produces inside that window, skip it when that series already has the date or the date is listed in `skippedDates`. Otherwise one transaction:
 
 1. Put `OCCUR#date` with `attribute_not_exists(pk)`.
 2. Put the job, including a fresh snapshot of the customer and that series’ property. The job id is `job-{seriesId}-{date}`.
@@ -302,3 +306,5 @@ If the lock exists, the whole transaction is skipped. Running the generator twic
 `THIS_AND_FUTURE` updates the series and every occurrence date on or after the chosen date. Earlier dates stay as they were.
 
 Stopping future generation sets the series to `INACTIVE`. It does not delete history.
+
+Deleting a single occurrence adds that date to `skippedDates` and removes the job (and its assignments) from the preview store. Deleting a customer is rejected while any job or recurring series still references them.
