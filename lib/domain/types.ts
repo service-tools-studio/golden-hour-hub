@@ -47,6 +47,8 @@ export type CleanerProfile = {
    * Helper approval is derived: maxHelperCount > 0.
    */
   maxHelperCount: number;
+  /** Default per-person hourly pay in cents for staffing and estimates. */
+  typicalHourlyRateCents: number;
   createdAt: string;
   createdBy: string;
   updatedAt: string;

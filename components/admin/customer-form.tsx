@@ -171,12 +171,14 @@ export function CustomerForm({
   scrollToPropertyId,
   onCancel,
   onSaved,
+  onDeleted,
   ref,
 }: {
   customer?: Customer;
   scrollToPropertyId?: string | null;
   onCancel?: () => void;
   onSaved?: (customerId: string) => void;
+  onDeleted?: () => void;
   ref?: React.Ref<CustomerFormHandle>;
 }) {
   const hub = useHub();
@@ -498,6 +500,31 @@ export function CustomerForm({
       {onCancel ? (
         <button type="button" onClick={onCancel} className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink">
           Cancel edit
+        </button>
+      ) : null}
+      {customer ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              !window.confirm(
+                `Delete ${customer.firstName} ${customer.lastName}? This removes their profile and properties. It cannot be undone.`,
+              )
+            ) {
+              return;
+            }
+            const result = hub.deleteCustomer(customer.customerId);
+            if (!result.ok) {
+              setError({ field: "form", message: result.message, at: Date.now() });
+              return;
+            }
+            if (result.message) hub.flash(result.message);
+            if (onDeleted) onDeleted();
+            else router.push("/admin/customers");
+          }}
+          className="min-h-12 w-full font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
+        >
+          Delete customer
         </button>
       ) : null}
     </form>

@@ -19,6 +19,8 @@ import {
   formatTimeLabel,
   hourWindowLabel,
   hourWindows,
+  inviteAssignmentSms,
+  inviteFollowUpSms,
   noticeFlagText,
   noticeGap,
   reinviteFlagText,
@@ -48,6 +50,36 @@ function textDirectAssignment(
   });
   void sendCleanerText(cleaner.mobilePhone, body).then((result) =>
     flash(result.ok ? `Assigned. Text sent to ${cleaner.firstName}.` : result.message),
+  );
+}
+
+function textInviteAssignment(
+  cleaner: CleanerProfile,
+  job: Job,
+  arrivalWindowStart: string,
+  arrivalWindowEnd: string,
+  flash: (message: string) => void,
+) {
+  const body = inviteAssignmentSms({
+    cleanerFirstName: cleaner.firstName,
+    customerName: job.snapshot.customerDisplayName,
+    date: job.date,
+    arrivalWindowStart,
+    arrivalWindowEnd,
+  });
+  void sendCleanerText(cleaner.mobilePhone, body).then((result) =>
+    flash(result.ok ? `Invite sent. Text sent to ${cleaner.firstName}.` : result.message),
+  );
+}
+
+function textInviteFollowUp(cleaner: CleanerProfile, job: Job, flash: (message: string) => void) {
+  const body = inviteFollowUpSms({
+    cleanerFirstName: cleaner.firstName,
+    customerName: job.snapshot.customerDisplayName,
+    date: job.date,
+  });
+  void sendCleanerText(cleaner.mobilePhone, body).then((result) =>
+    flash(result.ok ? `Follow-up sent to ${cleaner.firstName}.` : result.message),
   );
 }
 
@@ -191,6 +223,25 @@ export function EditJobView({
       job &&
       hub.submissions.some((submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === mondayOf(job.date)),
   );
+  const payPerPersonCentsPreview = dollarsToCents(pay);
+  const followUpReady = Boolean(
+    assignment &&
+      assignment.status === "INVITED" &&
+      assignment.lastNotified &&
+      payPerPersonCentsPreview !== null &&
+      noticeGap(
+        false,
+        assignmentNoticeFrom({
+          arrivalWindowStart: arrivalStart,
+          arrivalWindowEnd: arrivalEnd,
+          expectedDurationMinutes: job?.expectedDurationMinutes ?? assignment.expectedDurationMinutes,
+          proposedCrewSize: crew,
+          payType,
+          payPerPersonCents: payPerPersonCentsPreview,
+        }),
+        assignment.lastNotified,
+      ) === null,
+  );
 
   function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
     if (!job || !cleaner) return false;
@@ -219,8 +270,14 @@ export function EditJobView({
     }
     if (result.message) hub.flash(result.message);
     if (mode === "DIRECT") textDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
+    if (mode === "INVITE") textInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
     router.push(nextHref ?? cleaningHref(jobId, from));
     return true;
+  }
+
+  function sendInviteFollowUp() {
+    if (!job || !cleaner || !followUpReady) return;
+    textInviteFollowUp(cleaner, job, hub.flash);
   }
 
   function saveAndLeave() {
@@ -326,6 +383,8 @@ export function EditJobView({
               ? null
               : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
           }
+          inviteLabel={followUpReady ? "Send follow up" : "Save and send invite"}
+          onInvite={() => (followUpReady ? sendInviteFollowUp() : submit("INVITE"))}
           onSave={submit}
         />
       </form>
@@ -440,6 +499,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
         canClearCleaners
         onDateChange={setPickedDate}
         newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(withOrigin(`/admin/jobs/${job.jobId}/edit`, from))}`}
+        customerEditReturnTo={withOrigin(`/admin/jobs/${job.jobId}/edit`, from)}
         onSubmit={submit}
         afterDate={(date) => {
           const flag = reinviteFlagText(
@@ -528,6 +588,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     }
     if (result.message) hub.flash(result.message);
     if (mode === "DIRECT") textDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
+    if (mode === "INVITE") textInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
     router.push(nextHref ?? cleaningHref(job.jobId, from));
     return true;
   }
@@ -627,6 +688,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
               ? null
               : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
           }
+          onInvite={() => submit("INVITE")}
           onSave={submit}
         />
       </form>
@@ -674,16 +736,20 @@ function AssignmentStatus({ label, flag }: { label: string; flag: string | null 
 
 function AssignmentSaveChoices({
   directAssignNote,
+  inviteLabel = "Save and send invite",
+  onInvite,
   onSave,
 }: {
   directAssignNote: string | null;
+  inviteLabel?: string;
+  onInvite: () => void;
   onSave: (mode: "DRAFT" | "INVITE" | "DIRECT") => void;
 }) {
   return (
     <div className="space-y-2">
       <SecondaryButton type="submit">Save draft</SecondaryButton>
-      <PrimaryButton type="button" onClick={() => onSave("INVITE")}>
-        Save and send invite
+      <PrimaryButton type="button" onClick={onInvite}>
+        {inviteLabel}
       </PrimaryButton>
       <div className="space-y-2">
         <button

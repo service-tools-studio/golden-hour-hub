@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
-import { AddressLink, fullAddress } from "@/components/address-link";
 import { useHub } from "@/components/hub-provider";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
@@ -63,9 +62,7 @@ export function CustomersView() {
                 {homes.map((home) => (
                   <p key={home.propertyId} className="text-sm text-ink/70">
                     {home.label ? `${home.label} · ` : ""}
-                    <AddressLink address={fullAddress(home)}>
-                      {home.streetAddress}, {home.city}
-                    </AddressLink>
+                    {home.streetAddress}, {home.city}
                   </p>
                 ))}
                 {customer.phone ? (
@@ -153,17 +150,19 @@ export function CustomerDetail({
   customerId,
   initialSeriesId = "",
   returnTo = "",
+  initialEdit = false,
 }: {
   customerId: string;
   initialSeriesId?: string;
   returnTo?: string;
+  initialEdit?: boolean;
 }) {
   const hub = useHub();
   const router = useRouter();
   const formRef = useRef<CustomerFormHandle>(null);
   const seriesFormRef = useRef<CustomerFormHandle>(null);
   const customer = hub.customers.find((item) => item.customerId === customerId);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(initialEdit);
   const [editingSeriesId, setEditingSeriesId] = useState<string | null>(initialSeriesId || null);
   const backTo = localAdminPath(returnTo);
   const [focusPropertyId, setFocusPropertyId] = useState<string | null>(null);
@@ -261,6 +260,7 @@ export function CustomerDetail({
             scrollToPropertyId={focusPropertyId}
             onCancel={() => requestLeave()}
             onSaved={() => setEditing(false)}
+            onDeleted={() => router.push("/admin/customers")}
           />
         ) : editingSeries ? (
           <SeriesForm
@@ -308,9 +308,7 @@ export function CustomerDetail({
               <Pencil />
               <p className="pr-6 font-semibold">{home.label ?? home.streetAddress}</p>
               <p className="text-sm text-ink/70">
-                <AddressLink address={fullAddress(home)}>
-                  {home.streetAddress}, {home.city} {home.state} {home.zip}
-                </AddressLink>
+                {home.streetAddress}, {home.city} {home.state} {home.zip}
               </p>
               <p className="mt-2 text-sm">
                 {home.bedrooms} bed · {home.bathrooms} bath · {home.squareFeet.toLocaleString()} sq ft
@@ -335,7 +333,7 @@ export function CustomerDetail({
               <p className="pr-6 text-lg font-semibold">{seriesSummary(item)}</p>
               {place && home ? (
                 <p className="text-sm text-ink/70">
-                  <AddressLink address={fullAddress(home)}>{place}</AddressLink>
+                  {place}
                 </p>
               ) : null}
               <p className="text-sm text-ink/70">{item.status === "ACTIVE" ? "Active" : "Paused"} · Headcount {item.defaultHeadcountNeeded}</p>
@@ -350,7 +348,7 @@ export function CustomerDetail({
               <p className="font-semibold">{formatLongDate(job.date)}</p>
               <p className="text-sm text-ink/70">{job.status === "DRAFT" ? `Draft · ${serviceLabel(job.serviceType)}` : serviceLabel(job.serviceType)}</p>
               <p className="text-sm text-ink/70">
-                <AddressLink address={fullAddress(job.snapshot)}>{job.snapshot.streetAddress}</AddressLink>
+                {job.snapshot.streetAddress}
               </p>
             </Card>
           </Link>
@@ -363,7 +361,7 @@ export function CustomerDetail({
               <p className="font-semibold">{formatLongDate(job.date)}</p>
               <p className="text-sm text-ink/70">{serviceLabel(job.serviceType)}</p>
               <p className="text-sm text-ink/70">
-                <AddressLink address={fullAddress(job.snapshot)}>{job.snapshot.streetAddress}</AddressLink>
+                {job.snapshot.streetAddress}
               </p>
             </Card>
           </Link>

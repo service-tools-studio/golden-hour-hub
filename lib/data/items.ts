@@ -234,6 +234,10 @@ function readCleaner(item: DynamoItem): CleanerProfile {
     status: item.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
     typicalHelperCount: maxHelperCount === 0 ? 0 : Math.min(typicalHelperCount, maxHelperCount),
     maxHelperCount,
+    typicalHourlyRateCents:
+      typeof item.typicalHourlyRateCents === "number" && item.typicalHourlyRateCents >= 0
+        ? item.typicalHourlyRateCents
+        : 5_000,
     createdAt: stringField(item, "createdAt"),
     createdBy: stringField(item, "createdBy"),
     updatedAt: stringField(item, "updatedAt"),

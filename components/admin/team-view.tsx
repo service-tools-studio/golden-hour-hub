@@ -10,6 +10,7 @@ import { Card, Notice, PageHeader, Screen } from "@/components/ui";
 import { listSubmissionStatus } from "@/lib/domain/availability";
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
 import { formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
+import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { cleanerCrewSummary, formatPhone } from "@/lib/format";
 import type { CleanerStatus } from "@/lib/domain/types";
 
@@ -111,9 +112,12 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   const [typicalHelperCount, setTypicalHelperCount] = useState(cleaner?.typicalHelperCount ?? 0);
   const [maxHelperCount, setMaxHelperCount] = useState(cleaner?.maxHelperCount ?? 0);
   const [status, setStatus] = useState<CleanerStatus>(cleaner?.status ?? "ACTIVE");
+  const [hourlyRate, setHourlyRate] = useState(
+    cleaner ? formatCentsToDollarsInput(cleaner.typicalHourlyRateCents) : "50",
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const cleanerSnapshot = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status });
+  const cleanerSnapshot = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status, hourlyRate });
   const cleanerBaseline = useRef<string | null>(null);
   if (cleaner && cleanerBaseline.current === null) cleanerBaseline.current = cleanerSnapshot;
   const cleanerDirty = cleanerBaseline.current !== null && cleanerBaseline.current !== cleanerSnapshot;
@@ -133,16 +137,22 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   const approvedCrew = maxCrewSize(maximum);
 
   function save(nextHref?: string) {
+    const typicalHourlyRateCents = parseDollarsToCents(hourlyRate);
+    if (typicalHourlyRateCents === null) {
+      setMessage("Enter a valid hourly rate.");
+      return false;
+    }
     const result = hub.updateCleanerAdmin(profile.cleanerId, {
       typicalHelperCount: typical,
       maxHelperCount: maximum,
+      typicalHourlyRateCents,
       status,
     });
     if (!result.ok) {
       setMessage(result.message);
       return false;
     }
-    cleanerBaseline.current = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status });
+    cleanerBaseline.current = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status, hourlyRate });
     if (nextHref) {
       hub.flash("Saved.");
       router.push(nextHref);
@@ -179,6 +189,26 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
               </button>
             ))}
           </div>
+        </Card>
+        <Card>
+          <p className="text-base font-semibold">Typical hourly rate</p>
+          <p className="mt-1 text-sm text-ink/60">Per person. Job offers can still use a different rate.</p>
+          <label className="mt-4 block">
+            <span className="text-sm font-medium">Rate</span>
+            <div className="mt-2 flex items-center gap-2 rounded-2xl bg-cream px-4 py-3">
+              <span className="text-lg font-semibold text-ink/70">$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={hourlyRate}
+                onChange={(event) => setHourlyRate(event.target.value)}
+                className="min-h-12 w-full bg-transparent text-2xl font-semibold outline-none"
+                aria-label="Typical hourly rate in dollars"
+              />
+              <span className="shrink-0 text-sm font-medium text-ink/60">/ hour</span>
+            </div>
+          </label>
         </Card>
         <Card>
           <p className="text-base font-semibold">Helpers approved?</p>
@@ -225,15 +255,13 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
           <p className="mt-4 text-base">Typical crew size: {usualCrew}</p>
           <p className="mt-1 text-base">Maximum approved crew size: {approvedCrew}</p>
           <p className="mt-1 text-sm text-ink/60">Crew size is the cleaner plus their helpers. Only admins can change these limits.</p>
-          {message ? (
-            <div className="mt-3">
-              <Notice tone={message === "Saved." ? "ok" : "error"}>{message}</Notice>
-            </div>
-          ) : null}
-          <button type="button" onClick={() => save()} className="mt-4 min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
-            Save
-          </button>
         </Card>
+        {message ? (
+          <Notice tone={message === "Saved." ? "ok" : "error"}>{message}</Notice>
+        ) : null}
+        <button type="button" onClick={() => save()} className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
+          Save
+        </button>
       </div>
       <UnsavedChangesDialog
         open={leaveHref !== null}

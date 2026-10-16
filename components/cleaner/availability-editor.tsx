@@ -26,6 +26,7 @@ import {
   editableAvailabilityWeeks,
   formatHm,
   formatTimeLabel,
+  formatMonthDay,
   formatWeekRange,
   nextAvailabilityWeek,
   normalizeAvailabilityWeekStart,
@@ -282,6 +283,7 @@ export function AvailabilityEditor() {
   const weekStart = normalizeAvailabilityWeekStart(hub.today, searchParams.get("week"));
   const week = editableWeeks.find((item) => item.weekStart === weekStart) ?? editableWeeks[0];
   const dueWeekStart = nextAvailabilityWeek(hub.today).weekStart;
+  const availabilityDueSunday = addDays(dueWeekStart, -1);
   const [draft, setDraft] = useState<AvailabilityWindow[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [tone, setTone] = useState<"error" | "ok">("error");
@@ -471,7 +473,8 @@ export function AvailabilityEditor() {
       return false;
     }
     setTone("ok");
-    setMessage(options?.quiet ? null : "Availability submitted.");
+    setMessage(null);
+    if (!options?.quiet) hub.flash("Availability submitted.");
     return true;
   }
 
@@ -488,7 +491,6 @@ export function AvailabilityEditor() {
       return;
     }
     setLeaveHref(null);
-    hub.flash("Availability submitted.");
     if (href) router.push(href);
   }
 
@@ -531,7 +533,7 @@ export function AvailabilityEditor() {
           {submitted
             ? "Submitted. You can still edit this week."
             : week.weekStart === dueWeekStart
-              ? "Due by Sunday."
+              ? `Due by Sunday, ${formatMonthDay(availabilityDueSunday)}.`
               : "Set the hours you are available this week."}
         </p>
         <button type="button" onClick={copyLastWeek} className="min-h-12 w-full rounded-2xl bg-white text-base font-semibold ring-1 ring-ink/10">

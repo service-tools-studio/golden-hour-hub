@@ -38,6 +38,18 @@ export function confirmedCompensationCents(input: {
   return calculateConfirmedFlatPay(input.payPerPersonCents, input.confirmedCrewSize);
 }
 
+export function parseDollarsToCents(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
+  const cents = Math.round(Number(trimmed) * 100);
+  return Number.isInteger(cents) && cents >= 0 ? cents : null;
+}
+
+export function formatCentsToDollarsInput(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+}
+
 export function formatMoney(cents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

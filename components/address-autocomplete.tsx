@@ -31,8 +31,10 @@ export function AddressAutocomplete({
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const requestId = useRef(0);
   const skipFetchForValue = useRef(false);
+  const userIsEditing = useRef(false);
 
   useEffect(() => {
+    if (!userIsEditing.current) return;
     if (skipFetchForValue.current) {
       skipFetchForValue.current = false;
       return;
@@ -103,8 +105,12 @@ export function AddressAutocomplete({
       <input
         className={className}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          userIsEditing.current = true;
+          onChange(event.target.value);
+        }}
         onFocus={() => {
+          if (!userIsEditing.current) return;
           if (suggestions.length > 0 && !skipFetchForValue.current) setOpen(true);
         }}
         onKeyDown={(event) => {

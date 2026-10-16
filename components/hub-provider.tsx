@@ -125,6 +125,7 @@ type HubContextValue = HubState & {
   declineInvitation: (assignmentId: string) => ActionResult;
   submitAvailability: (cleanerId: string, weekStart: string, windows: AvailabilityWindow[]) => ActionResult;
   saveCustomer: (input: CustomerInput, customerId?: string) => ActionResult;
+  deleteCustomer: (customerId: string) => ActionResult;
   saveSeries: (
     seriesId: string,
     input: {
@@ -136,7 +137,12 @@ type HubContextValue = HubState & {
   ) => ActionResult;
   updateCleanerAdmin: (
     cleanerId: string,
-    input: { typicalHelperCount: number; maxHelperCount: number; status: CleanerStatus },
+    input: {
+      typicalHelperCount: number;
+      maxHelperCount: number;
+      typicalHourlyRateCents: number;
+      status: CleanerStatus;
+    },
   ) => ActionResult;
   createJob: (input: CreateJobInput) => ActionResult;
   saveCleanerDetails: (input: SaveCleanerDetailsInput) => ActionResult;
@@ -194,7 +200,18 @@ function readPreview(): HubState {
     const parsed = JSON.parse(raw) as HubState;
     if (!parsed.cleaners || !parsed.jobs || !parsed.assignments || !parsed.properties) return createState();
     if (parsed.cleaners.some((cleaner) => typeof cleaner.maxHelperCount !== "number")) return createState();
-    return { ...withCurrentHorizon(parsed), role: parsed.role ?? null, cleanerId: parsed.cleanerId ?? null };
+    const cleaners = parsed.cleaners.map((cleaner) => ({
+      ...cleaner,
+      typicalHourlyRateCents:
+        typeof cleaner.typicalHourlyRateCents === "number" && cleaner.typicalHourlyRateCents >= 0
+          ? cleaner.typicalHourlyRateCents
+          : 5_000,
+    }));
+    return {
+      ...withCurrentHorizon({ ...parsed, cleaners }),
+      role: parsed.role ?? null,
+      cleanerId: parsed.cleanerId ?? null,
+    };
   } catch {
     return createState();
   }
@@ -478,6 +495,23 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     return { ok: true, customerId: id };
   }
 
+  function deleteCustomer(customerId: string): ActionResult {
+    const customer = data.customers.find((item) => item.customerId === customerId);
+    if (!customer) return { ok: false, message: "That customer could not be found." };
+    if (data.jobs.some((job) => job.customerId === customerId)) {
+      return { ok: false, message: "Remove or reassign this customer's cleanings before deleting them." };
+    }
+    if (data.series.some((series) => series.customerId === customerId)) {
+      return { ok: false, message: "Delete this customer's recurring schedules before deleting them." };
+    }
+    setState({
+      ...data,
+      customers: data.customers.filter((item) => item.customerId !== customerId),
+      properties: data.properties.filter((item) => item.customerId !== customerId),
+    });
+    return { ok: true, message: "Customer deleted." };
+  }
+
   function saveSeries(
     seriesId: string,
     input: {
@@ -529,10 +563,18 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   function updateCleanerAdmin(
     cleanerId: string,
-    input: { typicalHelperCount: number; maxHelperCount: number; status: CleanerStatus },
+    input: {
+      typicalHelperCount: number;
+      maxHelperCount: number;
+      typicalHourlyRateCents: number;
+      status: CleanerStatus;
+    },
   ): ActionResult {
     const crew = deriveCrewSettings(input);
     if (!crew.ok) return crew;
+    if (!Number.isInteger(input.typicalHourlyRateCents) || input.typicalHourlyRateCents < 0) {
+      return { ok: false, message: "Enter a valid hourly rate." };
+    }
     const now = new Date().toISOString();
     setState({
       ...data,
@@ -543,6 +585,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
               status: input.status,
               typicalHelperCount: crew.typicalHelperCount,
               maxHelperCount: crew.maxHelperCount,
+              typicalHourlyRateCents: input.typicalHourlyRateCents,
               updatedAt: now,
               updatedBy: "kelsey",
             }
@@ -1440,6 +1483,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     declineInvitation,
     submitAvailability,
     saveCustomer,
+    deleteCustomer,
     saveSeries,
     updateCleanerAdmin,
     createJob,

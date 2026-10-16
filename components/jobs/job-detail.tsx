@@ -6,12 +6,17 @@ import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { AddToCalendarButton } from "@/components/add-to-calendar";
 import { AddressLink, fullAddress } from "@/components/address-link";
-import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
+import {
+  type CleaningOrigin,
+  customerCleaningsOnDate,
+  groupedCustomerDayView,
+  withOrigin,
+} from "@/components/jobs/origin";
 import { AlertIcon, Card, PageHeader, Screen } from "@/components/ui";
 import { snapshotVisit } from "@/lib/domain/customers";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
-import type { JobAssignment } from "@/lib/domain/types";
+import type { Job, JobAssignment } from "@/lib/domain/types";
 import { calculateConfirmedHeadcount } from "@/lib/domain/scheduling";
 import { seriesSummary } from "@/lib/mock/seed";
 import {
@@ -38,10 +43,44 @@ import {
 export function AdminJobDetail({ jobId, from }: { jobId: string; from?: CleaningOrigin }) {
   const fromSchedule = from === "schedule";
   const hub = useHub();
-  const router = useRouter();
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const job = hub.jobs.find((item) => item.jobId === jobId);
   if (!job) return <Missing label="That cleaning could not be found." href="/admin" />;
+  const customer = hub.customers.find((item) => item.customerId === job.customerId);
+  const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
+  const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;
+  const jobsOnDay = groupedCustomerDayView(from)
+    ? customerCleaningsOnDate(hub.jobs, job.customerId, job.date)
+    : [job];
+  return (
+    <Screen>
+      <PageHeader
+        title={formatLongDate(job.date)}
+        titleHref={fromSchedule ? `/admin/schedule?date=${job.date}&view=day` : undefined}
+        current={fromSchedule || from === "dashboard" ? visit.customerDisplayName : undefined}
+        crumbs={
+          fromSchedule
+            ? [{ href: `/admin/schedule?date=${job.date}&view=day`, label: "Schedule" }]
+            : from === "dashboard"
+              ? [{ href: "/admin", label: "Dashboard" }]
+              : [
+                { href: "/admin/customers", label: "Customers" },
+                { href: `/admin/customers/${job.customerId}`, label: visit.customerDisplayName },
+              ]
+        }
+      />
+      <div className="space-y-8 px-5 pt-4">
+        {jobsOnDay.map((item) => (
+          <JobCleaningPanel key={item.jobId} job={item} from={from} />
+        ))}
+      </div>
+    </Screen>
+  );
+}
+
+function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
+  const hub = useHub();
+  const router = useRouter();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
   const assignments = hub.assignments.filter(
     (item) => item.jobId === job.jobId && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED",
@@ -88,23 +127,7 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
       .filter((name): name is string => Boolean(name)),
   );
   return (
-    <Screen>
-      <PageHeader
-        title={formatLongDate(job.date)}
-        titleHref={fromSchedule ? `/admin/schedule?date=${job.date}&view=day` : undefined}
-        current={fromSchedule ? visit.customerDisplayName : undefined}
-        crumbs={
-          fromSchedule
-            ? [{ href: `/admin/schedule?date=${job.date}`, label: "Schedule" }]
-            : from === "dashboard"
-              ? [{ href: "/admin", label: "Dashboard" }]
-              : [
-                { href: "/admin/customers", label: "Customers" },
-                { href: `/admin/customers/${job.customerId}`, label: visit.customerDisplayName },
-              ]
-        }
-      />
-      <div className="space-y-3 px-5 pt-4">
+    <div className="space-y-3">
         <Card>
           <Link href={editPath(job.jobId, from)} className="block">
             <ServiceLine serviceType={job.serviceType} prominent />
@@ -113,12 +136,12 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
               {visit.propertyLabel ? <p className="font-semibold">{visit.propertyLabel}</p> : null}
               <div className="flex items-start gap-2">
                 <span aria-hidden="true">📍</span>
-                <AddressLink address={fullAddress(visit)} className="inline-block">
+                <span className="inline-block">
                   <span className={`block ${visit.propertyLabel ? "text-sm" : "font-semibold"}`}>{visit.streetAddress}</span>
                   <span className="block text-sm text-ink/70">
                     {visit.city}, {visit.state} {visit.zip}
                   </span>
-                </AddressLink>
+                </span>
               </div>
               <p className="mt-1 text-sm text-ink/60">
                 {visit.bedrooms} bed · {visit.bathrooms} bath · {visit.squareFeet.toLocaleString()} sq ft
@@ -269,6 +292,12 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
             })}
           </div>
         </Card>
+        <Link
+          href={withOrigin(`/admin/jobs/${job.jobId}/cleaners`, from)}
+          className="flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+        >
+          Add cleaner
+        </Link>
         {series ? (
           <RecurringCard
             jobId={job.jobId}
@@ -286,7 +315,21 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
             onDeleteCleaning={() => {
               const result = hub.deleteJob(job.jobId);
               if (result.message) hub.flash(result.message);
-              if (result.ok) router.push(`/admin/customers/${job.customerId}`);
+              if (!result.ok) return;
+              if (groupedCustomerDayView(from)) {
+                const remaining = customerCleaningsOnDate(hub.jobs, job.customerId, job.date).filter(
+                  (item) => item.jobId !== job.jobId,
+                );
+                router.push(
+                  remaining[0]
+                    ? withOrigin(`/admin/jobs/${remaining[0].jobId}`, from)
+                    : from === "schedule"
+                      ? `/admin/schedule?date=${job.date}&view=day`
+                      : "/admin",
+                );
+                return;
+              }
+              router.push(`/admin/customers/${job.customerId}`);
             }}
             onDeleteSchedule={() => {
               const result = hub.deleteSeries(series.seriesId);
@@ -295,14 +338,7 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
             }}
           />
         ) : null}
-        <Link
-          href={withOrigin(`/admin/jobs/${job.jobId}/cleaners`, from)}
-          className="flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
-        >
-          Add cleaner
-        </Link>
-      </div>
-    </Screen>
+    </div>
   );
 }
 
@@ -431,7 +467,7 @@ function RecurringCard({
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Recurring</p>
         <p className="mt-1 text-lg font-semibold">{summary}</p>
         <p className="mt-1 text-sm text-ink/70">
-          <AddressLink address={placeAddress}>{place}</AddressLink>
+          {place}
         </p>
         <p className="text-sm text-ink/70">{detail}</p>
         <Link

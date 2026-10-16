@@ -66,12 +66,37 @@ function propertyLine(home: Property): string {
   return home.label ? `${home.label} · ${home.streetAddress}` : `${home.streetAddress}, ${home.city}`;
 }
 
+function customerEditHref(customerId: string, returnTo?: string): string {
+  const params = new URLSearchParams({ edit: "1" });
+  if (returnTo) params.set("returnTo", returnTo);
+  return `/admin/customers/${customerId}?${params}`;
+}
+
+function CustomerEditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function RemoveCustomerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
 export function CleaningForm({
   initial,
   leadCleanerId = "",
   canClearCleaners = false,
   estimateOnLoad = false,
   newCustomerHref,
+  customerEditReturnTo,
   onSubmit,
   onDateChange,
   afterDate,
@@ -83,6 +108,7 @@ export function CleaningForm({
   canClearCleaners?: boolean;
   estimateOnLoad?: boolean;
   newCustomerHref: string;
+  customerEditReturnTo?: string;
   onSubmit: (values: CleaningValues, nextHref?: string) => { ok: boolean; message?: string };
   onDateChange?: (date: string) => void;
   afterDate?: (date: string) => React.ReactNode;
@@ -213,6 +239,16 @@ export function CleaningForm({
     setMessage(null);
   }
 
+  function clearCustomer() {
+    setCustomerId("");
+    setPropertyId("");
+    setDraftCleanerIds([]);
+    setCleanerArrivals([]);
+    setArrivalEditor(null);
+    setQuery("");
+    setMessage(null);
+  }
+
   function values(): CleaningValues {
     return {
       date,
@@ -263,9 +299,23 @@ export function CleaningForm({
                 </span>
                 {property ? <span className="block text-sm text-ink/70">{propertyLine(property)}</span> : null}
               </span>
-              <button type="button" className="text-sm font-semibold underline" onClick={() => setCustomerId("")}>
-                Change
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                <Link
+                  href={customerEditHref(customer.customerId, customerEditReturnTo)}
+                  className="flex size-11 items-center justify-center rounded-full text-ink/70 hover:bg-cream"
+                  aria-label={`Edit ${customer.firstName} ${customer.lastName}`}
+                >
+                  <CustomerEditIcon />
+                </Link>
+                <button
+                  type="button"
+                  className="flex size-11 items-center justify-center rounded-full text-ink/70 hover:bg-cream"
+                  aria-label="Remove customer from this cleaning"
+                  onClick={clearCustomer}
+                >
+                  <RemoveCustomerIcon />
+                </button>
+              </div>
             </div>
           </Group>
         ) : (

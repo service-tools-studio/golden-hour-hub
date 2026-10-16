@@ -242,6 +242,7 @@ function cleaner(
   email: string,
   typicalHelperCount: number,
   maxHelperCount: number,
+  typicalHourlyRateCents = 5_000,
 ): CleanerProfile {
   return {
     cleanerId,
@@ -252,6 +253,7 @@ function cleaner(
     status: "ACTIVE",
     typicalHelperCount,
     maxHelperCount,
+    typicalHourlyRateCents,
     createdAt: STAMP,
     createdBy: "kelsey",
     updatedAt: STAMP,

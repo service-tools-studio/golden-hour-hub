@@ -31,7 +31,7 @@ gsi1pk CLEANER_STATUS#ACTIVE
 gsi1sk ramos#claudia
 ```
 
-Fields: `cleanerId`, `firstName`, `lastName`, `email`, `mobilePhone`, `status` (`ACTIVE` or `INACTIVE`), `typicalHelperCount`, `maxHelperCount`, plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
+Fields: `cleanerId`, `firstName`, `lastName`, `email`, `mobilePhone`, `status` (`ACTIVE` or `INACTIVE`), `typicalHelperCount`, `maxHelperCount`, `typicalHourlyRateCents` (per-person default hourly pay in cents), plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
 
 Helper authorization is `maxHelperCount`. It is not a stored boolean. `maxHelperCount = 0` means no helpers. `maxHelperCount >= 1` means helpers are approved up to that number. The screen may show “Helpers approved? Yes / No”; that choice only writes the counts. Yes requires `maxHelperCount >= 1`. No writes `typicalHelperCount = 0` and `maxHelperCount = 0`.
 

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AddressLink, fullAddress } from "@/components/address-link";
 import { useHub } from "@/components/hub-provider";
 import { useNow } from "@/components/use-now";
 import { PageHeader, PlusIcon, Screen } from "@/components/ui";
@@ -169,6 +168,19 @@ function ScheduleSearch({
             aria-label="Search cleanings"
             className="min-w-0 flex-1 bg-transparent py-2 text-base outline-none placeholder:text-ink/40"
           />
+          {query ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                onQuery("");
+                fieldRef.current?.focus();
+              }}
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-ink/55 hover:bg-cream hover:text-ink"
+            >
+              <ClearSearchIcon />
+            </button>
+          ) : null}
         </label>
         <button type="button" onClick={onClose} className="shrink-0 text-sm font-semibold text-ink">
           Cancel
@@ -188,7 +200,7 @@ function ScheduleSearch({
                   {serviceLabel(job.serviceType)} · {formatLongDate(job.date)}
                 </span>
                 <span className="mt-0.5 block text-sm text-ink/55">
-                  <AddressLink address={fullAddress(job.snapshot)}>{job.snapshot.streetAddress}</AddressLink>
+                  {job.snapshot.streetAddress}
                 </span>
               </Link>
             </li>
@@ -204,6 +216,14 @@ function SearchIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
       <circle cx="11" cy="11" r="6.25" stroke="currentColor" strokeWidth="2" />
       <path d="M16 16.5L20 20.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ClearSearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 7l10 10M17 7L7 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }

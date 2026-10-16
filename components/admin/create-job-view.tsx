@@ -99,6 +99,7 @@ export function CreateJobView({
         estimateOnLoad
         onDateChange={setShownDate}
         newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(returnTo)}`}
+        customerEditReturnTo={returnTo}
         onSubmit={submit}
       />
     </Screen>

@@ -240,6 +240,20 @@ export function directAssignmentSms(input: {
   return `Hi ${input.cleanerFirstName}! Golden Hour here. You're assigned to ${input.customerName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Hub.`;
 }
 
+export function inviteAssignmentSms(input: {
+  cleanerFirstName: string;
+  customerName: string;
+  date: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+}): string {
+  return `Hi ${input.cleanerFirstName}! Golden Hour here. You have a cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub to accept or decline as soon as you can.`;
+}
+
+export function inviteFollowUpSms(input: { cleanerFirstName: string; customerName: string; date: string }): string {
+  return `Hi ${input.cleanerFirstName}! Golden Hour reminder: please accept or decline your cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)} in the Golden Hour Hub as soon as possible.`;
+}
+
 export function smsHref(phone: string, body: string): string {
   return `sms:+1${phone}?&body=${encodeURIComponent(body)}`;
 }
