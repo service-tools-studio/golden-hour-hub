@@ -1,7 +1,13 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { bootstrapHub, persistHub } from "@/app/actions/hub-data";
+import {
+  acceptInvitationAction,
+  declineInvitationAction,
+  submitAvailabilityAction,
+} from "@/app/actions/cleaner-hub";
+import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
+import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import { mergeAdjacentWindows } from "@/lib/domain/availability";
 import { confirmedCompensationCents } from "@/lib/domain/compensation";
 import { deriveCrewSettings, validateProposedCrewSize } from "@/lib/domain/cleaners";
@@ -50,7 +56,10 @@ type HubState = HubData & {
   cleanerId: string | null;
 };
 
-type ActionResult = { ok: true; message?: string; customerId?: string; jobId?: string } | { ok: false; message: string };
+type ActionResult =
+  | { ok: true; message?: string; customerId?: string; jobId?: string }
+  | { ok: false; message: string };
+type AsyncActionResult = Promise<ActionResult>;
 
 export type CreateJobInput = {
   date: string;
@@ -129,9 +138,14 @@ type HubContextValue = HubState & {
   enterAdmin: () => void;
   enterCleaner: (cleanerId: string) => void;
   signOut: () => void;
-  acceptInvitation: (assignmentId: string, crewSize: number) => ActionResult;
-  declineInvitation: (assignmentId: string) => ActionResult;
-  submitAvailability: (cleanerId: string, weekStart: string, windows: AvailabilityWindow[]) => ActionResult;
+  acceptInvitation: (assignmentId: string, crewSize: number) => AsyncActionResult;
+  declineInvitation: (assignmentId: string) => AsyncActionResult;
+  submitAvailability: (
+    cleanerId: string,
+    weekStart: string,
+    windows: AvailabilityWindow[],
+    options?: { quiet?: boolean },
+  ) => AsyncActionResult;
   saveCustomer: (input: CustomerInput, customerId?: string) => ActionResult;
   deleteCustomer: (customerId: string) => ActionResult;
   saveSeries: (
@@ -267,7 +281,9 @@ export function HubProvider({
   });
   const [toast, setToast] = useState<string | null>(null);
   const [previewAuth, setPreviewAuth] = useState(false);
+  const [ready, setReady] = useState(false);
   const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
+  const bootstrappedRef = useRef(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -284,13 +300,13 @@ export function HubProvider({
       preview: boolean;
     }> {
       try {
-        const response = await fetch("/api/auth/session");
+        const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
         const data = (await response.json()) as {
           configured?: boolean;
           preview?: boolean;
           session?: { role: AppRole; cleanerId: string | null } | null;
         };
-        if (data.preview) {
+        if (data.preview && previewAuthAllowed()) {
           try {
             sessionStorage.removeItem(SESSION_KEY);
           } catch {
@@ -298,7 +314,10 @@ export function HubProvider({
           }
           return { role: null, cleanerId: null, preview: true };
         }
-        if (!data.configured) return { ...readSession(), preview: false };
+        if (!data.configured) {
+          if (!previewAuthAllowed()) return { role: null, cleanerId: null, preview: false };
+          return { ...readSession(), preview: false };
+        }
         if (!data.session) return { role: null, cleanerId: null, preview: false };
         return { role: data.session.role, cleanerId: data.session.cleanerId, preview: false };
       } catch {
@@ -309,27 +328,53 @@ export function HubProvider({
       const auth = await loadAuthSession();
       if (!cancelled) setPreviewAuth(auth.preview);
       if (cancelled) return;
+
+      if (!auth.preview && !auth.role) {
+        const today = todayInBusinessZone();
+        sourceRef.current = null;
+        bootstrappedRef.current = false;
+        setState({ ...emptyHub(today), role: null, cleanerId: null });
+        setReady(true);
+        const path = window.location.pathname;
+        if (path.startsWith("/admin") || path.startsWith("/cleaner")) {
+          window.location.replace("/login");
+        }
+        return;
+      }
+
       try {
         const remote = await bootstrapHub();
         if (cancelled) return;
+        if ("ok" in remote) {
+          const today = todayInBusinessZone();
+          sourceRef.current = null;
+          bootstrappedRef.current = false;
+          setState({ ...emptyHub(today), role: null, cleanerId: null });
+          setReady(true);
+          return;
+        }
         if (remote.source === "dynamodb") {
           sourceRef.current = "dynamodb";
           const role = auth.preview ? auth.role : (auth.role ?? initialAuth?.role ?? null);
           const cleanerId = auth.preview ? auth.cleanerId : (auth.cleanerId ?? initialAuth?.cleanerId ?? null);
+          bootstrappedRef.current = true;
           setState({
             ...withCurrentHorizon(remote.data),
             role,
             cleanerId,
           });
+          setReady(true);
           return;
         }
         sourceRef.current = "preview";
+        bootstrappedRef.current = true;
         const preview = readPreview();
         setState({
           ...preview,
           role: auth.preview ? auth.role : (auth.role ?? initialAuth?.role ?? preview.role),
           cleanerId: auth.preview ? auth.cleanerId : (auth.cleanerId ?? initialAuth?.cleanerId ?? preview.cleanerId),
         });
+        setReady(true);
       } catch (error) {
         console.error("Failed to load hub data.", error);
         if (cancelled) return;
@@ -341,6 +386,7 @@ export function HubProvider({
             cleanerId: auth.cleanerId ?? initialAuth?.cleanerId ?? null,
           },
         );
+        setReady(true);
       }
     }
     void load();
@@ -350,20 +396,22 @@ export function HubProvider({
   }, [initialAuth?.role, initialAuth?.cleanerId]);
 
   useEffect(() => {
-    if (!state || !sourceRef.current) return;
+    if (!state || !sourceRef.current || !bootstrappedRef.current) return;
     if (sourceRef.current === "dynamodb") {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, cleanerId: state.cleanerId }));
-      void persistHub({
-        today: state.today,
-        cleaners: state.cleaners,
-        customers: state.customers,
-        properties: state.properties,
-        series: state.series,
-        jobs: state.jobs,
-        assignments: state.assignments,
-        availability: state.availability,
-        submissions: state.submissions,
-      });
+      if (state.role === "ADMIN") {
+        void persistAdminHub({
+          today: state.today,
+          cleaners: state.cleaners,
+          customers: state.customers,
+          properties: state.properties,
+          series: state.series,
+          jobs: state.jobs,
+          assignments: state.assignments,
+          availability: state.availability,
+          submissions: state.submissions,
+        });
+      }
       return;
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -379,8 +427,14 @@ export function HubProvider({
 
   const data = state;
 
-  function acceptInvitation(assignmentId: string, crewSize: number): ActionResult {
+  async function acceptInvitation(assignmentId: string, crewSize: number): AsyncActionResult {
     if (!data.cleanerId) return { ok: false, message: "This invitation belongs to someone else." };
+    if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
+      const remote = await acceptInvitationAction(assignmentId, crewSize);
+      if (!remote.ok) return remote;
+      setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+      return { ok: true };
+    }
     const assignment = data.assignments.find((item) => item.assignmentId === assignmentId);
     const job = assignment ? data.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
     const cleaner = data.cleaners.find((item) => item.cleanerId === data.cleanerId);
@@ -439,8 +493,14 @@ export function HubProvider({
     return { ok: true };
   }
 
-  function declineInvitation(assignmentId: string): ActionResult {
+  async function declineInvitation(assignmentId: string): AsyncActionResult {
     if (!data.cleanerId) return { ok: false, message: "This invitation belongs to someone else." };
+    if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
+      const remote = await declineInvitationAction(assignmentId);
+      if (!remote.ok) return remote;
+      setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+      return { ok: true };
+    }
     const assignment = data.assignments.find((item) => item.assignmentId === assignmentId);
     if (!assignment || assignment.cleanerId !== data.cleanerId || assignment.status !== "INVITED") {
       return { ok: false, message: "This invitation is no longer available." };
@@ -452,11 +512,23 @@ export function HubProvider({
     return { ok: true };
   }
 
-  function submitAvailability(
+  async function submitAvailability(
     cleanerId: string,
     weekStart: string,
     windows: AvailabilityWindow[],
-  ): ActionResult {
+    options?: { quiet?: boolean },
+  ): AsyncActionResult {
+    const toastMessage = "Availability submitted.";
+    if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
+      if (data.cleanerId !== cleanerId) {
+        return { ok: false, message: "You can only edit your own availability." };
+      }
+      const remote = await submitAvailabilityAction(weekStart, windows);
+      if (!remote.ok) return remote;
+      setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+      if (!options?.quiet) setToast(toastMessage);
+      return { ok: true, message: remote.message };
+    }
     const weekEnd = addDays(weekStart, 6);
     const combined = [
       ...data.availability.filter(
@@ -508,7 +580,8 @@ export function HubProvider({
         },
       ],
     });
-    return { ok: true, message: "Availability submitted." };
+    if (!options?.quiet) setToast(toastMessage);
+    return { ok: true, message: toastMessage };
   }
 
   function saveCustomer(input: CustomerInput, customerId?: string): ActionResult {
@@ -1646,11 +1719,17 @@ export function HubProvider({
 
   const value: HubContextValue = {
     ...data,
-    ready: true,
+    ready,
     previewAuth,
     flash: (message) => setToast(message),
-    enterAdmin: () => setState({ ...data, role: "ADMIN", cleanerId: null }),
-    enterCleaner: (cleanerId) => setState({ ...data, role: "CLEANER", cleanerId }),
+    enterAdmin: () => {
+      if (!previewAuth || !previewAuthAllowed()) return;
+      setState({ ...data, role: "ADMIN", cleanerId: null });
+    },
+    enterCleaner: (cleanerId) => {
+      if (!previewAuth || !previewAuthAllowed()) return;
+      setState({ ...data, role: "CLEANER", cleanerId });
+    },
     signOut: () => {
       void fetch("/api/auth/logout", { method: "POST" });
       setState({ ...data, role: null, cleanerId: null });

@@ -1,19 +1,30 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { BottomNav, adminNav, cleanerNav } from "@/components/bottom-nav";
 import { useHub } from "@/components/hub-provider";
+import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import type { AppRole } from "@/lib/domain/types";
 
 export function RoleGate({ role, children }: { role: AppRole; children: React.ReactNode }) {
   const hub = useHub();
-  if (hub.role !== role && hub.role === null) {
+
+  useEffect(() => {
+    if ((hub.previewAuth && previewAuthAllowed()) || !hub.ready) return;
+    if (hub.role === null) {
+      window.location.replace("/login");
+    }
+  }, [hub.previewAuth, hub.ready, hub.role]);
+
+  if (!hub.ready || hub.role === null) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-cream px-5 text-sm text-ink/60" aria-busy="true">
         Loading…
       </div>
     );
   }
+
   if (hub.role !== role) {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-5">
@@ -26,6 +37,7 @@ export function RoleGate({ role, children }: { role: AppRole; children: React.Re
       </main>
     );
   }
+
   return (
     <>
       {children}

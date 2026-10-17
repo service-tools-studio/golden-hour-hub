@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cognitoConfigured } from "@/lib/auth/config";
 import { completeNewPassword } from "@/lib/auth/cognito";
+import { hubPasswordUpdatedSetupMessage, jasminSetupPhone } from "@/lib/auth/messages";
 import { createSessionFromTokens, setAuthCookie } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
@@ -16,7 +17,10 @@ export async function POST(request: Request) {
   }
   const result = await completeNewPassword(email, password, session);
   if (!result.ok) {
-    return NextResponse.json({ ok: false, message: result.message }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, message: result.message, passwordRequirements: result.passwordRequirements },
+      { status: 401 },
+    );
   }
   if (!("tokens" in result)) {
     return NextResponse.json({ ok: false, message: "Password change failed." }, { status: 401 });
@@ -24,11 +28,7 @@ export async function POST(request: Request) {
   const created = await createSessionFromTokens(result.tokens, result.email);
   if (!created) {
     return NextResponse.json(
-      {
-        ok: false,
-        message:
-          "Password updated, but this account is not set up in Hub yet. Check your group and cleaner email in DynamoDB.",
-      },
+      { ok: false, hubSetup: "password-updated", message: hubPasswordUpdatedSetupMessage, phone: jasminSetupPhone },
       { status: 403 },
     );
   }

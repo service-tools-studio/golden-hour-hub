@@ -1,9 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { completeNewPasswordAction, signInAction } from "@/app/actions/auth";
+import { useCallback, useEffect, useState, useTransition } from "react";
+import { HubSetupMessage } from "@/components/hub-setup-message";
+import { PasswordInput } from "@/components/password-input";
+import { LivePasswordRequirements, PasswordRequirements } from "@/components/password-requirements";
+import { fetchPasswordRequirements, isPasswordPolicyMessage } from "@/lib/auth/password-requirements-client";
+import type { PasswordRule } from "@/lib/auth/password-rules";
+import type { HubSetupVariant, SignInApiResult } from "@/lib/auth/sign-in-types";
 
 type ChallengeState = { email: string; session: string };
+
+async function postJson<T>(url: string, body: Record<string, string>): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  return (await response.json()) as T;
+}
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
@@ -11,24 +26,90 @@ export function LoginForm() {
   const [challenge, setChallenge] = useState<ChallengeState | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [passwordRules, setPasswordRules] = useState<PasswordRule[]>([]);
+  const [passwordRequirements, setPasswordRequirements] = useState<string[]>([]);
+  const [passwordPolicyError, setPasswordPolicyError] = useState(false);
+  const [requirementsIntro, setRequirementsIntro] = useState("Your new password must include:");
+  const [hubSetup, setHubSetup] = useState<HubSetupVariant | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const refreshRequirements = useCallback(async () => {
+    try {
+      const data = await fetchPasswordRequirements();
+      if (data.intro) setRequirementsIntro(data.intro);
+      if (data.rules?.length) {
+        setPasswordRules(data.rules);
+      } else if (data.requirements?.length) {
+        setPasswordRules(
+          data.requirements.map((label, index) => ({
+            id: (["minLength", "uppercase", "lowercase", "number", "symbol"] as const)[index] ?? "minLength",
+            label,
+          })),
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRequirements();
+  }, [refreshRequirements]);
+
+  useEffect(() => {
+    if (challenge) void refreshRequirements();
+  }, [challenge, refreshRequirements]);
+
+  async function applyPasswordError(result: { message?: string; passwordRequirements?: string[] }) {
+    let lines = result.passwordRequirements ?? [];
+    if (lines.length === 0) {
+      const data = await fetchPasswordRequirements();
+      lines = data.requirements ?? [];
+      if (data.rejectedIntro && result.message) {
+        setError(result.message);
+      }
+    }
+    if (lines.length > 0) {
+      setPasswordRequirements(lines);
+      setPasswordPolicyError(true);
+    }
+    setError(result.message ?? "That password doesn't meet our security rules yet.");
+  }
 
   function submitLogin(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    setPasswordPolicyError(false);
+    setHubSetup(null);
     startTransition(async () => {
       try {
-        const result = await signInAction(email, password);
+        const result = await postJson<SignInApiResult>("/api/auth/login", { email, password });
         if (!result.ok) {
-          setError(result.message ?? "Sign-in failed.");
+          if ("hubSetup" in result && result.hubSetup) {
+            setHubSetup(result.hubSetup);
+            return;
+          }
+          const message = "message" in result && result.message ? result.message : "Sign-in failed.";
+          if ("passwordRequirements" in result && result.passwordRequirements?.length) {
+            await applyPasswordError({ message, passwordRequirements: result.passwordRequirements });
+            return;
+          }
+          if (isPasswordPolicyMessage(message)) {
+            await applyPasswordError({ message });
+            return;
+          }
+          setError(message);
           return;
         }
         if ("challenge" in result && result.challenge === "NEW_PASSWORD_REQUIRED") {
           setChallenge({ email: result.email, session: result.session });
           setPassword("");
+          return;
         }
-      } catch (caught) {
-        if (caught && typeof caught === "object" && "digest" in caught) return;
+        if ("redirect" in result) {
+          window.location.href = result.redirect;
+        }
+      } catch {
         setError("Could not sign in.");
       }
     });
@@ -38,14 +119,36 @@ export function LoginForm() {
     event.preventDefault();
     if (!challenge) return;
     setError(null);
+    setPasswordPolicyError(false);
+    setHubSetup(null);
     startTransition(async () => {
       try {
-        const result = await completeNewPasswordAction(challenge.email, newPassword, challenge.session);
+        const result = await postJson<SignInApiResult>("/api/auth/new-password", {
+          email: challenge.email,
+          password: newPassword,
+          session: challenge.session,
+        });
         if (!result.ok) {
-          setError(result.message ?? "Could not set password.");
+          if ("hubSetup" in result && result.hubSetup) {
+            setHubSetup(result.hubSetup);
+            return;
+          }
+          const message = "message" in result && result.message ? result.message : "Could not set password.";
+          if ("passwordRequirements" in result && result.passwordRequirements?.length) {
+            await applyPasswordError({ message, passwordRequirements: result.passwordRequirements });
+            return;
+          }
+          if (isPasswordPolicyMessage(message)) {
+            await applyPasswordError({ message });
+            return;
+          }
+          setError(message);
+          return;
         }
-      } catch (caught) {
-        if (caught && typeof caught === "object" && "digest" in caught) return;
+        if ("redirect" in result) {
+          window.location.href = result.redirect;
+        }
+      } catch {
         setError("Could not save password.");
       }
     });
@@ -59,16 +162,32 @@ export function LoginForm() {
         </p>
         <label className="block">
           <span className="text-sm font-medium text-ink/70">New password</span>
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             required
             value={newPassword}
-            onChange={(event) => setNewPassword(event.target.value)}
-            className="mt-1 min-h-12 w-full rounded-2xl border border-ink/15 bg-white px-4 text-base"
+            onChange={setNewPassword}
           />
         </label>
-        {error ? <p role="alert" className="text-sm font-semibold text-red-700">{error}</p> : null}
+        {passwordRules.length > 0 && !error ? (
+          <LivePasswordRequirements intro={requirementsIntro} rules={passwordRules} password={newPassword} />
+        ) : null}
+        {hubSetup ? (
+          <p role="alert" className="text-sm font-semibold leading-5 text-red-700">
+            <HubSetupMessage variant={hubSetup} />
+          </p>
+        ) : null}
+        {error && passwordPolicyError && passwordRules.length > 0 ? (
+          <div role="alert" className="rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3">
+            <p className="text-sm font-semibold text-red-700">{error}</p>
+            <div className="mt-3">
+              <LivePasswordRequirements intro="" rules={passwordRules} password={newPassword} />
+            </div>
+          </div>
+        ) : null}
+        {error && (!passwordPolicyError || passwordRules.length === 0) ? (
+          <p role="alert" className="text-sm font-semibold text-red-700">{error}</p>
+        ) : null}
         <button
           type="submit"
           disabled={pending}
@@ -95,16 +214,26 @@ export function LoginForm() {
       </label>
       <label className="block">
         <span className="text-sm font-medium text-ink/70">Password</span>
-        <input
-          type="password"
+        <PasswordInput
           autoComplete="current-password"
           required
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          className="mt-1 min-h-12 w-full rounded-2xl border border-ink/15 bg-white px-4 text-base"
+          onChange={setPassword}
         />
       </label>
-      {error ? <p role="alert" className="text-sm font-semibold text-red-700">{error}</p> : null}
+      {hubSetup ? (
+        <p role="alert" className="text-sm font-semibold leading-5 text-red-700">
+          <HubSetupMessage variant={hubSetup} />
+        </p>
+      ) : null}
+      {error && passwordPolicyError && passwordRequirements.length > 0 ? (
+        <div role="alert">
+          <PasswordRequirements intro={error} requirements={passwordRequirements} tone="error" />
+        </div>
+      ) : null}
+      {error && (!passwordPolicyError || passwordRequirements.length === 0) ? (
+        <p role="alert" className="text-sm font-semibold text-red-700">{error}</p>
+      ) : null}
       <button
         type="submit"
         disabled={pending}

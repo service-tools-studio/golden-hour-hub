@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
+import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import { personName } from "@/lib/domain/cleaners";
 import { cleanerCrewSummary } from "@/lib/format";
 
@@ -9,6 +11,12 @@ export function HomeChooser() {
   const hub = useHub();
   const router = useRouter();
   const cleaners = hub.cleaners.filter((cleaner) => cleaner.status === "ACTIVE");
+
+  useEffect(() => {
+    if (!previewAuthAllowed()) {
+      window.location.replace("/login");
+    }
+  }, []);
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-12">

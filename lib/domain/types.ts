@@ -35,6 +35,8 @@ export type CleanerStatus = "ACTIVE" | "INACTIVE";
 
 export type CleanerProfile = {
   cleanerId: string;
+  /** Cognito user sub; preferred over email when linking accounts. */
+  cognitoSub?: string;
   firstName: string;
   lastName: string;
   email: string;

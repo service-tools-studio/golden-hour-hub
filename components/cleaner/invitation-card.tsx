@@ -40,13 +40,13 @@ export function InvitationCard({
     confirmedCrewSize: attending,
   });
 
-  function accept() {
-    const result = hub.acceptInvitation(assignment.assignmentId, attending);
+  async function accept() {
+    const result = await hub.acceptInvitation(assignment.assignmentId, attending);
     setMessage(result.ok ? result.message ?? null : result.message);
   }
 
-  function decline() {
-    const result = hub.declineInvitation(assignment.assignmentId);
+  async function decline() {
+    const result = await hub.declineInvitation(assignment.assignmentId);
     if (!result.ok) setMessage(result.message);
   }
 

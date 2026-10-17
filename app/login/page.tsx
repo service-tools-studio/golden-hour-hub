@@ -1,16 +1,12 @@
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { cognitoConfigured, previewAuthEnabled } from "@/lib/auth/config";
-import { getServerSession } from "@/lib/auth/session";
+import { previewAuthAllowed } from "@/lib/auth/preview-mode";
+import { LoginSessionRedirect } from "@/components/login-session-redirect";
 
 export default async function LoginPage() {
   if (previewAuthEnabled()) {
     redirect("/");
-  }
-  if (cognitoConfigured()) {
-    const session = await getServerSession();
-    if (session?.role === "ADMIN") redirect("/admin");
-    if (session?.role === "CLEANER") redirect("/cleaner");
   }
 
   return (
@@ -30,12 +26,19 @@ export default async function LoginPage() {
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Sign in</h1>
         <p className="mt-2 text-base leading-6 text-ink/70">
           Sign-in is not configured yet. Add <code className="text-sm">COGNITO_*</code> and{" "}
-          <code className="text-sm">AUTH_SESSION_SECRET</code> to <code className="text-sm">.env.local</code>, or leave{" "}
-          <code className="text-sm">AUTH_SESSION_SECRET</code> empty to use preview mode at{" "}
-          <a href="/" className="font-semibold underline">/</a>.
+          <code className="text-sm">AUTH_SESSION_SECRET</code> to <code className="text-sm">.env.local</code>
+          {previewAuthAllowed() ? (
+            <>
+              , or leave <code className="text-sm">AUTH_SESSION_SECRET</code> empty to use preview mode at{" "}
+              <a href="/" className="font-semibold underline">/</a>.
+            </>
+          ) : (
+            "."
+          )}
         </p>
         </>
       )}
+      {cognitoConfigured() ? <LoginSessionRedirect /> : null}
       {cognitoConfigured() ? <LoginForm /> : null}
     </main>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -288,18 +288,27 @@ export function AvailabilityEditor() {
   const [message, setMessage] = useState<string | null>(null);
   const [tone, setTone] = useState<"error" | "ok">("error");
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const [conflictPrompt, setConflictPrompt] = useState<{ detail: string; apply: () => void } | null>(null);
+  const [conflictPrompt, setConflictPrompt] = useState<{ detail: string; onConfirm: () => void } | null>(null);
+  const [switchingToWeek, setSwitchingToWeek] = useState<string | null>(null);
   const conflictTitleId = useId();
-  const saved = cleaner ? mergeAdjacentWindows(windowsInWeek(hub.availability, cleaner.cleanerId, week.weekStart)) : [];
-  const dirty = windowSignature(draft) !== windowSignature(saved);
+  const editBaselineRef = useRef<AvailabilityWindow[]>([]);
+  const savedWeekWindows = useMemo(
+    () =>
+      cleaner ? mergeAdjacentWindows(windowsInWeek(hub.availability, cleaner.cleanerId, week.weekStart)) : [],
+    [cleaner, hub.availability, week.weekStart],
+  );
+  const savedWeekSignature = useMemo(() => windowSignature(savedWeekWindows), [savedWeekWindows]);
+  const dirty = windowSignature(draft) !== savedWeekSignature;
   useUnsavedNavigation(Boolean(cleaner), () => dirty, setLeaveHref);
 
   useEffect(() => {
     if (!cleaner) return;
-    setDraft(mergeAdjacentWindows(windowsInWeek(hub.availability, cleaner.cleanerId, week.weekStart)));
+    editBaselineRef.current = savedWeekWindows;
+    setDraft(savedWeekWindows);
     setMessage(null);
     setTone("error");
-  }, [cleaner, hub.availability, week.weekStart]);
+    setConflictPrompt(null);
+  }, [cleaner, week.weekStart, savedWeekSignature]);
 
   useEffect(() => {
     if (tone !== "error" || !message || !cleaner) return;
@@ -357,29 +366,17 @@ export function AvailabilityEditor() {
     return null;
   }
 
-  function tryApplyDraft(next: AvailabilityWindow[]) {
-    const merged = mergeAdjacentWindows(next);
-    const detail = conflictDetailForNewlyUncovered(draft, merged);
-    if (!detail) {
-      setDraft(merged);
-      return;
-    }
-    setConflictPrompt({
-      detail,
-      apply: () => {
-        setDraft(merged);
-        setConflictPrompt(null);
-      },
-    });
+  function applyDraft(next: AvailabilityWindow[]) {
+    setDraft(mergeAdjacentWindows(next));
   }
 
   function setDay(date: string, available: boolean) {
     const rest = draft.filter((window) => window.date !== date);
     if (!available) {
-      tryApplyDraft(rest);
+      applyDraft(rest);
       return;
     }
-    tryApplyDraft([
+    applyDraft([
       ...rest,
       {
         availabilityId: `draft-${date}-0`,
@@ -392,11 +389,11 @@ export function AvailabilityEditor() {
   }
 
   function updateWindow(id: string, patch: Partial<AvailabilityWindow>) {
-    tryApplyDraft(draft.map((window) => (window.availabilityId === id ? { ...window, ...patch } : window)));
+    applyDraft(draft.map((window) => (window.availabilityId === id ? { ...window, ...patch } : window)));
   }
 
   function addWindow(date: string) {
-    tryApplyDraft([
+    applyDraft([
       ...draft,
       {
         availabilityId: `draft-${date}-${draft.length}`,
@@ -420,7 +417,7 @@ export function AvailabilityEditor() {
         date: day,
       })),
     );
-    tryApplyDraft([...rest, ...copied]);
+    applyDraft([...rest, ...copied]);
     setMessage(null);
   }
 
@@ -439,25 +436,12 @@ export function AvailabilityEditor() {
       return;
     }
     const mergedCopy = mergeAdjacentWindows(copied);
-    const detail = conflictDetailForNewlyUncovered(draft, mergedCopy);
-    if (detail) {
-      setConflictPrompt({
-        detail,
-        apply: () => {
-          setDraft(mergedCopy);
-          setConflictPrompt(null);
-          setTone("ok");
-          setMessage("Last week was copied. Review it, then submit.");
-        },
-      });
-      return;
-    }
     setDraft(mergedCopy);
     setTone("ok");
     setMessage("Last week was copied. Review it, then submit.");
   }
 
-  function submit(options?: { quiet?: boolean }) {
+  async function submit(options?: { quiet?: boolean; skipConflictCheck?: boolean }): Promise<boolean> {
     const check = validateAvailabilityWindows(
       draft.map((window) => ({ date: window.date, start: window.start, end: window.end })),
     );
@@ -466,32 +450,58 @@ export function AvailabilityEditor() {
       setMessage(check.message);
       return false;
     }
-    const result = hub.submitAvailability(profile.cleanerId, week.weekStart, draft);
+    if (!options?.skipConflictCheck) {
+      const detail = conflictDetailForNewlyUncovered(editBaselineRef.current, draft);
+      if (detail) {
+        setConflictPrompt({
+          detail,
+          onConfirm: () => {
+            setConflictPrompt(null);
+            void submit({ ...options, skipConflictCheck: true });
+          },
+        });
+        return false;
+      }
+    }
+    const result = await hub.submitAvailability(profile.cleanerId, week.weekStart, draft, {
+      quiet: options?.quiet,
+    });
     if (!result.ok) {
       setTone("error");
       setMessage(result.message);
       return false;
     }
+    const submitted = mergeAdjacentWindows(draft);
+    editBaselineRef.current = submitted;
     setTone("ok");
     setMessage(null);
-    if (!options?.quiet) hub.flash("Availability submitted.");
     return true;
   }
 
   function pickWeek(nextStart: string) {
-    if (nextStart === week.weekStart) return;
-    if (dirty && !submit({ quiet: true })) return;
+    if (nextStart === week.weekStart || switchingToWeek) return;
+    if (dirty) {
+      setSwitchingToWeek(nextStart);
+      void submit().then((saved) => {
+        setSwitchingToWeek(null);
+        if (!saved) return;
+        router.replace(`/cleaner/availability?week=${nextStart}`);
+      });
+      return;
+    }
     router.replace(`/cleaner/availability?week=${nextStart}`);
   }
 
   function submitAndLeave() {
     const href = leaveHref;
-    if (!submit()) {
+    void submit().then((saved) => {
+      if (!saved) {
+        setLeaveHref(null);
+        return;
+      }
       setLeaveHref(null);
-      return;
-    }
-    setLeaveHref(null);
-    if (href) router.push(href);
+      if (href) router.push(href);
+    });
   }
 
   return (
@@ -504,13 +514,20 @@ export function AvailabilityEditor() {
               (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === option.weekStart,
             );
             const selected = option.weekStart === week.weekStart;
+            const savingCurrentWeek = switchingToWeek !== null && option.weekStart === week.weekStart;
+            const loadingTargetWeek = switchingToWeek === option.weekStart;
+            const weekToggleBusy = switchingToWeek !== null;
             const weekLabel = index === 0 ? "Current week" : "Next week";
+            const statusClass = selected ? "text-cream/80" : "text-ink/55";
+            const statusEmphasis = selected ? "text-cream" : "text-ink/70";
             return (
               <button
                 key={option.weekStart}
                 type="button"
+                disabled={weekToggleBusy}
+                aria-busy={savingCurrentWeek || loadingTargetWeek}
                 onClick={() => pickWeek(option.weekStart)}
-                className={`flex min-h-12 flex-1 flex-col items-center justify-center rounded-2xl px-2 py-2 ${
+                className={`flex min-h-12 flex-1 flex-col items-center justify-center rounded-2xl px-2 py-2 disabled:opacity-70 ${
                   selected ? "bg-ink text-cream" : "bg-white text-ink ring-1 ring-ink/10"
                 }`}
               >
@@ -522,8 +539,12 @@ export function AvailabilityEditor() {
                   {weekLabel}
                 </span>
                 <span className="mt-0.5 text-sm font-semibold leading-5">{formatWeekRange(option.weekStart, option.weekEnd)}</span>
-                {optionSubmitted ? (
-                  <span className={`mt-0.5 text-xs font-medium ${selected ? "text-cream/80" : "text-ink/55"}`}>Submitted</span>
+                {savingCurrentWeek ? (
+                  <span className={`mt-0.5 text-xs font-semibold ${statusEmphasis}`}>Saving…</span>
+                ) : loadingTargetWeek ? (
+                  <span className={`mt-0.5 text-xs font-semibold ${statusEmphasis}`}>Loading…</span>
+                ) : optionSubmitted ? (
+                  <span className={`mt-0.5 text-xs font-medium ${statusClass}`}>Submitted</span>
                 ) : null}
               </button>
             );
@@ -573,7 +594,7 @@ export function AvailabilityEditor() {
                   end={window.end}
                   onStart={(start) => updateWindow(window.availabilityId, { start })}
                   onEnd={(end) => updateWindow(window.availabilityId, { end })}
-                  onRemove={() => tryApplyDraft(draft.filter((item) => item.availabilityId !== window.availabilityId))}
+                  onRemove={() => applyDraft(draft.filter((item) => item.availabilityId !== window.availabilityId))}
                 />
               ))}
               {available ? (
@@ -633,10 +654,10 @@ export function AvailabilityEditor() {
                   </button>
                   <button
                     type="button"
-                    onClick={conflictPrompt.apply}
+                    onClick={conflictPrompt.onConfirm}
                     className="min-h-12 w-full text-base font-semibold text-ink/70"
                   >
-                    Change anyway
+                    Submit anyway
                   </button>
                 </div>
               </div>

@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 import {
+  AdminGetUserCommand,
   AdminListGroupsForUserCommand,
   AuthFlowType,
   ChallengeNameType,
@@ -15,6 +16,7 @@ import {
   cognitoRegion,
   cognitoUserPoolId,
 } from "@/lib/auth/config";
+import { getPasswordRequirementLines, passwordRejectedMessage } from "@/lib/auth/password-policy";
 
 export type CognitoTokens = {
   idToken: string;
@@ -26,7 +28,7 @@ export type CognitoTokens = {
 export type SignInResult =
   | { ok: true; tokens: CognitoTokens; email: string }
   | { ok: true; challenge: "NEW_PASSWORD_REQUIRED"; session: string; email: string }
-  | { ok: false; message: string };
+  | { ok: false; message: string; passwordRequirements?: string[] };
 
 function client(): CognitoIdentityProviderClient {
   return new CognitoIdentityProviderClient({ region: cognitoRegion() });
@@ -82,7 +84,7 @@ export async function signInWithPassword(email: string, password: string): Promi
     if (!tokens) return { ok: false, message: "Sign-in did not return tokens." };
     return { ok: true, tokens, email: username };
   } catch (error) {
-    return { ok: false, message: cognitoErrorMessage(error) };
+    return await signInFailureFromError(error);
   }
 }
 
@@ -102,15 +104,22 @@ export async function completeNewPassword(
       }),
     );
     const tokens = tokensFromAuth(response);
-    if (!tokens) return { ok: false, message: "Password was not accepted." };
+    if (!tokens) {
+      const passwordRequirements = await getPasswordRequirementLines();
+      return {
+        ok: false,
+        message: passwordRejectedMessage,
+        passwordRequirements,
+      };
+    }
     return { ok: true, tokens, email: username };
   } catch (error) {
-    return { ok: false, message: cognitoErrorMessage(error) };
+    return await signInFailureFromError(error);
   }
 }
 
-export async function refreshTokens(email: string, refreshToken: string): Promise<CognitoTokens | null> {
-  const username = email.trim().toLowerCase();
+export async function refreshTokens(cognitoUsername: string, refreshToken: string): Promise<CognitoTokens | null> {
+  const username = cognitoUsername.trim().toLowerCase();
   try {
     const response = await client().send(
       new InitiateAuthCommand({
@@ -158,6 +167,26 @@ export function decodeIdToken(idToken: string): { sub: string; email: string; us
   };
 }
 
+/** False when the user is disabled or missing in Cognito (disabling does not revoke refresh tokens). */
+export async function cognitoUserSignInAllowed(cognitoUsername: string): Promise<boolean> {
+  const username = cognitoUsername.trim().toLowerCase();
+  if (!username) return false;
+  try {
+    const response = await client().send(
+      new AdminGetUserCommand({
+        UserPoolId: cognitoUserPoolId(),
+        Username: username,
+      }),
+    );
+    return response.Enabled === true;
+  } catch (error) {
+    const name = cognitoErrorName(error);
+    if (name === "UserNotFoundException") return false;
+    console.error("Could not verify Cognito user status.", error);
+    return false;
+  }
+}
+
 /** Groups are usually in the ID token; fall back to Admin API when IAM credentials allow it. */
 export async function resolveCognitoGroups(username: string, tokenGroups: string[]): Promise<string[]> {
   if (tokenGroups.length > 0) return tokenGroups;
@@ -174,15 +203,52 @@ export async function resolveCognitoGroups(username: string, tokenGroups: string
   }
 }
 
+function cognitoErrorName(error: unknown): string {
+  return error && typeof error === "object" && "name" in error ? String(error.name) : "";
+}
+
 function cognitoErrorMessage(error: unknown): string {
-  const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
+  const name = cognitoErrorName(error);
   if (name === "NotAuthorizedException") return "Incorrect email or password.";
   if (name === "UserNotFoundException") return "Incorrect email or password.";
-  if (name === "InvalidPasswordException") return "Password does not meet the pool requirements.";
-  if (name === "PasswordResetRequiredException") return "Password reset is required. Contact an admin.";
+  if (name === "InvalidPasswordException") return passwordRejectedMessage;
+  if (name === "InvalidParameterException" && isPasswordParameterError(error)) {
+    return passwordRejectedMessage;
+  }
+  if (name === "PasswordResetRequiredException") return "Your password needs to be reset. Please contact an admin.";
   if (name === "TooManyRequestsException") return "Too many attempts. Try again in a few minutes.";
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
+    const text = error.message;
+    if (/password/i.test(text) && /policy|requirement|invalid/i.test(text)) {
+      return passwordRejectedMessage;
+    }
+    return text;
   }
   return "Sign-in failed.";
+}
+
+function isPasswordParameterError(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("message" in error)) return false;
+  const message = String(error.message);
+  return /password/i.test(message);
+}
+
+async function signInFailureFromError(error: unknown): Promise<{ ok: false; message: string; passwordRequirements?: string[] }> {
+  const name = cognitoErrorName(error);
+  const passwordIssue =
+    name === "InvalidPasswordException" ||
+    (name === "InvalidParameterException" && isPasswordParameterError(error)) ||
+    (error &&
+      typeof error === "object" &&
+      "message" in error &&
+      typeof error.message === "string" &&
+      /password/i.test(error.message) &&
+      /policy|requirement|invalid|format/i.test(error.message));
+
+  if (passwordIssue) {
+    const passwordRequirements = await getPasswordRequirementLines();
+    return { ok: false, message: passwordRejectedMessage, passwordRequirements };
+  }
+
+  return { ok: false, message: cognitoErrorMessage(error) };
 }

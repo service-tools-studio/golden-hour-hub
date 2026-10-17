@@ -1,8 +1,23 @@
 import "server-only";
 
-/** Local preview: pick admin or cleaner in the browser when no session secret is set. */
+import { previewAuthAllowed } from "@/lib/auth/preview-mode";
+
+/** Local preview: pick admin or cleaner in the browser when no session secret is set (never in production). */
 export function previewAuthEnabled(): boolean {
+  if (!previewAuthAllowed()) return false;
   return !process.env.AUTH_SESSION_SECRET?.trim();
+}
+
+/** Refuse to run a production deploy without real auth configuration. */
+export function assertProductionAuthConfig(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  const missing: string[] = [];
+  if (!process.env.AUTH_SESSION_SECRET?.trim()) missing.push("AUTH_SESSION_SECRET");
+  if (!process.env.COGNITO_USER_POOL_ID?.trim()) missing.push("COGNITO_USER_POOL_ID");
+  if (!process.env.COGNITO_CLIENT_ID?.trim()) missing.push("COGNITO_CLIENT_ID");
+  if (missing.length > 0) {
+    throw new Error(`Production requires: ${missing.join(", ")}`);
+  }
 }
 
 export function cognitoConfigured(): boolean {

@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import { cognitoConfigured, previewAuthEnabled } from "@/lib/auth/config";
-import { getServerSession } from "@/lib/auth/session";
+import { previewAuthAllowed } from "@/lib/auth/preview-mode";
+import { refreshServerSessionCookie } from "@/lib/auth/session";
 
 export async function GET() {
   if (!cognitoConfigured()) {
-    return NextResponse.json({ configured: false, preview: previewAuthEnabled(), session: null });
+    return NextResponse.json({
+      configured: false,
+      preview: previewAuthAllowed() && previewAuthEnabled(),
+      session: null,
+    });
   }
-  const session = await getServerSession();
+  const session = await refreshServerSessionCookie();
   if (!session) {
     return NextResponse.json({ configured: true, preview: false, session: null });
   }

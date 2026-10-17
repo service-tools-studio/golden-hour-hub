@@ -13,3 +13,13 @@ export function cleanerIdForEmail(cleaners: CleanerProfile[], email: string): st
   const match = cleaners.find((cleaner) => cleaner.email.trim().toLowerCase() === needle);
   return match?.cleanerId ?? null;
 }
+
+export function cleanerIdForCognitoUser(
+  cleaners: CleanerProfile[],
+  sub: string,
+  email: string,
+): string | null {
+  const bySub = cleaners.find((cleaner) => cleaner.cognitoSub && cleaner.cognitoSub === sub);
+  if (bySub) return bySub.cleanerId;
+  return cleanerIdForEmail(cleaners, email);
+}

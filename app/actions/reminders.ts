@@ -1,5 +1,7 @@
 "use server";
 
+import { AuthError } from "@/lib/auth/guards";
+import { requireAdmin } from "@/lib/auth/guards";
 import { dynamoConfigured, loadHub } from "@/lib/data/repository";
 import { emptyHub } from "@/lib/mock/seed";
 import { SmsDeliveryError, sendSms } from "@/lib/services/sms";
@@ -10,6 +12,7 @@ export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
   | { ok: false; message: string }
 > {
   try {
+    await requireAdmin();
     const today = todayInBusinessZone();
     const hub = dynamoConfigured() ? await loadHub() : emptyHub(today);
     const week = nextAvailabilityWeek(today);
@@ -41,6 +44,7 @@ export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
     };
   } catch (error) {
     console.error(error);
+    if (error instanceof AuthError) return { ok: false, message: error.message };
     const message =
       error instanceof SmsDeliveryError ? error.userMessage : "The reminder could not be sent. Please try again.";
     return { ok: false, message };

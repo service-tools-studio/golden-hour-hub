@@ -53,7 +53,10 @@ The DynamoDB repository is wired. Cognito is not.
 4. **Groups**: `ADMIN` and `CLEANER` (names are case-insensitive in the app).
 5. **Users**: create each person in the pool (no public sign-up). Add them to the right group. Use a **temporary password** if you want the first sign-in to force a new password.
 6. **`.env.local`**: set `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_REGION`, and `AUTH_SESSION_SECRET` (run `openssl rand -base64 32`). Leave `AUTH_SESSION_SECRET` empty for local preview (role picker at `/`). When it is set, `/` redirects to `/login` until you sign in.
-7. **Cleaners**: the Cognito user’s **email** must match the `email` on their cleaner row in DynamoDB (`npm run seed:cleaners` or the admin team screen). Admins only need the `ADMIN` group.
+7. **Cleaners**: link the Cognito user to DynamoDB by setting `cognitoSub` on the cleaner profile (preferred), or match **email** on the cleaner row (`npm run seed:cleaners` or the admin team screen). In the user pool, do not let users change their own `email` attribute unless you rely on `cognitoSub`. Admins only need the `ADMIN` group.
+8. **Production**: `AUTH_SESSION_SECRET`, `COGNITO_USER_POOL_ID`, and `COGNITO_CLIENT_ID` are required; preview mode is disabled when `NODE_ENV=production`.
+9. **Login password hints**: Hub reads your pool’s password policy via `cognito-idp:DescribeUserPool` on the user pool. Grant that action to the IAM user/role that runs the app, **or** set the optional `COGNITO_PASSWORD_*` variables in `.env.local` to match what you configured in the Cognito console (see `.env.example`).
+10. **Disabled users**: Disabling someone in the Cognito console does **not** invalidate their refresh token. Hub calls `cognito-idp:AdminGetUser` on every protected request (via session refresh) so disabled users are signed out on the next action or `/api/auth/session` check. Grant `AdminGetUser` on your user pool to the app’s IAM principal (often bundled with `AmazonCognitoReadOnly` or similar admin read policies).
 
 Restart `npm run dev` after changing env. Sign in at [http://localhost:3000/login](http://localhost:3000/login).
 
