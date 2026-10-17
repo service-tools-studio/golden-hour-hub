@@ -50,7 +50,42 @@ export function smsToE164(to: string): string {
   return `+1${national}`;
 }
 
-async function sendTwilio(message: SmsMessage): Promise<void> {
+const TWILIO_FAIL_STATUSES = new Set(["failed", "undelivered", "canceled"]);
+const TWILIO_SENT_STATUSES = new Set(["sent", "delivered", "receiving", "read"]);
+
+function twilioAuthHeader(accountSid: string, authToken: string): string {
+  return `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
+}
+
+async function fetchTwilioMessageStatus(
+  accountSid: string,
+  authToken: string,
+  messageSid: string,
+): Promise<{ status: string; errorMessage?: string }> {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages/${messageSid}.json`;
+  const response = await fetch(url, {
+    headers: { Authorization: twilioAuthHeader(accountSid, authToken) },
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    console.error("[sms:twilio:status]", response.status, detail);
+    return { status: "unknown" };
+  }
+  const payload = (await response.json()) as { status?: string; error_message?: string };
+  return { status: payload.status ?? "unknown", errorMessage: payload.error_message };
+}
+
+function twilioDeliveryFailureMessage(errorMessage?: string): string {
+  if (errorMessage?.trim()) {
+    if (/compliance profile|trust hub|kyc|campaign|a2p|10dlc/i.test(errorMessage)) {
+      return `${errorMessage.trim()} Finish Trust Hub and US A2P registration in the Twilio console if you have not already.`;
+    }
+    return errorMessage.trim();
+  }
+  return "Twilio could not deliver this text. US A2P / Trust Hub registration may still be pending.";
+}
+
+async function sendTwilio(message: SmsMessage): Promise<{ confirmed: boolean }> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim();
   const authToken = process.env.TWILIO_AUTH_TOKEN?.trim();
   const from = process.env.TWILIO_FROM_NUMBER?.trim();
@@ -65,31 +100,63 @@ async function sendTwilio(message: SmsMessage): Promise<void> {
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+      Authorization: twilioAuthHeader(accountSid, authToken),
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({ To: to, From: from, Body: message.body }),
   });
 
+  const detail = await response.text();
   if (!response.ok) {
-    const detail = await response.text();
     console.error("[sms:twilio]", response.status, detail);
     throw new SmsDeliveryError(twilioUserMessage(detail), detail);
   }
+
+  let created: { sid?: string; status?: string; error_message?: string };
+  try {
+    created = JSON.parse(detail) as { sid?: string; status?: string; error_message?: string };
+  } catch {
+    return { confirmed: false };
+  }
+
+  if (created.status && TWILIO_FAIL_STATUSES.has(created.status)) {
+    throw new SmsDeliveryError(twilioDeliveryFailureMessage(created.error_message), detail);
+  }
+
+  const sid = created.sid;
+  if (!sid) return { confirmed: false };
+
+  const pollDelaysMs = [0, 500, 1000, 2000];
+  for (const delay of pollDelaysMs) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    const { status, errorMessage } = await fetchTwilioMessageStatus(accountSid, authToken, sid);
+    if (TWILIO_FAIL_STATUSES.has(status)) {
+      throw new SmsDeliveryError(twilioDeliveryFailureMessage(errorMessage), detail);
+    }
+    if (TWILIO_SENT_STATUSES.has(status)) return { confirmed: true };
+  }
+
+  return { confirmed: false };
 }
+
+export type SmsSendResult = {
+  provider: "mock" | "twilio";
+  /** True only when Twilio reports the message as sent/delivered (not merely queued). */
+  confirmed?: boolean;
+};
 
 /**
  * Server-only SMS. Use SMS_PROVIDER=mock to log without sending.
  */
-export async function sendSms(message: SmsMessage): Promise<void> {
+export async function sendSms(message: SmsMessage): Promise<SmsSendResult> {
   const provider = (process.env.SMS_PROVIDER ?? "mock").trim().toLowerCase();
   if (provider === "mock") {
     console.info(`[sms:mock] to=${message.to} ${message.body}`);
-    return;
+    return { provider: "mock" };
   }
   if (provider === "twilio") {
-    await sendTwilio(message);
-    return;
+    const outcome = await sendTwilio(message);
+    return { provider: "twilio", confirmed: outcome.confirmed };
   }
   throw new SmsDeliveryError(`Unknown SMS_PROVIDER: ${provider}`);
 }

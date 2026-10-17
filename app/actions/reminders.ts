@@ -41,6 +41,8 @@ export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
     };
   } catch (error) {
     console.error(error);
-    return { ok: false, message: "The reminder could not be sent. Please try again." };
+    const message =
+      error instanceof SmsDeliveryError ? error.userMessage : "The reminder could not be sent. Please try again.";
+    return { ok: false, message };
   }
 }

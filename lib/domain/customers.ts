@@ -4,6 +4,7 @@ export type PropertyInput = {
   propertyId?: string;
   label?: string;
   streetAddress: string;
+  unit?: string;
   city: string;
   state: string;
   zip: string;
@@ -88,6 +89,7 @@ function propertyField(index: number, name: string) {
 
 function validateProperty(input: PropertyInput, index: number): Result<{ value: PropertyInput }> & { field?: string } {
   const label = input.label?.trim() ?? "";
+  const unit = input.unit?.trim() ?? "";
   const streetAddress = input.streetAddress.trim();
   const city = input.city.trim();
   const state = input.state.trim().toUpperCase();
@@ -120,6 +122,7 @@ function validateProperty(input: PropertyInput, index: number): Result<{ value: 
       propertyId: input.propertyId,
       label: label || undefined,
       streetAddress,
+      unit: unit || undefined,
       city,
       state,
       zip,
@@ -184,6 +187,7 @@ export function snapshotVisit(customer: Customer, property: Property): JobCustom
     propertyId: property.propertyId,
     propertyLabel: property.label,
     streetAddress: property.streetAddress,
+    unit: property.unit,
     city: property.city,
     state: property.state,
     zip: property.zip,

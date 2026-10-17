@@ -256,7 +256,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 2400);
+    const duration = toast.length > 80 ? 8000 : 2400;
+    const timer = window.setTimeout(() => setToast(null), duration);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
@@ -468,6 +469,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         customerId: id,
         label: item.label,
         streetAddress: item.streetAddress,
+        unit: item.unit,
         city: item.city,
         state: item.state,
         zip: item.zip,
@@ -979,7 +981,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         };
         if (item.status === "CONFIRMED" || item.status === "NEEDS_ATTENTION") {
           const merged = data.assignments.map((row) => (row.assignmentId === existing.assignmentId ? nextItem : row));
-          nextItem = applyScheduleConflictWarning(nextItem, cleaner, blocked, merged);
+          nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
         }
         return nextItem;
       });
@@ -1414,7 +1416,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       };
       if (blocked) {
         const merged = data.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
-        nextItem = applyScheduleConflictWarning(nextItem, cleaner, blocked, merged);
+        nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
       }
       return nextItem;
     });
@@ -1455,25 +1457,6 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be moved." };
     const cleaner = data.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
     if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
-    if (assignment.status === "CONFIRMED") {
-      const weekStart = mondayOf(assignment.serviceDate);
-      const submitted = data.submissions.some(
-        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
-      );
-      if (!submitted) return { ok: false, message: `${cleaner.firstName} has not submitted this week.` };
-      const blocked = calculateBlockedRange({
-        date: assignment.serviceDate,
-        arrivalWindowStart,
-        arrivalWindowEnd,
-        expectedDurationMinutes: assignment.expectedDurationMinutes,
-      });
-      const windows = data.availability
-        .filter((window) => window.cleanerId === cleaner.cleanerId)
-        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
-      if (!availabilityCoversBlockedRange(windows, blocked)) {
-        return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
-      }
-    }
     const now = new Date().toISOString();
     const blocked =
       assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION"
@@ -1491,7 +1474,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         let nextItem: JobAssignment = { ...item, arrivalWindowStart, arrivalWindowEnd, updatedAt: now };
         if (blocked) {
           const merged = data.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
-          nextItem = applyScheduleConflictWarning(nextItem, cleaner, blocked, merged);
+          nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
         }
         return nextItem;
       }),

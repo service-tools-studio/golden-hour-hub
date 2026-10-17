@@ -311,7 +311,7 @@ export function CustomerDetail({
               <Pencil />
               <p className="pr-6 font-semibold">{home.label ?? home.streetAddress}</p>
               <p className="text-sm text-ink/70">
-                {home.streetAddress}, {home.city} {home.state} {home.zip}
+                {[home.streetAddress, home.unit].filter(Boolean).join(", ")}, {home.city} {home.state} {home.zip}
               </p>
               {sizeLine ? <p className="mt-2 text-sm">{sizeLine}</p> : null}
               {home.preferences ? (

@@ -170,6 +170,24 @@ export function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date
   return startA.getTime() < endB.getTime() && startB.getTime() < endA.getTime();
 }
 
+export type AssignmentTiming = {
+  serviceDate: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+};
+
+/** Active cleaning time: from arrival window end through expected duration (not the arrival window itself). */
+export function calculateLaborRange(input: AssignmentTiming): { startUtc: Date; endUtc: Date } {
+  let endDate = input.serviceDate;
+  if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
+    endDate = addDays(input.serviceDate, 1);
+  }
+  const startUtc = zonedToUtc(endDate, input.arrivalWindowEnd);
+  const endUtc = new Date(startUtc.getTime() + input.expectedDurationMinutes * 60_000);
+  return { startUtc, endUtc };
+}
+
 export function confirmedScheduleConflictReason(firstName: string): string {
   return `This conflicts with another confirmed job for ${firstName}.`;
 }
@@ -180,34 +198,42 @@ export function isConfirmedScheduleConflictReason(reason?: string): boolean {
 
 export function detectConfirmedAssignmentConflict(input: {
   cleanerId: string;
-  blocked: BlockedRange;
+  candidate: AssignmentTiming;
   confirmedAssignments: AssignmentSchedule[];
   ignoreAssignmentId?: string;
 }): AssignmentSchedule | null {
+  const candidateLabor = calculateLaborRange(input.candidate);
   for (const assignment of input.confirmedAssignments) {
     if (assignment.cleanerId !== input.cleanerId) continue;
     if (assignment.status !== "CONFIRMED") continue;
     if (assignment.assignmentId === input.ignoreAssignmentId) continue;
-    const other = calculateBlockedRange(assignmentToBlock(assignment));
-    if (rangesOverlap(input.blocked.startUtc, input.blocked.endUtc, other.startUtc, other.endUtc)) {
+    const otherLabor = calculateLaborRange(assignmentTiming(assignment));
+    if (
+      rangesOverlap(
+        candidateLabor.startUtc,
+        candidateLabor.endUtc,
+        otherLabor.startUtc,
+        otherLabor.endUtc,
+      )
+    ) {
       return assignment;
     }
   }
   return null;
 }
 
-function assignmentToBlock(assignment: AssignmentSchedule): {
-  date: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
-  expectedDurationMinutes: number;
-} {
+function assignmentTiming(assignment: AssignmentSchedule): AssignmentTiming {
   return {
-    date: assignment.serviceDate,
+    serviceDate: assignment.serviceDate,
     arrivalWindowStart: assignment.arrivalWindowStart,
     arrivalWindowEnd: assignment.arrivalWindowEnd,
     expectedDurationMinutes: assignment.expectedDurationMinutes,
   };
+}
+
+function assignmentBlockedInput(assignment: AssignmentSchedule) {
+  const timing = assignmentTiming(assignment);
+  return { date: timing.serviceDate, ...timing };
 }
 
 export function validateAvailabilityWindows(
@@ -281,7 +307,7 @@ export function assignmentUncoveredByAvailability(
   windows: ScheduleWindow[],
 ): boolean {
   if (assignment.status !== "CONFIRMED") return false;
-  const blocked = calculateBlockedRange(assignmentToBlock(assignment));
+  const blocked = calculateBlockedRange(assignmentBlockedInput(assignment));
   return !availabilityCoversBlockedRange(windows, blocked);
 }
 
@@ -291,7 +317,7 @@ export function subtractConfirmedBookingsFromAvailability(
 ): ScheduleWindow[] {
   const blocks = confirmedAssignments
     .filter((assignment) => assignment.status === "CONFIRMED")
-    .flatMap((assignment) => calculateBlockedRange(assignmentToBlock(assignment)).spans);
+    .flatMap((assignment) => calculateBlockedRange(assignmentBlockedInput(assignment)).spans);
   let remaining = windows.map(windowToSpan).filter((span) => span.endMin > span.startMin);
   for (const block of blocks) {
     remaining = remaining.flatMap((span) => subtractSpan(span, block));
@@ -321,6 +347,7 @@ export function validateCleanerSchedule(input: {
   cleanerStatus: "ACTIVE" | "INACTIVE";
   windows: ScheduleWindow[];
   blocked: BlockedRange;
+  timing: AssignmentTiming;
   confirmedAssignments: AssignmentSchedule[];
   ignoreAssignmentId?: string;
 }): Result<{ ok: true }> {
@@ -332,7 +359,7 @@ export function validateCleanerSchedule(input: {
   }
   const conflict = detectConfirmedAssignmentConflict({
     cleanerId: input.cleanerId,
-    blocked: input.blocked,
+    candidate: input.timing,
     confirmedAssignments: input.confirmedAssignments,
     ignoreAssignmentId: input.ignoreAssignmentId,
   });
@@ -365,7 +392,12 @@ export function findCompatibleCleaners<T extends { cleanerId: string; status: "A
     if (!availabilityCoversBlockedRange(windows, blocked)) return false;
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: cleaner.cleanerId,
-      blocked,
+      candidate: {
+        serviceDate: input.required.date,
+        arrivalWindowStart: input.required.arrivalWindowStart,
+        arrivalWindowEnd: input.required.arrivalWindowEnd,
+        expectedDurationMinutes: input.required.expectedDurationMinutes,
+      },
       confirmedAssignments: input.confirmedByCleaner[cleaner.cleanerId] ?? [],
     });
     return !conflict;
@@ -389,12 +421,16 @@ export function toAssignmentSchedule(assignment: JobAssignment): AssignmentSched
 export function applyScheduleConflictWarning(
   assignment: JobAssignment,
   cleaner: Pick<CleanerProfile, "cleanerId" | "firstName">,
-  blocked: BlockedRange,
   assignments: JobAssignment[],
 ): JobAssignment {
   const conflict = detectConfirmedAssignmentConflict({
     cleanerId: cleaner.cleanerId,
-    blocked,
+    candidate: {
+      serviceDate: assignment.serviceDate,
+      arrivalWindowStart: assignment.arrivalWindowStart,
+      arrivalWindowEnd: assignment.arrivalWindowEnd,
+      expectedDurationMinutes: assignment.expectedDurationMinutes,
+    },
     confirmedAssignments: assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
     ignoreAssignmentId: assignment.assignmentId,
   });

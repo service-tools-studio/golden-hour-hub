@@ -283,15 +283,14 @@ export function planOccurrenceStaffing(input: {
       continue;
     }
 
-    const blocked = calculateBlockedRange({
-      date: input.serviceDate,
-      arrivalWindowStart: entry.arrivalWindowStart,
-      arrivalWindowEnd: entry.arrivalWindowEnd,
-      expectedDurationMinutes: entry.expectedDurationMinutes,
-    });
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: cleaner.cleanerId,
-      blocked,
+      candidate: {
+        serviceDate: input.serviceDate,
+        arrivalWindowStart: entry.arrivalWindowStart,
+        arrivalWindowEnd: entry.arrivalWindowEnd,
+        expectedDurationMinutes: entry.expectedDurationMinutes,
+      },
       confirmedAssignments: input.confirmedAssignments
         .filter((assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "CONFIRMED")
         .map((assignment) => ({

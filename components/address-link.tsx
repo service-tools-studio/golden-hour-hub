@@ -5,9 +5,16 @@ import { ActionSheet } from "@/components/action-sheet";
 
 const ADDRESS_UNDERLINE = "underline decoration-ink/25 decoration-1 underline-offset-2";
 
-export function fullAddress(place: { streetAddress: string; city?: string; state?: string; zip?: string }): string {
+export function fullAddress(place: {
+  streetAddress: string;
+  unit?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+}): string {
   const region = [place.state, place.zip].filter(Boolean).join(" ");
-  return [place.streetAddress, place.city, region].filter(Boolean).join(", ");
+  const street = [place.streetAddress, place.unit?.trim()].filter(Boolean).join(", ");
+  return [street, place.city, region].filter(Boolean).join(", ");
 }
 
 export function AddressLink({

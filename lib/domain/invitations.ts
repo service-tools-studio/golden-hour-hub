@@ -59,7 +59,12 @@ export function validateInvitationAcceptance(input: {
   });
   const conflict = detectConfirmedAssignmentConflict({
     cleanerId: input.cleaner.cleanerId,
-    blocked,
+    candidate: {
+      serviceDate: input.assignment.serviceDate,
+      arrivalWindowStart: input.assignment.arrivalWindowStart,
+      arrivalWindowEnd: input.assignment.arrivalWindowEnd,
+      expectedDurationMinutes: input.assignment.expectedDurationMinutes,
+    },
     confirmedAssignments: input.cleanerConfirmedAssignments.map(toAssignmentSchedule),
     ignoreAssignmentId: input.assignment.assignmentId,
   });
@@ -287,7 +292,12 @@ function pendingFailureReason(input: {
   }
   const conflict = detectConfirmedAssignmentConflict({
     cleanerId: input.cleaner.cleanerId,
-    blocked,
+    candidate: {
+      serviceDate: input.assignment.serviceDate,
+      arrivalWindowStart: input.assignment.arrivalWindowStart,
+      arrivalWindowEnd: input.assignment.arrivalWindowEnd,
+      expectedDurationMinutes: input.assignment.expectedDurationMinutes,
+    },
     confirmedAssignments: input.assignments
       .filter((assignment) => assignment.cleanerId === input.cleaner.cleanerId && assignment.status === "CONFIRMED")
       .map(toAssignmentSchedule),

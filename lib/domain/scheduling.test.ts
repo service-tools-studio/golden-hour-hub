@@ -175,6 +175,12 @@ describe("blocked time and effective availability", () => {
       cleanerStatus: "ACTIVE",
       windows: [{ date: "2026-10-06", start: "08:00", end: "17:00" }],
       blocked,
+      timing: {
+        serviceDate: "2026-10-06",
+        arrivalWindowStart: "12:00",
+        arrivalWindowEnd: "12:30",
+        expectedDurationMinutes: 60,
+      },
       confirmedAssignments: [schedule()],
     });
     assert.equal(result.ok, false);
@@ -192,8 +198,33 @@ describe("blocked time and effective availability", () => {
     });
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: "claudia",
-      blocked,
+      candidate: {
+        serviceDate: "2026-10-06",
+        arrivalWindowStart: "09:00",
+        arrivalWindowEnd: "10:00",
+        expectedDurationMinutes: 240,
+      },
       confirmedAssignments: [schedule({ status: "INVITED" })],
+    });
+    assert.equal(conflict, null);
+  });
+
+  it("does not treat overlapping arrival windows as a conflict when labor times do not overlap", () => {
+    const conflict = detectConfirmedAssignmentConflict({
+      cleanerId: "claudia",
+      candidate: {
+        serviceDate: "2026-10-06",
+        arrivalWindowStart: "10:00",
+        arrivalWindowEnd: "12:00",
+        expectedDurationMinutes: 60,
+      },
+      confirmedAssignments: [
+        schedule({
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "11:00",
+          expectedDurationMinutes: 60,
+        }),
+      ],
     });
     assert.equal(conflict, null);
   });

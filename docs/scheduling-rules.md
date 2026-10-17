@@ -88,7 +88,7 @@ The horizon is how far ahead job occurrences exist. It is not a limit on invitat
 - the confirmed people on that job would not pass `headcountNeeded`
 - that week’s availability has been submitted
 - the blocked time sits inside that availability
-- it does not overlap another confirmed job
+- its labor time (after the arrival window through expected duration) does not overlap another confirmed job’s labor time
 
 If that week is not submitted yet, the assignment is `PENDING_AVAILABILITY` with the intended crew. The admin can see who the standing cleaner is. It is not treated as schedule-confirmed. If the week is submitted and a check fails, the assignment is `NEEDS_ATTENTION` with the reason, for example: “This recurring cleaning could not be assigned to Claudia because it conflicts with another confirmed job.” The job still exists. The app does not confirm it and does not change the cleaner’s availability.
 

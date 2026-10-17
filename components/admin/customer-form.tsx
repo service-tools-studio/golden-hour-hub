@@ -118,6 +118,7 @@ type PropertyDraft = {
   propertyId?: string;
   label: string;
   streetAddress: string;
+  unit: string;
   city: string;
   state: string;
   zip: string;
@@ -132,6 +133,7 @@ function blankProperty(): PropertyDraft {
     key: `new-${Math.random().toString(36).slice(2, 8)}`,
     label: "",
     streetAddress: "",
+    unit: "",
     city: "Portland",
     state: "OR",
     zip: "",
@@ -151,6 +153,7 @@ function draftsFor(customer: Customer | undefined, properties: Property[]): Prop
     propertyId: item.propertyId,
     label: item.label ?? "",
     streetAddress: item.streetAddress,
+    unit: item.unit ?? "",
     city: item.city,
     state: item.state,
     zip: item.zip,
@@ -255,6 +258,7 @@ export function CustomerForm({
         propertyId: item.propertyId,
         label: item.label,
         streetAddress: item.streetAddress,
+        unit: item.unit,
         city: item.city,
         state: item.state,
         zip: item.zip,
@@ -390,8 +394,26 @@ export function CustomerForm({
                   className={inputClass(Boolean(streetError))}
                   value={property.streetAddress}
                   onChange={(streetAddress) => updateProperty(property.key, { streetAddress })}
-                  onSelect={(address) => updateProperty(property.key, address)}
+                  onSelect={(address) =>
+                    updateProperty(property.key, {
+                      streetAddress: address.streetAddress,
+                      unit: address.unit ?? "",
+                      city: address.city,
+                      state: address.state,
+                      zip: address.zip,
+                    })
+                  }
                   aria-invalid={Boolean(streetError)}
+                />
+              </Field>
+              <Field id={`property-${property.key}-unit`} label="Unit">
+                <input
+                  className={fieldClass}
+                  placeholder="Optional, like Apt 4 or Unit B"
+                  value={property.unit}
+                  onChange={(event) => updateProperty(property.key, { unit: event.target.value })}
+                  autoComplete="off"
+                  name={`property-unit-${property.key}`}
                 />
               </Field>
               <Field id={`property-${property.key}-city`} label="City" error={cityError}>

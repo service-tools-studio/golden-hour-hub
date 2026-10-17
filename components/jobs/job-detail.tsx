@@ -144,7 +144,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               <div className="flex items-start gap-2">
                 <span aria-hidden="true">📍</span>
                 <span className="inline-block">
-                  <span className={`block ${visit.propertyLabel ? "text-sm" : "font-semibold"}`}>{visit.streetAddress}</span>
+                  <span className={`block ${visit.propertyLabel ? "text-sm" : "font-semibold"}`}>
+                    {visit.unit ? `${visit.streetAddress}, ${visit.unit}` : visit.streetAddress}
+                  </span>
                   <span className="block text-sm text-ink/70">
                     {visit.city}, {visit.state} {visit.zip}
                   </span>

@@ -97,6 +97,7 @@ export type Property = {
   customerId: string;
   label?: string;
   streetAddress: string;
+  unit?: string;
   city: string;
   state: string;
   zip: string;
@@ -127,6 +128,7 @@ export type JobCustomerSnapshot = {
   propertyId: string;
   propertyLabel?: string;
   streetAddress: string;
+  unit?: string;
   city: string;
   state: string;
   zip: string;

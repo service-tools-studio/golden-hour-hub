@@ -1,5 +1,6 @@
 export type ParsedAddress = {
   streetAddress: string;
+  unit?: string;
   city: string;
   state: string;
   zip: string;
@@ -41,6 +42,9 @@ export function parsePlacesApiAddress(place: {
     [streetNumber, route].filter(Boolean).join(" ") ||
     (place.formattedAddress?.split(",")[0]?.trim() ?? "");
 
+  const unit =
+    componentValue(components, "subpremise") || componentValue(components, "premise", "shortText") || undefined;
+
   const city =
     componentValue(components, "locality") ||
     componentValue(components, "postal_town") ||
@@ -51,7 +55,7 @@ export function parsePlacesApiAddress(place: {
   const zip = componentValue(components, "postal_code", "shortText").replace(/\D/g, "").slice(0, 5);
 
   if (!streetAddress) return null;
-  return { streetAddress, city, state, zip };
+  return { streetAddress, unit: unit?.trim() || undefined, city, state, zip };
 }
 
 export type PlaceSuggestion = {

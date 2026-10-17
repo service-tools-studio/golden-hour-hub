@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendCleanerText } from "@/app/actions/notifications";
+import { assignmentSmsToast, followUpSmsToast } from "@/lib/sms-notify";
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
@@ -33,12 +34,12 @@ function cleaningHref(jobId: string, from: CleaningOrigin | undefined) {
   return withOrigin(`/admin/jobs/${jobId}`, from);
 }
 
-function textDirectAssignment(
+async function notifyDirectAssignment(
   cleaner: CleanerProfile,
   job: Job,
   arrivalWindowStart: string,
   arrivalWindowEnd: string,
-  flash: (message: string) => void,
+  assignmentMessage: string | undefined,
 ) {
   const body = directAssignmentSms({
     cleanerFirstName: cleaner.firstName,
@@ -48,17 +49,20 @@ function textDirectAssignment(
     arrivalWindowStart,
     arrivalWindowEnd,
   });
-  void sendCleanerText(cleaner.mobilePhone, body).then((result) =>
-    flash(result.ok ? `Assigned. Text sent to ${cleaner.firstName}.` : result.message),
-  );
+  try {
+    const sms = await sendCleanerText(cleaner.mobilePhone, body);
+    return assignmentSmsToast(cleaner.firstName, assignmentMessage, sms);
+  } catch {
+    return `${assignmentMessage ?? "Saved."} Text not sent to ${cleaner.firstName}. The server could not send SMS.`;
+  }
 }
 
-function textInviteAssignment(
+async function notifyInviteAssignment(
   cleaner: CleanerProfile,
   job: Job,
   arrivalWindowStart: string,
   arrivalWindowEnd: string,
-  flash: (message: string) => void,
+  assignmentMessage: string | undefined,
 ) {
   const body = inviteAssignmentSms({
     cleanerFirstName: cleaner.firstName,
@@ -67,20 +71,26 @@ function textInviteAssignment(
     arrivalWindowStart,
     arrivalWindowEnd,
   });
-  void sendCleanerText(cleaner.mobilePhone, body).then((result) =>
-    flash(result.ok ? `Invite sent. Text sent to ${cleaner.firstName}.` : result.message),
-  );
+  try {
+    const sms = await sendCleanerText(cleaner.mobilePhone, body);
+    return assignmentSmsToast(cleaner.firstName, assignmentMessage, sms);
+  } catch {
+    return `${assignmentMessage ?? "Saved."} Text not sent to ${cleaner.firstName}. The server could not send SMS.`;
+  }
 }
 
-function textInviteFollowUp(cleaner: CleanerProfile, job: Job, flash: (message: string) => void) {
+async function notifyInviteFollowUp(cleaner: CleanerProfile, job: Job) {
   const body = inviteFollowUpSms({
     cleanerFirstName: cleaner.firstName,
     customerName: job.snapshot.customerDisplayName,
     date: job.date,
   });
-  void sendCleanerText(cleaner.mobilePhone, body).then((result) =>
-    flash(result.ok ? `Follow-up sent to ${cleaner.firstName}.` : result.message),
-  );
+  try {
+    const sms = await sendCleanerText(cleaner.mobilePhone, body);
+    return followUpSmsToast(cleaner.firstName, sms);
+  } catch {
+    return `Text not sent to ${cleaner.firstName}. The server could not send SMS.`;
+  }
 }
 
 function cleaningSubtitle(job: Job, start: string | undefined): string {
@@ -254,7 +264,7 @@ export function EditJobView({
       ) === null,
   );
 
-  function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
+  async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
     if (!job || !cleaner) return false;
     const payPerPersonCents = dollarsToCents(pay);
     if (payPerPersonCents === null) {
@@ -279,16 +289,20 @@ export function EditJobView({
       setMessage(result.message);
       return false;
     }
-    if (result.message) hub.flash(result.message);
-    if (mode === "DIRECT") textDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
-    if (mode === "INVITE") textInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
+    if (mode === "DIRECT") {
+      hub.flash(await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+    } else if (mode === "INVITE") {
+      hub.flash(await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+    } else if (result.message) {
+      hub.flash(result.message);
+    }
     router.push(nextHref ?? cleaningHref(jobId, from));
     return true;
   }
 
-  function sendInviteFollowUp() {
+  async function sendInviteFollowUp() {
     if (!job || !cleaner || !followUpReady) return;
-    textInviteFollowUp(cleaner, job, hub.flash);
+    hub.flash(await notifyInviteFollowUp(cleaner, job));
   }
 
   function saveAndLeave() {
@@ -541,7 +555,15 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const hub = useHub();
   const router = useRouter();
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
-  const onRoster = Boolean(job?.draftCleanerIds?.includes(cleanerId));
+  const staffedOnJob = hub.assignments.some(
+    (item) =>
+      item.jobId === jobId &&
+      item.cleanerId === cleanerId &&
+      item.status !== "CANCELED" &&
+      item.status !== "EXPIRED_JOB_FILLED" &&
+      item.status !== "DECLINED",
+  );
+  const onRoster = Boolean(job?.draftCleanerIds?.includes(cleanerId)) || staffedOnJob;
   const cleaner = onRoster ? hub.cleaners.find((item) => item.cleanerId === cleanerId && item.status === "ACTIVE") : undefined;
   const savedDetail = job?.draftCleanerDetails?.find((item) => item.cleanerId === cleanerId);
   const usualCrew = cleaner ? typicalCrewSize(cleaner.typicalHelperCount) : 1;
@@ -578,7 +600,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       hub.submissions.some((submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === mondayOf(job.date)),
   );
 
-  function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
+  async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
     if (!job || !cleaner) return false;
     const payPerPersonCents = dollarsToCents(pay);
     if (payPerPersonCents === null) {
@@ -602,10 +624,22 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       setMessage(result.message);
       return false;
     }
-    if (result.message) hub.flash(result.message);
-    if (mode === "DIRECT") textDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
-    if (mode === "INVITE") textInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, hub.flash);
+    if (mode === "DRAFT") {
+      if (result.message) hub.flash(result.message);
+      if (nextHref) {
+        setNavigatingAway(true);
+        router.push(nextHref);
+      }
+      return true;
+    }
     setNavigatingAway(true);
+    if (mode === "DIRECT") {
+      hub.flash(await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+    } else if (mode === "INVITE") {
+      hub.flash(await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+    } else if (result.message) {
+      hub.flash(result.message);
+    }
     router.push(nextHref ?? cleaningHref(job.jobId, from));
     return true;
   }

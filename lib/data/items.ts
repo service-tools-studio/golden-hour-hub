@@ -153,7 +153,7 @@ function searchItems(customers: Customer[], properties: Property[]): DynamoItem[
     }
   }
   for (const property of properties) {
-    for (const value of [property.streetAddress, property.city, property.label ?? ""]) {
+    for (const value of [property.streetAddress, property.unit ?? "", property.city, property.label ?? ""]) {
       const key = text(value);
       if (!key) continue;
       items.push({
@@ -271,6 +271,7 @@ function readProperty(item: DynamoItem): Property {
     customerId: stringField(item, "customerId"),
     label: optionalString(item, "label"),
     streetAddress: stringField(item, "streetAddress"),
+    unit: optionalString(item, "unit"),
     city: stringField(item, "city"),
     state: stringField(item, "state"),
     zip: stringField(item, "zip"),

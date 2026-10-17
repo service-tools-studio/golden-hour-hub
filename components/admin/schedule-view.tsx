@@ -418,6 +418,7 @@ type EventTone = "open" | "confirmed" | "pending" | "unassigned";
 type DayEvent = {
   id: string;
   cleanerId: string;
+  jobId?: string;
   order: number;
   startMin: number;
   endMin: number;
@@ -549,7 +550,7 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
       }),
     [date, hub.assignments, hub.availability, hub.cleaners, hub.jobs, hub.series, ids],
   );
-  const laidOut = layoutDayEvents(built.events);
+  const laidOut = layoutDayEvents(built.events, ids ? ids.split("\0") : []);
   const grid = gridBounds(built.events);
   const hours = Array.from({ length: (grid.end - grid.start) / 60 + 1 }, (_, index) => grid.start / 60 + index);
   const height = GRID_PAD_TOP + ((grid.end - grid.start) / 60) * HOUR_PX + GRID_PAD_BOTTOM;
@@ -916,6 +917,7 @@ function buildDayEvents(input: {
       events.push({
         id: assignment.assignmentId,
         cleanerId,
+        jobId: job.jobId,
         order: cleanerIndex * 10 + (pending ? 2 : 1),
         startMin: span.startMin,
         endMin: span.endMin,
@@ -960,6 +962,7 @@ function buildDayEvents(input: {
     events.push({
       id: `${job.jobId}-unassigned`,
       cleanerId: "",
+      jobId: job.jobId,
       order: -1,
       startMin: span.startMin,
       endMin: span.endMin,
@@ -1002,8 +1005,9 @@ function rangeLabel(startMin: number, endMin: number): string {
 }
 
 function hourLabel(hour: number): string {
-  const suffix = hour >= 12 ? "PM" : "AM";
-  const clock = hour % 12 === 0 ? 12 : hour % 12;
+  const hour24 = hour % 24;
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const clock = hour24 % 12 === 0 ? 12 : hour24 % 12;
   return `${clock} ${suffix}`;
 }
 
@@ -1024,74 +1028,58 @@ function gridBounds(events: DayEvent[]): { start: number; end: number } {
   return { start, end };
 }
 
-function layoutDayEvents(events: DayEvent[]): Array<DayEvent & { column: number; columns: number }> {
-  const pending = events.filter((event) => event.tone === "pending");
-  const base = events.filter((event) => event.tone !== "pending");
-  const laid = layoutColumns(base);
-  const hosted: Array<DayEvent & { column: number; columns: number }> = [];
-  const unhosted: DayEvent[] = [];
-  for (const invite of pending) {
-    const host = openHost(laid, invite);
-    if (host) hosted.push({ ...invite, column: host.column, columns: host.columns });
-    else unhosted.push(invite);
+function layoutDayEvents(
+  events: DayEvent[],
+  cleanerIds: string[],
+): Array<DayEvent & { column: number; columns: number }> {
+  const hasUnassigned = events.some((event) => event.tone === "unassigned");
+  const activeCleanerIds = cleanerIds.filter((id) => events.some((event) => event.cleanerId === id));
+  const openMinutes = new Map<string, number>();
+  for (const event of events) {
+    if (event.tone !== "open" || !event.cleanerId) continue;
+    openMinutes.set(event.cleanerId, (openMinutes.get(event.cleanerId) ?? 0) + (event.endMin - event.startMin));
   }
-  if (unhosted.length === 0) return [...laid, ...hosted];
-  const withOrphans = layoutColumns([...base, ...unhosted]);
-  return [
-    ...withOrphans,
-    ...pending
-      .filter((invite) => !unhosted.includes(invite))
-      .flatMap((invite) => {
-        const host = openHost(withOrphans, invite);
-        return host ? [{ ...invite, column: host.column, columns: host.columns }] : [];
-      }),
-  ];
-}
+  const orderedCleanerIds = [...activeCleanerIds].sort((a, b) => {
+    const gap = (openMinutes.get(b) ?? 0) - (openMinutes.get(a) ?? 0);
+    if (gap !== 0) return gap;
+    return cleanerIds.indexOf(a) - cleanerIds.indexOf(b);
+  });
+  const homeColumn = new Map(orderedCleanerIds.map((id, index) => [id, index]));
+  const columns = Math.max(1, orderedCleanerIds.length + (hasUnassigned ? 1 : 0));
 
-function openHost(
-  laid: Array<DayEvent & { column: number; columns: number }>,
-  invite: DayEvent,
-): (DayEvent & { column: number; columns: number }) | null {
-  const opens = laid.filter((event) => event.tone === "open" && event.cleanerId === invite.cleanerId);
-  if (opens.length === 0) return null;
-  return opens.reduce((best, event) => (overlapMinutes(event, invite) > overlapMinutes(best, invite) ? event : best));
-}
-
-function overlapMinutes(a: { startMin: number; endMin: number }, b: { startMin: number; endMin: number }): number {
-  return Math.max(0, Math.min(a.endMin, b.endMin) - Math.max(a.startMin, b.startMin));
-}
-
-function layoutColumns(events: DayEvent[]): Array<DayEvent & { column: number; columns: number }> {
-  const sorted = [...events].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin || a.order - b.order);
-  const laid: Array<DayEvent & { column: number; columns: number }> = [];
-  let group: DayEvent[] = [];
-  let groupEnd = -1;
-
-  function placeGroup() {
-    const columnEnds: number[] = [];
-    const placed: { event: DayEvent; column: number }[] = [];
-    for (const event of group) {
-      let column = columnEnds.findIndex((end) => end <= event.startMin);
-      if (column < 0) {
-        column = columnEnds.length;
-        columnEnds.push(event.endMin);
-      } else {
-        columnEnds[column] = event.endMin;
-      }
-      placed.push({ event, column });
+  const jobPeers = new Map<string, string[]>();
+  for (const event of events) {
+    if (!event.jobId || event.tone === "open" || event.tone === "unassigned" || !event.cleanerId) continue;
+    const peers = jobPeers.get(event.jobId) ?? [];
+    if (!peers.includes(event.cleanerId)) peers.push(event.cleanerId);
+    jobPeers.set(event.jobId, peers);
+  }
+  for (const [jobId, peers] of jobPeers) {
+    if (peers.length < 2) {
+      jobPeers.delete(jobId);
+      continue;
     }
-    for (const item of placed) laid.push({ ...item.event, column: item.column, columns: columnEnds.length });
-    group = [];
-    groupEnd = -1;
+    peers.sort((a, b) => (homeColumn.get(a) ?? 0) - (homeColumn.get(b) ?? 0));
+    jobPeers.set(jobId, peers);
   }
 
-  for (const event of sorted) {
-    if (group.length > 0 && event.startMin >= groupEnd) placeGroup();
-    group.push(event);
-    groupEnd = Math.max(groupEnd, event.endMin);
+  function columnFor(event: DayEvent): number {
+    if (event.tone === "unassigned") return orderedCleanerIds.length > 0 ? orderedCleanerIds.length : 0;
+    const home = homeColumn.get(event.cleanerId) ?? 0;
+    if (!event.jobId) return home;
+    const peers = jobPeers.get(event.jobId);
+    if (!peers) return home;
+    const rank = peers.indexOf(event.cleanerId);
+    if (rank < 0) return home;
+    const startCol = homeColumn.get(peers[0]) ?? 0;
+    return startCol + rank;
   }
-  if (group.length > 0) placeGroup();
-  return laid;
+
+  return events.map((event) => ({
+    ...event,
+    column: columnFor(event),
+    columns,
+  }));
 }
 
 function nameList(names: string[]): string {
