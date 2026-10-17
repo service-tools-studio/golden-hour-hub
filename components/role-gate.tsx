@@ -17,7 +17,25 @@ export function RoleGate({ role, children }: { role: AppRole; children: React.Re
     }
   }, [hub.previewAuth, hub.ready, hub.role]);
 
-  if (!hub.ready || hub.role === null) {
+  if (!hub.ready) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-cream px-5 text-sm text-ink/60" aria-busy="true">
+        Loading…
+      </div>
+    );
+  }
+
+  if (hub.role === null) {
+    if (hub.previewAuth && previewAuthAllowed()) {
+      return (
+        <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-5">
+          <p className="text-xl font-semibold">Choose a role to continue.</p>
+          <Link href="/" className="mt-4 inline-flex min-h-12 items-center font-semibold underline">
+            Open role switcher
+          </Link>
+        </main>
+      );
+    }
     return (
       <div className="flex min-h-dvh items-center justify-center bg-cream px-5 text-sm text-ink/60" aria-busy="true">
         Loading…

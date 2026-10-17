@@ -11,12 +11,33 @@ export function HomeChooser() {
   const hub = useHub();
   const router = useRouter();
   const cleaners = hub.cleaners.filter((cleaner) => cleaner.status === "ACTIVE");
+  const previewMode = hub.previewAuth && previewAuthAllowed();
 
   useEffect(() => {
     if (!previewAuthAllowed()) {
       window.location.replace("/login");
     }
   }, []);
+
+  if (!hub.ready) {
+    return (
+      <main className="mx-auto flex min-h-dvh w-full max-w-md items-center justify-center px-5">
+        <p className="text-sm text-ink/60">Loading…</p>
+      </main>
+    );
+  }
+
+  if (!previewMode) {
+    return (
+      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-5">
+        <p className="text-base text-ink/70">
+          Preview sign-in is not active. Remove <code className="text-sm">AUTH_SESSION_SECRET</code> from{" "}
+          <code className="text-sm">.env.local</code> (local dev only) to use the role switcher, or sign in at{" "}
+          <a href="/login" className="font-semibold underline">/login</a>.
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-12">

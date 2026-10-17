@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 
@@ -12,9 +11,16 @@ export function HeaderAuthAction() {
 
   if (hub.previewAuth) {
     return (
-      <Link href="/" className={className}>
+      <button
+        type="button"
+        className={className}
+        onClick={() => {
+          hub.signOut();
+          router.replace("/");
+        }}
+      >
         Switch
-      </Link>
+      </button>
     );
   }
 

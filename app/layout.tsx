@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { HubProvider } from "@/components/hub-provider";
+import { previewAuthEnabled } from "@/lib/auth/config";
 import { getServerSession } from "@/lib/auth/session";
 import "./globals.css";
 
@@ -26,7 +27,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full">
-        <HubProvider initialAuth={initialAuth}>{children}</HubProvider>
+        <HubProvider initialAuth={initialAuth} initialPreviewAuth={previewAuthEnabled()}>
+          {children}
+        </HubProvider>
       </body>
     </html>
   );

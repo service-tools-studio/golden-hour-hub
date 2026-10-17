@@ -7,6 +7,7 @@ import {
   submitAvailabilityAction,
 } from "@/app/actions/cleaner-hub";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
+import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import { mergeAdjacentWindows } from "@/lib/domain/availability";
 import { confirmedCompensationCents } from "@/lib/domain/compensation";
@@ -270,9 +271,12 @@ type InitialAuth = { role: AppRole; cleanerId: string | null };
 export function HubProvider({
   children,
   initialAuth = null,
+  initialPreviewAuth = false,
 }: {
   children: React.ReactNode;
   initialAuth?: InitialAuth | null;
+  /** Server-known preview mode (no AUTH_SESSION_SECRET, non-production). */
+  initialPreviewAuth?: boolean;
 }) {
   const [state, setState] = useState<HubState | null>(() => {
     if (!initialAuth?.role) return null;
@@ -280,10 +284,12 @@ export function HubProvider({
     return { ...emptyHub(today), role: initialAuth.role, cleanerId: initialAuth.cleanerId };
   });
   const [toast, setToast] = useState<string | null>(null);
-  const [previewAuth, setPreviewAuth] = useState(false);
+  const [previewAuth, setPreviewAuth] = useState(initialPreviewAuth && previewAuthAllowed());
   const [ready, setReady] = useState(false);
   const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
   const bootstrappedRef = useRef(false);
+  /** Full hub from Dynamo when using preview auth (role picker without Cognito session). */
+  const previewDynamoHubRef = useRef<HubData | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -307,16 +313,14 @@ export function HubProvider({
           session?: { role: AppRole; cleanerId: string | null } | null;
         };
         if (data.preview && previewAuthAllowed()) {
-          try {
-            sessionStorage.removeItem(SESSION_KEY);
-          } catch {
-            /* ignore */
-          }
-          return { role: null, cleanerId: null, preview: true };
+          const picked = readSession();
+          return { role: picked.role, cleanerId: picked.cleanerId, preview: true };
         }
         if (!data.configured) {
           if (!previewAuthAllowed()) return { role: null, cleanerId: null, preview: false };
-          return { ...readSession(), preview: false };
+          const picked = readSession();
+          const preview = Boolean(data.preview) || initialPreviewAuth;
+          return { ...picked, preview };
         }
         if (!data.session) return { role: null, cleanerId: null, preview: false };
         return { role: data.session.role, cleanerId: data.session.cleanerId, preview: false };
@@ -326,7 +330,9 @@ export function HubProvider({
     }
     async function load() {
       const auth = await loadAuthSession();
-      if (!cancelled) setPreviewAuth(auth.preview);
+      if (!cancelled) {
+        setPreviewAuth(auth.preview || (initialPreviewAuth && previewAuthAllowed()));
+      }
       if (cancelled) return;
 
       if (!auth.preview && !auth.role) {
@@ -355,11 +361,21 @@ export function HubProvider({
         }
         if (remote.source === "dynamodb") {
           sourceRef.current = "dynamodb";
-          const role = auth.preview ? auth.role : (auth.role ?? initialAuth?.role ?? null);
-          const cleanerId = auth.preview ? auth.cleanerId : (auth.cleanerId ?? initialAuth?.cleanerId ?? null);
+          const previewPick = auth.preview || (initialPreviewAuth && previewAuthAllowed());
+          if (previewPick) {
+            previewDynamoHubRef.current = remote.data;
+          } else {
+            previewDynamoHubRef.current = null;
+          }
+          const role = previewPick ? auth.role : (auth.role ?? initialAuth?.role ?? null);
+          const cleanerId = previewPick ? auth.cleanerId : (auth.cleanerId ?? initialAuth?.cleanerId ?? null);
+          let hubPayload = remote.data;
+          if (previewPick && role === "CLEANER" && cleanerId) {
+            hubPayload = hubDataForCleaner(remote.data, cleanerId);
+          }
           bootstrappedRef.current = true;
           setState({
-            ...withCurrentHorizon(remote.data),
+            ...withCurrentHorizon(hubPayload),
             role,
             cleanerId,
           });
@@ -393,12 +409,13 @@ export function HubProvider({
     return () => {
       cancelled = true;
     };
-  }, [initialAuth?.role, initialAuth?.cleanerId]);
+  }, [initialAuth?.role, initialAuth?.cleanerId, initialPreviewAuth]);
 
   useEffect(() => {
     if (!state || !sourceRef.current || !bootstrappedRef.current) return;
     if (sourceRef.current === "dynamodb") {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, cleanerId: state.cleanerId }));
+      if (previewAuth) return;
       if (state.role === "ADMIN") {
         void persistAdminHub({
           today: state.today,
@@ -1724,15 +1741,34 @@ export function HubProvider({
     flash: (message) => setToast(message),
     enterAdmin: () => {
       if (!previewAuth || !previewAuthAllowed()) return;
+      const full = previewDynamoHubRef.current;
+      if (full) {
+        setState({ ...withCurrentHorizon(full), role: "ADMIN", cleanerId: null });
+        return;
+      }
       setState({ ...data, role: "ADMIN", cleanerId: null });
     },
     enterCleaner: (cleanerId) => {
       if (!previewAuth || !previewAuthAllowed()) return;
+      const full = previewDynamoHubRef.current;
+      if (full) {
+        setState({
+          ...withCurrentHorizon(hubDataForCleaner(full, cleanerId)),
+          role: "CLEANER",
+          cleanerId,
+        });
+        return;
+      }
       setState({ ...data, role: "CLEANER", cleanerId });
     },
     signOut: () => {
-      void fetch("/api/auth/logout", { method: "POST" });
-      setState({ ...data, role: null, cleanerId: null });
+      if (!previewAuth) void fetch("/api/auth/logout", { method: "POST" });
+      const full = previewDynamoHubRef.current;
+      if (full) {
+        setState({ ...withCurrentHorizon(full), role: null, cleanerId: null });
+      } else {
+        setState({ ...data, role: null, cleanerId: null });
+      }
       try {
         sessionStorage.removeItem(SESSION_KEY);
       } catch {

@@ -14,6 +14,15 @@ export type BootstrapResult =
 
 export async function bootstrapHub(): Promise<BootstrapResult> {
   if (previewAuthEnabled()) {
+    if (dynamoConfigured()) {
+      try {
+        const data = await loadHub();
+        return { source: "dynamodb", data };
+      } catch (error) {
+        console.error("bootstrapHub preview+dynamo failed.", error);
+        return { ok: false, message: "Could not load Hub data from DynamoDB." };
+      }
+    }
     return { source: "preview" };
   }
   if (!cognitoConfigured()) {
