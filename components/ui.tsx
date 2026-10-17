@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HeaderAuthAction } from "@/components/header-auth-action";
 
 export function Screen({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto min-h-dvh w-full max-w-md pb-28">{children}</div>;
@@ -72,9 +73,7 @@ export function PageHeader({
       ) : (
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">{eyebrow}</p>
       )}
-      <Link href="/" className="flex h-11 shrink-0 items-center text-sm font-medium text-ink/60">
-        Switch
-      </Link>
+      <HeaderAuthAction />
     </div>
   );
   return (

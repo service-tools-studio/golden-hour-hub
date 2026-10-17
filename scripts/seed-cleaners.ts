@@ -15,7 +15,11 @@ import { cleanerToItem } from "../lib/data/items.ts";
 import { dynamoConfigured, putItems } from "../lib/data/repository.ts";
 import type { CleanerProfile } from "../lib/domain/types.ts";
 
-const SEED_EMAIL = "jasmintmail@gmail.com";
+const JASMIN_EMAIL = "jasmintmail@gmail.com";
+
+function mockCleanerEmail(cleanerId: string): string {
+  return `${cleanerId}@goldenhour.mock`;
+}
 
 /** Crew size is the cleaner plus helpers; stored counts are helpers only. */
 function helpersFromTypicalCrewSize(crewSize: number): number {
@@ -26,6 +30,7 @@ function profile(
   cleanerId: string,
   firstName: string,
   lastName: string,
+  email: string,
   mobilePhone: string,
   typicalCrewSize: number,
   maxHelperCount: number,
@@ -37,7 +42,7 @@ function profile(
     cleanerId,
     firstName,
     lastName,
-    email: SEED_EMAIL,
+    email,
     mobilePhone,
     status: "ACTIVE",
     typicalHelperCount: maxHelperCount === 0 ? 0 : Math.min(typicalHelperCount, maxHelperCount),
@@ -51,14 +56,14 @@ function profile(
 }
 
 const CLEANERS: CleanerProfile[] = [
-  profile("claudia", "Claudia", "Maqueda Ramos", "3233763753", 2, 2, 3500),
-  profile("mariana", "Mariana", "Moncada", "3233763753", 2, 4, 3000),
-  profile("shariese", "Shariese", "Miles", "3233763753", 1, 0, 3000),
-  profile("keshawna", "Keshawna", "Arrollado", "3233763753", 1, 0, 3000),
-  profile("tricia", "Tricia", "Oguaghamba", "3233763753", 1, 0, 3000),
-  profile("ashley", "Ashley", "Smith", "3233763753", 1, 0, 3000),
-  profile("jasmin", "Jasmin", "Heart", "3233763753", 1, 0, 15000),
-  profile("kelsey", "Kelsey", "Collins", "5039335444", 1, 0, 15000),
+  profile("claudia", "Claudia", "Maqueda Ramos", mockCleanerEmail("claudia"), "3233763753", 2, 2, 3500),
+  profile("mariana", "Mariana", "Moncada", mockCleanerEmail("mariana"), "3233763753", 2, 4, 3000),
+  profile("shariese", "Shariese", "Miles", mockCleanerEmail("shariese"), "3233763753", 1, 0, 3000),
+  profile("keshawna", "Keshawna", "Arrollado", mockCleanerEmail("keshawna"), "3233763753", 1, 0, 3000),
+  profile("tricia", "Tricia", "Oguaghamba", mockCleanerEmail("tricia"), "3233763753", 1, 0, 3000),
+  profile("ashley", "Ashley", "Smith", mockCleanerEmail("ashley"), "3233763753", 1, 0, 3000),
+  profile("jasmin", "Jasmin", "Heart", JASMIN_EMAIL, "3233763753", 1, 0, 15000),
+  profile("kelsey", "Kelsey", "Collins", mockCleanerEmail("kelsey"), "5039335444", 1, 0, 15000),
 ];
 
 async function main() {
@@ -72,7 +77,7 @@ async function main() {
     const crew = cleaner.maxHelperCount === 0 ? 1 : 1 + cleaner.typicalHelperCount;
     const maxCrew = cleaner.maxHelperCount === 0 ? 1 : 1 + cleaner.maxHelperCount;
     console.log(
-      `  ${cleaner.cleanerId}: ${cleaner.firstName} ${cleaner.lastName} · usual crew ${crew} · max ${maxCrew} · $${(cleaner.typicalHourlyRateCents / 100).toFixed(2)}/hr`,
+      `  ${cleaner.cleanerId}: ${cleaner.firstName} ${cleaner.lastName} · ${cleaner.email} · usual crew ${crew} · max ${maxCrew} · $${(cleaner.typicalHourlyRateCents / 100).toFixed(2)}/hr`,
     );
   }
   console.log(`\nWrote ${items.length} cleaner profiles to ${process.env.DYNAMODB_TABLE_NAME}.`);

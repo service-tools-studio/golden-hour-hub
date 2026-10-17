@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { HubProvider } from "@/components/hub-provider";
+import { getServerSession } from "@/lib/auth/session";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,11 +20,13 @@ export const viewport: Viewport = {
   themeColor: "#fffbea",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const session = await getServerSession();
+  const initialAuth = session ? { role: session.role, cleanerId: session.cleanerId } : null;
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full">
-        <HubProvider>{children}</HubProvider>
+        <HubProvider initialAuth={initialAuth}>{children}</HubProvider>
       </body>
     </html>
   );

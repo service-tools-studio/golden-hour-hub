@@ -123,6 +123,8 @@ export type UpdateJobInput = {
 
 type HubContextValue = HubState & {
   ready: boolean;
+  /** True when AUTH_SESSION_SECRET is unset (browser role picker at /). */
+  previewAuth: boolean;
   flash: (message: string) => void;
   enterAdmin: () => void;
   enterCleaner: (cleanerId: string) => void;
@@ -249,9 +251,22 @@ function withCurrentHorizon(data: HubData): HubData {
   return { ...data, today, series: generated.series, jobs: generated.jobs, assignments: generated.assignments };
 }
 
-export function HubProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<HubState | null>(null);
+type InitialAuth = { role: AppRole; cleanerId: string | null };
+
+export function HubProvider({
+  children,
+  initialAuth = null,
+}: {
+  children: React.ReactNode;
+  initialAuth?: InitialAuth | null;
+}) {
+  const [state, setState] = useState<HubState | null>(() => {
+    if (!initialAuth?.role) return null;
+    const today = todayInBusinessZone();
+    return { ...emptyHub(today), role: initialAuth.role, cleanerId: initialAuth.cleanerId };
+  });
   const [toast, setToast] = useState<string | null>(null);
+  const [previewAuth, setPreviewAuth] = useState(false);
   const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
 
   useEffect(() => {
@@ -263,27 +278,76 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      const remote = await bootstrapHub();
-      if (cancelled) return;
-      if (remote.source === "dynamodb") {
-        sourceRef.current = "dynamodb";
-        const session = readSession();
-        setState({
-          ...withCurrentHorizon(remote.data),
-          role: session.role,
-          cleanerId: session.cleanerId,
-        });
-        return;
+    async function loadAuthSession(): Promise<{
+      role: AppRole | null;
+      cleanerId: string | null;
+      preview: boolean;
+    }> {
+      try {
+        const response = await fetch("/api/auth/session");
+        const data = (await response.json()) as {
+          configured?: boolean;
+          preview?: boolean;
+          session?: { role: AppRole; cleanerId: string | null } | null;
+        };
+        if (data.preview) {
+          try {
+            sessionStorage.removeItem(SESSION_KEY);
+          } catch {
+            /* ignore */
+          }
+          return { role: null, cleanerId: null, preview: true };
+        }
+        if (!data.configured) return { ...readSession(), preview: false };
+        if (!data.session) return { role: null, cleanerId: null, preview: false };
+        return { role: data.session.role, cleanerId: data.session.cleanerId, preview: false };
+      } catch {
+        return { role: null, cleanerId: null, preview: false };
       }
-      sourceRef.current = "preview";
-      setState(readPreview());
+    }
+    async function load() {
+      const auth = await loadAuthSession();
+      if (!cancelled) setPreviewAuth(auth.preview);
+      if (cancelled) return;
+      try {
+        const remote = await bootstrapHub();
+        if (cancelled) return;
+        if (remote.source === "dynamodb") {
+          sourceRef.current = "dynamodb";
+          const role = auth.preview ? auth.role : (auth.role ?? initialAuth?.role ?? null);
+          const cleanerId = auth.preview ? auth.cleanerId : (auth.cleanerId ?? initialAuth?.cleanerId ?? null);
+          setState({
+            ...withCurrentHorizon(remote.data),
+            role,
+            cleanerId,
+          });
+          return;
+        }
+        sourceRef.current = "preview";
+        const preview = readPreview();
+        setState({
+          ...preview,
+          role: auth.preview ? auth.role : (auth.role ?? initialAuth?.role ?? preview.role),
+          cleanerId: auth.preview ? auth.cleanerId : (auth.cleanerId ?? initialAuth?.cleanerId ?? preview.cleanerId),
+        });
+      } catch (error) {
+        console.error("Failed to load hub data.", error);
+        if (cancelled) return;
+        const today = todayInBusinessZone();
+        setState((current) =>
+          current ?? {
+            ...emptyHub(today),
+            role: auth.role ?? initialAuth?.role ?? null,
+            cleanerId: auth.cleanerId ?? initialAuth?.cleanerId ?? null,
+          },
+        );
+      }
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialAuth?.role, initialAuth?.cleanerId]);
 
   useEffect(() => {
     if (!state || !sourceRef.current) return;
@@ -305,7 +369,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
-  if (!state) return <div className="min-h-dvh bg-cream" />;
+  if (!state) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-cream px-5 text-sm text-ink/60">
+        Loading…
+      </div>
+    );
+  }
 
   const data = state;
 
@@ -1577,10 +1647,19 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const value: HubContextValue = {
     ...data,
     ready: true,
+    previewAuth,
     flash: (message) => setToast(message),
     enterAdmin: () => setState({ ...data, role: "ADMIN", cleanerId: null }),
     enterCleaner: (cleanerId) => setState({ ...data, role: "CLEANER", cleanerId }),
-    signOut: () => setState({ ...data, role: null, cleanerId: null }),
+    signOut: () => {
+      void fetch("/api/auth/logout", { method: "POST" });
+      setState({ ...data, role: null, cleanerId: null });
+      try {
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
+    },
     acceptInvitation,
     declineInvitation,
     submitAvailability,

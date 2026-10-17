@@ -27,7 +27,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Choose Admin, Claudia (usual crew of 2, approved up to 3), or a solo cleaner such as Kat.
+Open [http://localhost:3000](http://localhost:3000). With `AUTH_SESSION_SECRET` unset, choose Admin or a cleaner (preview). With Cognito and `AUTH_SESSION_SECRET` set, `/` sends you to `/login`.
 
 ```bash
 npm test
@@ -43,15 +43,27 @@ The DynamoDB repository is wired. Cognito is not.
 2. Put `AWS_REGION` and `DYNAMODB_TABLE_NAME` in `.env.local` using [.env.example](.env.example). Leave the table name empty to stay on the preview store.
 3. Give the Next.js server permission to read and write the table. The browser must not hold those credentials.
 4. To start from real cleaner profiles only: `npm run dynamo:clear` (wipes the table), then `npm run seed:cleaners`, then open the app. The seed script does not create jobs; if you opened the app earlier on an empty table, an older build may have written the full mock dataset—clear and seed again. Edit `scripts/seed-cleaners.ts` to change names, rates, or crew limits.
-5. Create a Cognito user pool with groups `ADMIN` and `CLEANER`. Do not allow public sign-up. That sign-in step is still separate from the table.
+5. Finish **Cognito setup** below and add the env vars from [.env.example](.env.example).
+
+## Cognito setup
+
+1. **App client** (User pool → App integration → Create app client). Name it e.g. `golden-hour-hub-web`. Do **not** use the hosted UI for login.
+2. **Authentication flows** (edit the app client): enable **ALLOW_USER_PASSWORD_AUTH** and **ALLOW_REFRESH_TOKEN_AUTH**.
+3. **Client secret**: either create a client **without** a secret (simpler for local dev) or with a secret and set `COGNITO_CLIENT_SECRET` in `.env.local`.
+4. **Groups**: `ADMIN` and `CLEANER` (names are case-insensitive in the app).
+5. **Users**: create each person in the pool (no public sign-up). Add them to the right group. Use a **temporary password** if you want the first sign-in to force a new password.
+6. **`.env.local`**: set `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_REGION`, and `AUTH_SESSION_SECRET` (run `openssl rand -base64 32`). Leave `AUTH_SESSION_SECRET` empty for local preview (role picker at `/`). When it is set, `/` redirects to `/login` until you sign in.
+7. **Cleaners**: the Cognito user’s **email** must match the `email` on their cleaner row in DynamoDB (`npm run seed:cleaners` or the admin team screen). Admins only need the `ADMIN` group.
+
+Restart `npm run dev` after changing env. Sign in at [http://localhost:3000/login](http://localhost:3000/login).
 
 ## First admin
 
-After Cognito is connected, create Jasmin and Kelsey in the `ADMIN` group and set a temporary password. Cognito should require a new password at first sign-in. Passwords are never stored in DynamoDB.
+Create Jasmin and Kelsey in Cognito in the `ADMIN` group with temporary passwords. They set a new password on first sign-in at `/login`. Passwords are never stored in DynamoDB.
 
 ## Cleaner accounts
 
-An admin will create the cleaner in Cognito and the cleaner profile in DynamoDB. The cleaner gets the temporary password, sets their own password, and signs in after that. Only an admin can change `typicalHelperCount` and `maxHelperCount`. Helper approval is `maxHelperCount > 0`.
+Create the cleaner in Cognito (`CLEANER` group) and ensure their profile exists in DynamoDB with the same email. They sign in at `/login` after setting their password. Only an admin can change `typicalHelperCount` and `maxHelperCount`. Helper approval is `maxHelperCount > 0`.
 
 ## Environment variables
 
@@ -63,7 +75,9 @@ See [.env.example](.env.example).
 | `DYNAMODB_TABLE_NAME` | Application table |
 | `COGNITO_USER_POOL_ID` | User pool |
 | `COGNITO_CLIENT_ID` | App client |
+| `COGNITO_CLIENT_SECRET` | Only if the app client has a secret |
 | `COGNITO_REGION` | Usually `us-west-2` |
+| `AUTH_SESSION_SECRET` | Signs the HttpOnly session cookie |
 | `SMS_PROVIDER` | `mock` (log only) or `twilio` |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID (server only) |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token (server only) |

@@ -25,7 +25,7 @@ export function HomeChooser() {
           className="min-h-16 w-full rounded-3xl bg-ink px-4 text-left text-cream"
         >
           <span className="block text-lg font-semibold">Admin</span>
-          <span className="text-sm text-cream/75">Jasmin and Kelsey</span>
+          <span className="text-sm text-cream/75">Schedule, customers, and team</span>
         </button>
         {cleaners.map((cleaner) => (
           <button
@@ -38,14 +38,12 @@ export function HomeChooser() {
             className="min-h-16 w-full rounded-3xl bg-white px-4 text-left ring-1 ring-ink/10"
           >
             <span className="block text-lg font-semibold">{personName(cleaner.firstName, cleaner.lastName)}</span>
-            <span className="text-sm text-ink/60">
-              {cleanerCrewSummary(cleaner)}
-            </span>
+            <span className="text-sm text-ink/60">{cleanerCrewSummary(cleaner)}</span>
           </button>
         ))}
       </div>
       <p className="mt-auto pt-10 text-sm leading-5 text-ink/50">
-        Sample schedule for now. Sign-in and the live database are the next step.
+        Preview mode (no <code className="text-xs">AUTH_SESSION_SECRET</code>). Set Cognito env vars and a session secret to use real sign-in.
       </p>
     </main>
   );
