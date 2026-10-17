@@ -1,6 +1,6 @@
 "use server";
 
-import { sendSms } from "@/lib/services/sms";
+import { SmsDeliveryError, sendSms } from "@/lib/services/sms";
 
 export async function sendCleanerText(to: string, body: string): Promise<{ ok: true } | { ok: false; message: string }> {
   if (!/^\d{10}$/.test(to)) return { ok: false, message: "This cleaner has no mobile number on file." };

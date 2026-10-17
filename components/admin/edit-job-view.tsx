@@ -228,6 +228,7 @@ export function EditJobView({
     ? noticeGap(false, assignmentNoticeFrom(assignment), assignment.lastNotified)
     : null;
   const flag = cleaner && gap ? noticeFlagText(cleaner.firstName, gap) : null;
+  const scheduleWarning = assignment?.attentionReason ?? null;
   const weekSubmitted = Boolean(
     cleaner &&
       job &&
@@ -328,7 +329,7 @@ export function EditJobView({
         }}
       >
         {message ? <Notice>{message}</Notice> : null}
-        <AssignmentStatus label={statusLabel} flag={flag} />
+        <AssignmentStatus label={statusLabel} flag={flag} scheduleWarning={scheduleWarning} />
         <Field label="Arrival window">
           <select
             className={fieldClass}
@@ -742,11 +743,24 @@ function assignmentNoticeFrom(input: {
   };
 }
 
-function AssignmentStatus({ label, flag }: { label: string; flag: string | null }) {
+function AssignmentStatus({
+  label,
+  flag,
+  scheduleWarning,
+}: {
+  label: string;
+  flag: string | null;
+  scheduleWarning?: string | null;
+}) {
   return (
     <div>
       <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Status</p>
       <p className="mt-1 text-lg font-semibold">{label}</p>
+      {scheduleWarning ? (
+        <div className="mt-3">
+          <Notice>{scheduleWarning}</Notice>
+        </div>
+      ) : null}
       {flag ? <div className="mt-3"><Notice>{flag}</Notice></div> : null}
     </div>
   );

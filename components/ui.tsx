@@ -7,7 +7,7 @@ export function Screen({ children }: { children: React.ReactNode }) {
 type Crumb = { label: string; href?: string; onClick?: () => void };
 
 export function PageHeader({
-  eyebrow = "Golden Hour Cleaning Crew",
+  eyebrow = "Golden Hour Hub",
   crumb,
   crumbs,
   title,
@@ -102,11 +102,10 @@ export function Card({
   muted?: boolean;
   onClick?: () => void;
 }) {
-  const classes = `rounded-3xl p-4 ${
-    muted
+  const classes = `rounded-3xl p-4 ${muted
       ? "bg-[#e6e4de] text-ink/45 shadow-none [&_p]:text-ink/45"
       : "bg-white text-ink shadow-[0_8px_30px_rgba(51,51,51,0.06)]"
-  } ${className}`;
+    } ${className}`;
   if (onClick) {
     return (
       <button type="button" onClick={onClick} className={`${classes} w-full text-left`}>
@@ -139,9 +138,8 @@ export function Notice({ children, tone = "error" }: { children: React.ReactNode
   const error = tone !== "ok";
   return (
     <p
-      className={`rounded-2xl px-4 py-3 text-base leading-6 ${
-        error ? "bg-red-50 font-semibold text-red-700 ring-1 ring-red-600" : "bg-mint font-medium text-ink"
-      }`}
+      className={`rounded-2xl px-4 py-3 text-base leading-6 ${error ? "bg-red-50 font-semibold text-red-700 ring-1 ring-red-600" : "bg-mint font-medium text-ink"
+        }`}
       role={error ? "alert" : "status"}
     >
       {children}

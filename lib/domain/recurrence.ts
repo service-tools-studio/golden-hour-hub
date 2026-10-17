@@ -4,6 +4,7 @@ import { snapshotVisit } from "./customers.ts";
 import {
   availabilityCoversBlockedRange,
   calculateBlockedRange,
+  confirmedScheduleConflictReason,
   detectConfirmedAssignmentConflict,
   type ScheduleWindow,
 } from "./scheduling.ts";
@@ -305,8 +306,7 @@ export function planOccurrenceStaffing(input: {
         })),
     });
     if (conflict) {
-      const reason = `This recurring cleaning could not be assigned to ${cleaner.firstName} because it conflicts with another confirmed job.`;
-      attention.push({ cleanerId: cleaner.cleanerId, reason });
+      const reason = confirmedScheduleConflictReason(cleaner.firstName);
       assignments.push(flaggedAssignment(input, entry, reason));
       continue;
     }

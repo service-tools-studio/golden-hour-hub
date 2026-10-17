@@ -33,7 +33,7 @@ Open [http://localhost:3000](http://localhost:3000). Choose Admin, Claudia (usua
 npm test
 ```
 
-SMS reminders log on the server. No SMS account is required. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
+With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER=twilio` and the Twilio variables to send for real (invite/direct assign and availability reminders). After upgrade, US SMS usually requires an **approved primary compliance profile** in [Twilio Trust Hub](https://console.twilio.com/us1/account/trust-hub) and often **A2P 10DLC** brand/campaign registration before messages deliver. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
 
 ## AWS setup
 
@@ -64,7 +64,10 @@ See [.env.example](.env.example).
 | `COGNITO_USER_POOL_ID` | User pool |
 | `COGNITO_CLIENT_ID` | App client |
 | `COGNITO_REGION` | Usually `us-west-2` |
-| `SMS_PROVIDER` | `mock` locally |
+| `SMS_PROVIDER` | `mock` (log only) or `twilio` |
+| `TWILIO_ACCOUNT_SID` | Twilio account SID (server only) |
+| `TWILIO_AUTH_TOKEN` | Twilio auth token (server only) |
+| `TWILIO_FROM_NUMBER` | Twilio sender in E.164, e.g. `+15035551234` |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
 | `GOOGLE_MAPS_API_KEY` | Server-only key for address typeahead (**Places API (New)**; restrict by API, not HTTP referrer) |
 | `GOOGLE_CALENDAR_ENABLED` | Leave `false` until sync is built |

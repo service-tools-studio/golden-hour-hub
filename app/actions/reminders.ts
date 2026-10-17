@@ -2,7 +2,7 @@
 
 import { dynamoConfigured, loadHub } from "@/lib/data/repository";
 import { emptyHub } from "@/lib/mock/seed";
-import { sendSms } from "@/lib/services/sms";
+import { SmsDeliveryError, sendSms } from "@/lib/services/sms";
 import { formatWeekRange, nextAvailabilityWeek, todayInBusinessZone } from "@/lib/domain/time";
 
 export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<

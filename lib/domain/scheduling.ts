@@ -1,7 +1,9 @@
 import { maxCrewSize } from "./cleaners.ts";
+import { confirmedCompensationCents } from "./compensation.ts";
 import type {
   AssignmentStatus,
   AvailabilityWindow,
+  CleanerProfile,
   JobAssignment,
   Result,
 } from "./types.ts";
@@ -166,6 +168,14 @@ export function claimHeadcount(
 
 export function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date): boolean {
   return startA.getTime() < endB.getTime() && startB.getTime() < endA.getTime();
+}
+
+export function confirmedScheduleConflictReason(firstName: string): string {
+  return `This conflicts with another confirmed job for ${firstName}.`;
+}
+
+export function isConfirmedScheduleConflictReason(reason?: string): boolean {
+  return reason?.includes("conflicts with another confirmed job") ?? false;
 }
 
 export function detectConfirmedAssignmentConflict(input: {
@@ -373,6 +383,49 @@ export function toAssignmentSchedule(assignment: JobAssignment): AssignmentSched
     arrivalWindowEnd: assignment.arrivalWindowEnd,
     expectedDurationMinutes: assignment.expectedDurationMinutes,
   };
+}
+
+/** Flags or clears schedule-conflict warnings without blocking admin saves. */
+export function applyScheduleConflictWarning(
+  assignment: JobAssignment,
+  cleaner: Pick<CleanerProfile, "cleanerId" | "firstName">,
+  blocked: BlockedRange,
+  assignments: JobAssignment[],
+): JobAssignment {
+  const conflict = detectConfirmedAssignmentConflict({
+    cleanerId: cleaner.cleanerId,
+    blocked,
+    confirmedAssignments: assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
+    ignoreAssignmentId: assignment.assignmentId,
+  });
+  if (conflict) {
+    return {
+      ...assignment,
+      status: "NEEDS_ATTENTION",
+      attentionReason: confirmedScheduleConflictReason(cleaner.firstName),
+      confirmedCrewSize: undefined,
+      confirmedTotalPayCents: undefined,
+      pendingCrewSize: undefined,
+    };
+  }
+  if (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)) {
+    const crewSize = assignment.proposedCrewSize;
+    const confirmedTotalPayCents = confirmedCompensationCents({
+      payType: assignment.payType,
+      payPerPersonCents: assignment.payPerPersonCents,
+      confirmedCrewSize: crewSize,
+    });
+    return {
+      ...assignment,
+      status: "CONFIRMED",
+      attentionReason: undefined,
+      availabilityConflictWeekStart: undefined,
+      confirmedCrewSize: crewSize,
+      confirmedTotalPayCents,
+      respondedAt: assignment.respondedAt ?? assignment.updatedAt,
+    };
+  }
+  return assignment;
 }
 
 export function windowsForCleaner(

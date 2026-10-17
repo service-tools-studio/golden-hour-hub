@@ -324,7 +324,8 @@ describe("recurring edits and staffing", () => {
     });
     assert.equal(plan.assignments.length, 1);
     assert.equal(plan.assignments[0].status, "NEEDS_ATTENTION");
-    assert.match(plan.attention[0].reason, /conflicts with another confirmed job/);
+    assert.match(plan.assignments[0].attentionReason ?? "", /conflicts with another confirmed job/);
+    assert.equal(plan.attention.length, 0);
   });
 
   it("confirms a direct recurring assignment before that week is submitted", () => {

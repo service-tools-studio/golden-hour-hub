@@ -18,7 +18,9 @@ import {
   availabilityCoversBlockedRange,
   calculateBlockedRange,
   calculateConfirmedHeadcount,
+  applyScheduleConflictWarning,
   detectConfirmedAssignmentConflict,
+  isConfirmedScheduleConflictReason,
   toAssignmentSchedule,
   validateAvailabilityEdit,
 } from "@/lib/domain/scheduling";
@@ -893,11 +895,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       assignments: nextAssignments,
     });
     const message =
-      assignment.status === "CONFIRMED"
-        ? "Cleaning assigned."
-        : assignment.status === "INVITED"
-          ? "Invitation sent."
-          : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
+      assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)
+        ? `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`
+        : assignment.status === "CONFIRMED"
+          ? "Cleaning assigned."
+          : assignment.status === "INVITED"
+            ? "Invitation sent."
+            : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
     return { ok: true, jobId: job.jobId, message };
   }
 
@@ -950,25 +954,35 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         payPerPersonCents: input.payPerPersonCents,
         confirmedCrewSize: input.proposedCrewSize,
       });
-      const nextAssignments = data.assignments.map((item) =>
-        item.assignmentId === existing.assignmentId
-          ? {
-              ...item,
-              proposedCrewSize: input.proposedCrewSize,
-              pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
-              confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
-              arrivalWindowStart: input.arrivalWindowStart,
-              arrivalWindowEnd: input.arrivalWindowEnd,
-              expectedDurationMinutes: input.expectedDurationMinutes,
-              payType: input.payType,
-              payPerPersonCents: input.payPerPersonCents,
-              proposedTotalPayCents: pay,
-              confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
-              lastNotified: item.lastNotified ?? assignmentNotice(item),
-              updatedAt: now,
-            }
-          : item,
-      );
+      const blocked = calculateBlockedRange({
+        date: job.date,
+        arrivalWindowStart: input.arrivalWindowStart,
+        arrivalWindowEnd: input.arrivalWindowEnd,
+        expectedDurationMinutes: input.expectedDurationMinutes,
+      });
+      const nextAssignments = data.assignments.map((item) => {
+        if (item.assignmentId !== existing.assignmentId) return item;
+        let nextItem: JobAssignment = {
+          ...item,
+          proposedCrewSize: input.proposedCrewSize,
+          pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
+          confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
+          arrivalWindowStart: input.arrivalWindowStart,
+          arrivalWindowEnd: input.arrivalWindowEnd,
+          expectedDurationMinutes: input.expectedDurationMinutes,
+          payType: input.payType,
+          payPerPersonCents: input.payPerPersonCents,
+          proposedTotalPayCents: pay,
+          confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
+          lastNotified: item.lastNotified ?? assignmentNotice(item),
+          updatedAt: now,
+        };
+        if (item.status === "CONFIRMED" || item.status === "NEEDS_ATTENTION") {
+          const merged = data.assignments.map((row) => (row.assignmentId === existing.assignmentId ? nextItem : row));
+          nextItem = applyScheduleConflictWarning(nextItem, cleaner, blocked, merged);
+        }
+        return nextItem;
+      });
       const next = withEarliestArrival({ ...job, updatedAt: now, updatedBy: "kelsey" }, nextAssignments);
       setState({
         ...data,
@@ -1058,11 +1072,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       assignments,
     });
     const message =
-      savedAssignment.status === "CONFIRMED"
-        ? "Cleaning assigned."
-        : savedAssignment.status === "INVITED"
-          ? "Invitation sent."
-          : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
+      savedAssignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(savedAssignment.attentionReason)
+        ? `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`
+        : savedAssignment.status === "CONFIRMED"
+          ? "Cleaning assigned."
+          : savedAssignment.status === "INVITED"
+            ? "Invitation sent."
+            : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
     return { ok: true, jobId: job.jobId, message };
   }
 
@@ -1364,15 +1380,6 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       if (!availabilityCoversBlockedRange(windows, blocked)) {
         return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
       }
-      const conflict = detectConfirmedAssignmentConflict({
-        cleanerId: cleaner.cleanerId,
-        blocked,
-        confirmedAssignments: data.assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
-        ignoreAssignmentId: assignment.assignmentId,
-      });
-      if (conflict) {
-        return { ok: false, message: `This conflicts with another confirmed job for ${cleaner.firstName}.` };
-      }
     }
     const now = new Date().toISOString();
     const pay = confirmedCompensationCents({
@@ -1380,24 +1387,37 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       payPerPersonCents: input.payPerPersonCents,
       confirmedCrewSize: input.proposedCrewSize,
     });
-    const nextAssignments = data.assignments.map((item) =>
-      item.assignmentId === assignment.assignmentId
-        ? {
-            ...item,
-            proposedCrewSize: input.proposedCrewSize,
-            pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
-            confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
+    const blocked =
+      assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION"
+        ? calculateBlockedRange({
+            date: job.date,
             arrivalWindowStart: input.arrivalWindowStart,
             arrivalWindowEnd: input.arrivalWindowEnd,
             expectedDurationMinutes: input.expectedDurationMinutes,
-            payType: input.payType,
-            payPerPersonCents: input.payPerPersonCents,
-            proposedTotalPayCents: pay,
-            confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
-            updatedAt: now,
-          }
-        : item,
-    );
+          })
+        : null;
+    const nextAssignments = data.assignments.map((item) => {
+      if (item.assignmentId !== assignment.assignmentId) return item;
+      let nextItem: JobAssignment = {
+        ...item,
+        proposedCrewSize: input.proposedCrewSize,
+        pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
+        confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
+        arrivalWindowStart: input.arrivalWindowStart,
+        arrivalWindowEnd: input.arrivalWindowEnd,
+        expectedDurationMinutes: input.expectedDurationMinutes,
+        payType: input.payType,
+        payPerPersonCents: input.payPerPersonCents,
+        proposedTotalPayCents: pay,
+        confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
+        updatedAt: now,
+      };
+      if (blocked) {
+        const merged = data.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
+        nextItem = applyScheduleConflictWarning(nextItem, cleaner, blocked, merged);
+      }
+      return nextItem;
+    });
     const next = withEarliestArrival(
       {
         ...job,
@@ -1453,22 +1473,28 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       if (!availabilityCoversBlockedRange(windows, blocked)) {
         return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
       }
-      const conflict = detectConfirmedAssignmentConflict({
-        cleanerId: cleaner.cleanerId,
-        blocked,
-        confirmedAssignments: data.assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
-        ignoreAssignmentId: assignment.assignmentId,
-      });
-      if (conflict) return { ok: false, message: `This conflicts with another confirmed job for ${cleaner.firstName}.` };
     }
     const now = new Date().toISOString();
+    const blocked =
+      assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION"
+        ? calculateBlockedRange({
+            date: assignment.serviceDate,
+            arrivalWindowStart,
+            arrivalWindowEnd,
+            expectedDurationMinutes: assignment.expectedDurationMinutes,
+          })
+        : null;
     setState({
       ...data,
-      assignments: data.assignments.map((item) =>
-        item.assignmentId === assignment.assignmentId
-          ? { ...item, arrivalWindowStart, arrivalWindowEnd, updatedAt: now }
-          : item,
-      ),
+      assignments: data.assignments.map((item) => {
+        if (item.assignmentId !== assignment.assignmentId) return item;
+        let nextItem: JobAssignment = { ...item, arrivalWindowStart, arrivalWindowEnd, updatedAt: now };
+        if (blocked) {
+          const merged = data.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
+          nextItem = applyScheduleConflictWarning(nextItem, cleaner, blocked, merged);
+        }
+        return nextItem;
+      }),
     });
     return { ok: true };
   }

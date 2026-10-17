@@ -269,7 +269,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                       {dateReinviteNeeded(assignment, job.date) ? (
                         <p className="mt-1 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
                       ) : null}
-                      {assignment.attentionReason ? <p className="mt-1 text-sm">{assignment.attentionReason}</p> : null}
+                      {assignment.attentionReason ? (
+                        <p className="mt-1 text-sm font-semibold text-red-700">{assignment.attentionReason}</p>
+                      ) : null}
                       <ScheduleFacts
                         muted={declined}
                         date={assignment.serviceDate}
