@@ -78,7 +78,7 @@ export function CleanerHome() {
     );
   const happening = confirmed.filter((item) => inProgress(item.assignment, now));
   const upcoming = confirmed.filter((item) => item.job.date >= hub.today && !happening.includes(item));
-  const showSmsOptInBanner = invitations.length > 0 && !cleanerAllowsSchedulingSms(cleaner);
+  const showSmsOptInBanner = !cleanerAllowsSchedulingSms(cleaner);
 
   return (
     <Screen>
@@ -104,7 +104,6 @@ export function CleanerHome() {
               if (!job) return null;
               return <InvitationCard key={assignment.assignmentId} assignment={assignment} job={job} cleaner={cleaner} />;
             })}
-            {showSmsOptInBanner ? <SmsOptInActionBanner /> : null}
           </section>
         ) : null}
 
@@ -184,6 +183,8 @@ export function CleanerHome() {
             })}
           </section>
         ) : null}
+
+        {showSmsOptInBanner ? <SmsOptInActionBanner /> : null}
 
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Upcoming jobs</h2>

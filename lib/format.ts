@@ -80,12 +80,11 @@ export function customerFirstNameForCleaner(
   return first || snapshot.customerDisplayName;
 }
 
-const PRODUCTION_CLEANER_HUB_URL = "https://hub.goldenhourcleaningco.com";
-
 export function cleanerHubAppUrl(path = "/cleaner"): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-  const root = base && base.length > 0 ? base : PRODUCTION_CLEANER_HUB_URL;
-  return `${root}${path.startsWith("/") ? path : `/${path}`}`;
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (!base) return normalizedPath;
+  return `${base}${normalizedPath}`;
 }
 
 /** Admin iMessage prefill — drop automated “Golden Hour Hub here.” opener. */
