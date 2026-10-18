@@ -1,30 +1,44 @@
 "use client";
 
-import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availability";
+import { availabilityAgainstSpan, cleaningTimeSpan, staffingAvailabilityWindows } from "@/lib/domain/availability";
 import { availabilityCoversBlockedRange, calculateBlockedRange } from "@/lib/domain/scheduling";
+import type { JobAssignment } from "@/lib/domain/types";
 import { formatLongDate, formatTimeLabel, hourWindowLabel } from "@/lib/format";
 
 export function CleanerAvailabilityPreview({
+  cleanerId,
   cleanerName,
   date,
   availabilityWindows,
+  assignments,
+  ignoreAssignmentId,
   arrivalStart,
   arrivalEnd,
   durationMinutes,
 }: {
+  cleanerId: string;
   cleanerName: string;
   date: string;
   availabilityWindows: { start: string; end: string }[];
+  assignments: JobAssignment[];
+  ignoreAssignmentId?: string;
   arrivalStart: string;
   arrivalEnd: string;
   durationMinutes: number;
 }) {
+  const effectiveWindows = staffingAvailabilityWindows(
+    availabilityWindows.map((window) => ({ cleanerId, date, ...window })),
+    assignments,
+    cleanerId,
+    date,
+    ignoreAssignmentId,
+  );
   const span = arrivalStart && arrivalEnd ? cleaningTimeSpan(arrivalStart, arrivalEnd, durationMinutes) : null;
-  const pills = availabilityAgainstSpan(availabilityWindows, span);
+  const pills = availabilityAgainstSpan(effectiveWindows, span);
   const fitsSubmitted = Boolean(
     span &&
       availabilityCoversBlockedRange(
-        availabilityWindows.map((window) => ({ date, start: window.start, end: window.end })),
+        effectiveWindows.map((window) => ({ date, start: window.start, end: window.end })),
         calculateBlockedRange({
           date,
           arrivalWindowStart: arrivalStart,
@@ -41,6 +55,8 @@ export function CleanerAvailabilityPreview({
       </p>
       {availabilityWindows.length === 0 ? (
         <p className="mt-2 text-sm text-ink/60">No submitted availability on this day.</p>
+      ) : effectiveWindows.length === 0 ? (
+        <p className="mt-2 text-sm text-ink/60">No open hours left after other confirmed cleanings.</p>
       ) : (
         <>
           <div className="mt-2 flex flex-wrap gap-1">

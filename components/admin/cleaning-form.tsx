@@ -7,13 +7,18 @@ import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PrimaryButton, fieldClass } from "@/components/ui";
-import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availability";
+import {
+  availabilityAgainstSpan,
+  availabilityStaffingSortRank,
+  cleaningTimeSpan,
+  staffingAvailabilityWindows,
+} from "@/lib/domain/availability";
 import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "@/lib/domain/scheduling";
 import { CustomerCombobox } from "@/components/admin/customer-combobox";
 import { searchCustomers } from "@/lib/domain/customers";
 import { recurrenceSummary } from "@/lib/domain/recurrence";
 import { addDays, dayOfWeek, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
-import type { Property, ServiceType } from "@/lib/domain/types";
+import type { JobAssignment, Property, ServiceType } from "@/lib/domain/types";
 import {
   ESTIMATED_ON_SITE_FIELD_HINT,
   ESTIMATED_ON_SITE_FIELD_LABEL,
@@ -498,6 +503,8 @@ export function CleaningForm({
             {afterArrival ? afterArrival(arrivalStart, arrivalEnd) : null}
             <Cleaners
               cleaners={roster}
+              date={date}
+              assignments={hub.assignments}
               windows={hub.availability.filter((window) => window.date === date)}
               span={cleaningTimeSpan(arrivalStart, arrivalEnd, duration)}
               selected={draftCleanerIds}
@@ -620,6 +627,8 @@ export function CleaningForm({
 
 function Cleaners({
   cleaners,
+  date,
+  assignments,
   windows,
   span,
   selected,
@@ -632,7 +641,9 @@ function Cleaners({
   onArrival,
 }: {
   cleaners: { cleanerId: string; firstName: string }[];
-  windows: { cleanerId: string; start: string; end: string }[];
+  date: string;
+  assignments: JobAssignment[];
+  windows: { cleanerId: string; date: string; start: string; end: string }[];
   span: { start: string; end: string } | null;
   selected: string[];
   arrivals: CleanerArrival[];
@@ -645,7 +656,7 @@ function Cleaners({
 }) {
   const rows = cleaners.flatMap((person) => {
     const pills = availabilityAgainstSpan(
-      windows.filter((window) => window.cleanerId === person.cleanerId).map((window) => ({ start: window.start, end: window.end })),
+      staffingAvailabilityWindows(windows, assignments, person.cleanerId, date),
       span,
     );
     if (pills.length === 0) return [];
@@ -663,7 +674,13 @@ function Cleaners({
   });
   if (rows.length === 0) return null;
   const selectedRows = rows.filter((row) => row.chosen);
-  const availableRows = rows.filter((row) => !row.chosen);
+  const availableRows = rows
+    .filter((row) => !row.chosen)
+    .sort((a, b) => {
+      const byFit = availabilityStaffingSortRank(a.pills) - availabilityStaffingSortRank(b.pills);
+      if (byFit !== 0) return byFit;
+      return a.person.firstName.localeCompare(b.person.firstName);
+    });
 
   return (
     <div className="space-y-4">

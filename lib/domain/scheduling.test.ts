@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { availabilityAgainstSpan, cleaningTimeSpan, copyWeekWindows, listSubmissionStatus, mergeAdjacentWindows } from "./availability.ts";
+import {
+  availabilityAgainstSpan,
+  availabilityStaffingSortRank,
+  cleaningTimeSpan,
+  copyWeekWindows,
+  listSubmissionStatus,
+  mergeAdjacentWindows,
+} from "./availability.ts";
 import {
   calculateConfirmedFlatPay,
   calculateConfirmedHourlyCrewRate,
@@ -670,5 +677,11 @@ describe("availability against a cleaning span", () => {
 
   it("returns nothing when the cleaner has no windows that day", () => {
     assert.deepEqual(availabilityAgainstSpan([], { start: "08:00", end: "09:00" }), []);
+  });
+
+  it("ranks mint staffing ahead of grey then none", () => {
+    assert.equal(availabilityStaffingSortRank([{ start: "08:00", end: "12:00", fits: true }]), 0);
+    assert.equal(availabilityStaffingSortRank([{ start: "17:00", end: "21:00", fits: false }]), 1);
+    assert.equal(availabilityStaffingSortRank([]), 2);
   });
 });

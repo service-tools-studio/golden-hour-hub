@@ -1,4 +1,5 @@
-import type { AvailabilitySubmission, AvailabilityWindow, CleanerProfile } from "./types.ts";
+import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "./scheduling.ts";
+import type { AvailabilitySubmission, AvailabilityWindow, CleanerProfile, JobAssignment } from "./types.ts";
 import { addDays, daysBetween, isValidLocalTime, minutesFromTime, timeFromMinutes } from "./time.ts";
 
 /** Business-day edges saved when a cleaner marks a day "All day". */
@@ -70,6 +71,39 @@ export function cleaningTimeSpan(
 }
 
 export type AvailabilityFit = { start: string; end: string; fits: boolean };
+
+/** Sort key for staffing lists: mint (fits span) first, grey pills next, none last. */
+export function availabilityStaffingSortRank(pills: AvailabilityFit[]): number {
+  if (pills.length === 0) return 2;
+  if (pills.some((pill) => pill.fits)) return 0;
+  return 1;
+}
+
+/** Submitted availability minus confirmed cleanings that day (for admin staffing pickers). */
+export function staffingAvailabilityWindows(
+  availability: Array<{ cleanerId: string; date: string; start: string; end: string }>,
+  assignments: JobAssignment[],
+  cleanerId: string,
+  date: string,
+  ignoreAssignmentId?: string,
+): { start: string; end: string }[] {
+  const dayWindows = availability
+    .filter((window) => window.cleanerId === cleanerId && window.date === date)
+    .map((window) => ({ date: window.date, start: window.start, end: window.end }));
+  const confirmed = assignments
+    .filter(
+      (assignment) =>
+        assignment.cleanerId === cleanerId &&
+        assignment.status === "CONFIRMED" &&
+        assignment.serviceDate === date &&
+        assignment.assignmentId !== ignoreAssignmentId,
+    )
+    .map(toAssignmentSchedule);
+  return subtractConfirmedBookingsFromAvailability(dayWindows, confirmed).map((window) => ({
+    start: window.start,
+    end: window.end,
+  }));
+}
 
 /** Split a cleaner's windows into the part inside a cleaning span and the parts outside it. */
 export function availabilityAgainstSpan(

@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { Notice, PageHeader, Screen } from "@/components/ui";
-import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availability";
+import {
+  availabilityAgainstSpan,
+  availabilityStaffingSortRank,
+  cleaningTimeSpan,
+  staffingAvailabilityWindows,
+} from "@/lib/domain/availability";
 import { personName } from "@/lib/domain/cleaners";
 import { hourWindowLabel } from "@/lib/format";
 
@@ -43,6 +48,21 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
     job.arrivalWindowStart && job.arrivalWindowEnd
       ? cleaningTimeSpan(job.arrivalWindowStart, job.arrivalWindowEnd, duration)
       : null;
+  const sortedChoices = [...choices]
+    .map((cleaner) => ({
+      cleaner,
+      pills: availabilityAgainstSpan(
+        staffingAvailabilityWindows(hub.availability, hub.assignments, cleaner.cleanerId, job.date),
+        span,
+      ),
+    }))
+    .sort((a, b) => {
+      const byFit = availabilityStaffingSortRank(a.pills) - availabilityStaffingSortRank(b.pills);
+      if (byFit !== 0) return byFit;
+      return personName(a.cleaner.firstName, a.cleaner.lastName).localeCompare(
+        personName(b.cleaner.firstName, b.cleaner.lastName),
+      );
+    });
 
   function add(cleanerId: string) {
     if (navigating) return;
@@ -65,14 +85,7 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
       />
       <div className="space-y-2 px-5 pt-4">
         {choices.length === 0 ? <p className="text-sm text-ink/70">Every active cleaner is already on this cleaning.</p> : null}
-        {choices.map((cleaner) => {
-          const pills = availabilityAgainstSpan(
-            hub.availability
-              .filter((window) => window.cleanerId === cleaner.cleanerId && window.date === job.date)
-              .map((window) => ({ start: window.start, end: window.end })),
-            span,
-          );
-          return (
+        {sortedChoices.map(({ cleaner, pills }) => (
             <button
               key={cleaner.cleanerId}
               type="button"
@@ -96,8 +109,7 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
                 <span className="mt-1 block text-sm text-ink/55">No availability this day</span>
               )}
             </button>
-          );
-        })}
+        ))}
       </div>
     </Screen>
   );

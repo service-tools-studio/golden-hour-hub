@@ -455,9 +455,12 @@ export function EditJobView({
         <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
         {cleaner && job ? (
           <CleanerAvailabilityPreview
+            cleanerId={cleaner.cleanerId}
             cleanerName={cleaner.firstName}
             date={job.date}
             availabilityWindows={dayAvailability}
+            assignments={hub.assignments}
+            ignoreAssignmentId={assignment.status === "CONFIRMED" ? assignment.assignmentId : undefined}
             arrivalStart={arrivalStart}
             arrivalEnd={arrivalEnd}
             durationMinutes={duration}
@@ -855,9 +858,11 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
         </Field>
         <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
         <CleanerAvailabilityPreview
+          cleanerId={cleanerId}
           cleanerName={cleaner.firstName}
           date={job.date}
           availabilityWindows={dayAvailability}
+          assignments={hub.assignments}
           arrivalStart={arrivalStart}
           arrivalEnd={arrivalEnd}
           durationMinutes={duration}
