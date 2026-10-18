@@ -1,8 +1,28 @@
+import { dynamoConfigured, loadHub } from "../data/repository.ts";
+
 export type SmsMessage = {
   /** US mobile: 10 digits (preferred) or E.164 (+1…). */
   to: string;
   body: string;
 };
+
+/** Server SMS is for cleaners only. Customers are contacted via manual `sms:` links in the admin UI. */
+function phoneDigits10(to: string): string | null {
+  const digits = to.replace(/\D/g, "");
+  const national = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  return national.length === 10 ? national : null;
+}
+
+async function rejectIfCustomerPhone(to: string): Promise<void> {
+  const digits = phoneDigits10(to);
+  if (!digits || !dynamoConfigured()) return;
+  const hub = await loadHub();
+  if (hub.customers.some((customer) => customer.phone.replace(/\D/g, "").slice(-10) === digits)) {
+    throw new SmsDeliveryError(
+      "Texts to customers are not sent from the app. Open Messages and text the client yourself.",
+    );
+  }
+}
 
 /** Shown in the app when Twilio (or config) rejects a send. */
 export class SmsDeliveryError extends Error {
@@ -146,9 +166,11 @@ export type SmsSendResult = {
 };
 
 /**
- * Server-only SMS. Use SMS_PROVIDER=mock to log without sending.
+ * Server-only SMS to cleaners (scheduling). Use SMS_PROVIDER=mock to log without sending.
+ * Never use for customers — use manual `sms:` links instead (`arrivalChangeSms` in lib/format.ts).
  */
 export async function sendSms(message: SmsMessage): Promise<SmsSendResult> {
+  await rejectIfCustomerPhone(message.to);
   const provider = (process.env.SMS_PROVIDER ?? "mock").trim().toLowerCase();
   if (provider === "mock") {
     console.info(`[sms:mock] to=${message.to} ${message.body}`);

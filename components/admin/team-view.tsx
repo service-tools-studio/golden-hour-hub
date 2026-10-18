@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendAvailabilityReminders } from "@/app/actions/reminders";
 import { useHub } from "@/components/hub-provider";
@@ -12,16 +12,23 @@ import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/clea
 import { formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { cleanerCrewSummary, formatPhone } from "@/lib/format";
-import type { CleanerStatus } from "@/lib/domain/types";
+import type { CleanerProfile, CleanerStatus } from "@/lib/domain/types";
 
 export function TeamView() {
   const hub = useHub();
+  const [query, setQuery] = useState("");
+  const cleaners = useMemo(() => searchCleaners(hub.cleaners, query), [hub.cleaners, query]);
+  const filtering = query.trim() !== "";
   return (
     <Screen>
       <PageHeader title="Team" />
       <div className="space-y-3 px-5 pt-4">
         <WeekSubmissions />
-        {hub.cleaners.map((cleaner) => (
+        <CleanerSearchField query={query} onQuery={setQuery} />
+        {filtering && cleaners.length === 0 ? (
+          <p className="px-1 text-sm text-ink/55">No cleaners match.</p>
+        ) : null}
+        {cleaners.map((cleaner) => (
           <Link key={cleaner.cleanerId} href={`/admin/team/${cleaner.cleanerId}`} className="block">
             <Card>
               <div className="flex items-start justify-between gap-3">
@@ -41,6 +48,61 @@ export function TeamView() {
         ))}
       </div>
     </Screen>
+  );
+}
+
+function searchCleaners(cleaners: CleanerProfile[], query: string): CleanerProfile[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return cleaners;
+  const digits = needle.replace(/\D/g, "");
+  return cleaners.filter((cleaner) => {
+    const name = `${cleaner.firstName} ${cleaner.lastName}`.toLowerCase();
+    if (name.includes(needle) || cleaner.firstName.toLowerCase().includes(needle)) return true;
+    if (cleaner.email.toLowerCase().includes(needle)) return true;
+    if (digits.length > 0 && cleaner.mobilePhone.replace(/\D/g, "").includes(digits)) return true;
+    return false;
+  });
+}
+
+function CleanerSearchField({ query, onQuery }: { query: string; onQuery: (value: string) => void }) {
+  return (
+    <label className="flex min-h-11 items-center gap-2 rounded-full bg-white px-3 text-ink ring-1 ring-ink/10">
+      <TeamSearchIcon />
+      <input
+        value={query}
+        onChange={(event) => onQuery(event.target.value)}
+        placeholder="Search cleaners"
+        aria-label="Search cleaners"
+        className="min-w-0 flex-1 bg-transparent py-2 text-base outline-none placeholder:text-ink/40"
+      />
+      {query ? (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => onQuery("")}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-ink/55 hover:bg-cream hover:text-ink"
+        >
+          <TeamClearSearchIcon />
+        </button>
+      ) : null}
+    </label>
+  );
+}
+
+function TeamSearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0 text-ink/45">
+      <circle cx="11" cy="11" r="6.25" stroke="currentColor" strokeWidth="2" />
+      <path d="M16 16.5L20 20.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TeamClearSearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 7l10 10M17 7L7 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 

@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { HeaderAuthAction } from "@/components/header-auth-action";
+import { PageHeaderBrand } from "@/components/page-header-brand";
+
+const DEFAULT_PAGE_HEADER_EYEBROW = "Golden Hour Hub";
 
 export function Screen({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto min-h-dvh w-full max-w-md pb-28">{children}</div>;
@@ -8,7 +11,7 @@ export function Screen({ children }: { children: React.ReactNode }) {
 type Crumb = { label: string; href?: string; onClick?: () => void };
 
 export function PageHeader({
-  eyebrow = "Golden Hour Hub",
+  eyebrow = DEFAULT_PAGE_HEADER_EYEBROW,
   crumb,
   crumbs,
   title,
@@ -71,7 +74,11 @@ export function PageHeader({
           ) : null}
         </nav>
       ) : (
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">{eyebrow}</p>
+        eyebrow === DEFAULT_PAGE_HEADER_EYEBROW ? (
+          <PageHeaderBrand />
+        ) : (
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">{eyebrow}</p>
+        )
       )}
       <HeaderAuthAction />
     </div>

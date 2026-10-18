@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { recordSmsOnboardingChoice } from "@/app/actions/sms-onboarding";
 import { useHub } from "@/components/hub-provider";
 
-export function SmsOnboardingForm({ submitLabel = "Continue to Hub" }: { submitLabel?: string }) {
+export function SmsOnboardingForm() {
   const hub = useHub();
   const router = useRouter();
   const [optIn, setOptIn] = useState(false);
@@ -70,7 +70,7 @@ export function SmsOnboardingForm({ submitLabel = "Continue to Hub" }: { submitL
         onClick={continueToHub}
         className="mt-6 flex min-h-14 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-60"
       >
-        {pending ? "Saving…" : submitLabel}
+        {pending ? "Saving…" : optIn ? "Turn on text alerts" : "Continue without text alerts"}
       </button>
     </div>
   );

@@ -131,6 +131,16 @@ export function normalizeAvailabilityWeekStart(today: string, candidate?: string
   return weeks[0].weekStart;
 }
 
+export function isAvailabilityWeekEditable(today: string, serviceDate: string): boolean {
+  const weekStart = mondayOf(serviceDate);
+  return editableAvailabilityWeeks(today).some((week) => week.weekStart === weekStart);
+}
+
+/** Monday when the week containing `serviceDate` first appears in the two-week availability editor. */
+export function availabilityWeekOpensForEditing(serviceDate: string): string {
+  return addDays(mondayOf(serviceDate), -7);
+}
+
 export function todayInBusinessZone(now = new Date()): string {
   const parts = zonedParts(now);
   return formatYmd(parts.year, parts.month, parts.day);

@@ -34,8 +34,10 @@ import {
 } from "./scheduling.ts";
 import {
   addDays,
+  availabilityWeekOpensForEditing,
   editableAvailabilityHorizonEnd,
   editableAvailabilityWeeks,
+  isAvailabilityWeekEditable,
   nextAvailabilityWeek,
   normalizeAvailabilityWeekStart,
   zonedParts,
@@ -377,6 +379,9 @@ describe("weekly submission", () => {
       { weekStart: "2026-10-19", weekEnd: "2026-10-25" },
     ]);
     assert.equal(editableAvailabilityHorizonEnd("2026-10-13"), "2026-10-25");
+    assert.equal(isAvailabilityWeekEditable("2026-10-13", "2026-10-20"), true);
+    assert.equal(isAvailabilityWeekEditable("2026-10-13", "2026-10-26"), false);
+    assert.equal(availabilityWeekOpensForEditing("2026-10-26"), "2026-10-19");
     assert.equal(normalizeAvailabilityWeekStart("2026-10-13", "2026-10-19"), "2026-10-19");
     assert.equal(normalizeAvailabilityWeekStart("2026-10-13", "2026-11-02"), "2026-10-12");
   });

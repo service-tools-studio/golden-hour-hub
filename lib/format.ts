@@ -223,6 +223,7 @@ export function arrivalMismatchText(scheduledTime: string, firstName: string, ar
   return `This cleaning is scheduled with the client for ${scheduledTime}, but the earliest cleaner ${firstName} arrives at ${arrivalTime}. You may want to update the client on the arrival time.`;
 }
 
+/** Prefill for a manual admin `sms:` link only — never sent via Twilio from the server. */
 export function arrivalChangeSms(input: { customerFirstName: string; date: string; scheduledTime: string; arrivalTime: string }): string {
   return `Hi ${input.customerFirstName}! This is Golden Hour Cleaning Co. Your cleaning on ${formatLongDate(input.date)} will start at ${input.arrivalTime} instead of ${input.scheduledTime}. Reply to this message if you need a different time.`;
 }

@@ -6,7 +6,14 @@ import { InvitationCard } from "@/components/cleaner/invitation-card";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import { calculateBlockedRange, isWithinRange } from "@/lib/domain/scheduling";
-import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
+import {
+  availabilityWeekBounds,
+  availabilityWeekOpensForEditing,
+  editableAvailabilityWeeks,
+  formatWeekRange,
+  isAvailabilityWeekEditable,
+  mondayOf,
+} from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { SmsOptInActionBanner } from "@/components/cleaner/sms-opt-in-action-banner";
 import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
@@ -16,6 +23,16 @@ const KELSEY_PHONE = (process.env.KELSEY_PHONE ?? "").replace(/\D/g, "");
 
 const AVAILABILITY_MISMATCH_MESSAGE =
   "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
+
+function waitingOnAvailabilityCopy(today: string, serviceDate: string): string {
+  const week = availabilityWeekBounds(mondayOf(serviceDate));
+  const range = formatWeekRange(week.weekStart, week.weekEnd);
+  if (isAvailabilityWeekEditable(today, serviceDate)) {
+    return `You're confirmed for this job. Submit the week of ${range} in Availability below. You're fully confirmed once your availability hours include this cleaning.`;
+  }
+  const opens = availabilityWeekOpensForEditing(serviceDate);
+  return `You're confirmed for this job. Submitting availability for the week of ${range} isn't open in the app yet — you can submit it starting ${formatLongDate(opens)}. You're fully confirmed once your availability hours include this cleaning.`;
+}
 
 function inProgress(assignment: JobAssignment, now: number): boolean {
   return isWithinRange(
@@ -111,11 +128,13 @@ export function CleanerHome() {
                 <Card key={assignment.assignmentId}>
                   <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
                   <p className="text-sm text-ink/70">
-                    {formatLongDate(job.date)} · {assignment.pendingCrewSize ?? assignment.proposedCrewSize}{" "}
-                    {(assignment.pendingCrewSize ?? assignment.proposedCrewSize) === 1 ? "person" : "people"}
+                    {formatLongDate(job.date)}
+                    {(assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 1) > 1
+                      ? ` · ${assignment.pendingCrewSize ?? assignment.proposedCrewSize} people`
+                      : null}
                   </p>
-                  <p className="mt-2 text-sm">
-                    You said you will take this cleaning. It is confirmed after your availability for that week fits the schedule.
+                  <p className="mt-2 text-sm leading-5">
+                    {waitingOnAvailabilityCopy(hub.today, job.date)}
                   </p>
                 </Card>
               );

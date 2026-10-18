@@ -30,7 +30,7 @@ export default async function SmsOnboardingPage() {
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-12">
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-ink/50">Golden Hour Cleaning Co.</p>
       <p className="mt-2 text-sm text-ink/60">Step 2 of 2 — SMS notifications</p>
-      <SmsOnboardingForm submitLabel="Set up text alerts" />
+      <SmsOnboardingForm />
       <footer className="mt-auto pt-10 text-center text-sm text-ink/55">
         <Link href="/privacy" className="font-medium text-ink/70 underline decoration-gold decoration-2 underline-offset-4">
           Privacy policy
