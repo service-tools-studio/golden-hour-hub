@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useHub } from "@/components/hub-provider";
-import { Card, PageHeader, Screen } from "@/components/ui";
+import { Card, PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import {
   calculateBlockedRange,
@@ -59,7 +59,19 @@ export function DashboardView() {
 
   return (
     <Screen>
-      <PageHeader title="Dashboard" subtitle={formatLongDate(hub.today)} />
+      <PageHeader
+        title="Dashboard"
+        subtitle={formatLongDate(hub.today)}
+        action={
+          <Link
+            href={`/admin/jobs/new?date=${hub.today}`}
+            aria-label="Book a new cleaning"
+            className="mt-1 flex size-11 shrink-0 items-center justify-center self-center rounded-full bg-ink text-cream"
+          >
+            <PlusIcon />
+          </Link>
+        }
+      />
       <div className="space-y-8 px-5 pt-5">
         {happening.length > 0 ? (
           <section className="space-y-3">

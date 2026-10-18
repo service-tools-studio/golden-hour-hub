@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 
-const className = "flex h-11 shrink-0 items-center text-sm font-medium text-ink/60";
+const className = "-mt-0.5 shrink-0 self-start text-sm font-medium text-ink/60";
 
 export function HeaderAuthAction() {
   const hub = useHub();

@@ -86,9 +86,9 @@ export function PageHeader({
   return (
     <>
       <header className={trail ? "sticky top-0 z-20 bg-cream px-5 pb-2 pt-2" : "px-5 pt-6"}>{bar}</header>
-      <div className="flex items-start justify-between gap-3 px-5">
+      <div className="flex items-start justify-between gap-3 px-5 pt-4">
         <div className="min-w-0">
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink">{title}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">{title}</h1>
           {subtitle ? <p className="mt-1 text-base text-ink/70">{subtitle}</p> : null}
         </div>
         {action}

@@ -14,6 +14,14 @@ import { formatMoney } from "@/lib/domain/compensation";
 import { seriesSummary } from "@/lib/mock/seed";
 import { formatLongDate, formatPhone, propertySizeLabel, serviceLabel } from "@/lib/format";
 
+function ClearSearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 7l10 10M17 7L7 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Pencil() {
   return (
     <svg
@@ -34,6 +42,7 @@ function Pencil() {
 
 export function CustomersView() {
   const hub = useHub();
+  const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const results = useMemo(
     () => searchCustomers(hub.customers, hub.properties, query),
@@ -41,18 +50,44 @@ export function CustomersView() {
   );
   return (
     <Screen>
-      <PageHeader title="Customers" subtitle="Find a household" />
+      <PageHeader
+        title="Customers"
+        subtitle="Find a household"
+        action={
+          <Link
+            href="/admin/customers/new"
+            className="mt-1 flex min-h-11 shrink-0 items-center justify-center self-center rounded-2xl bg-gold px-3 text-sm font-semibold text-ink"
+          >
+            + Add New Customer
+          </Link>
+        }
+      />
       <div className="space-y-3 px-5 pt-4">
-        <input
-          className={fieldClass}
-          placeholder="Search customers..."
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="Search customers"
-        />
-        <Link href="/admin/customers/new" className="flex min-h-12 items-center justify-center rounded-2xl bg-gold text-base font-semibold text-ink">
-          + Add New Customer
-        </Link>
+        <div className="sticky top-0 z-10 -mx-5 bg-cream px-5 pb-3 pt-1">
+          <div className="relative">
+            <input
+              ref={searchRef}
+              className={`${fieldClass} pr-11`}
+              placeholder="Search customers..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              aria-label="Search customers"
+            />
+            {query ? (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setQuery("");
+                  searchRef.current?.focus();
+                }}
+                className="absolute right-1 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-xl text-ink/55"
+              >
+                <ClearSearchIcon />
+              </button>
+            ) : null}
+          </div>
+        </div>
         {results.map((customer) => {
           const homes = hub.properties.filter((property) => property.customerId === customer.customerId);
           return (
@@ -226,18 +261,12 @@ export function CustomerDetail({
   const history = jobs.filter((job) => job.date < hub.today || job.status === "CANCELED");
   const name = `${customer.firstName} ${customer.lastName}`;
   const homes = hub.properties.filter((property) => property.customerId === customer.customerId);
-  const place =
-    homes.length === 1
-      ? `${homes[0].streetAddress}, ${homes[0].city}`
-      : homes.length > 1
-        ? `${homes.length} properties`
-        : "No properties";
 
   return (
     <Screen>
       <PageHeader
         title={editingRecord ? "Edit" : name}
-        subtitle={editing ? name : editingSeries ? "Recurring service" : place}
+        subtitle={editing ? name : editingSeries ? "Recurring service" : undefined}
         crumbs={
           editingRecord
             ? [
@@ -251,7 +280,7 @@ export function CustomerDetail({
             <Link
               href={`/admin/jobs/new?customerId=${customer.customerId}`}
               aria-label={`Book a new cleaning for ${name}`}
-              className="mt-1 flex size-11 shrink-0 items-center justify-center self-center rounded-full bg-ink text-cream"
+              className="-mt-2.5 flex size-11 shrink-0 items-center justify-center self-start rounded-full bg-ink text-cream"
             >
               <PlusIcon />
             </Link>
@@ -289,16 +318,21 @@ export function CustomerDetail({
             }}
           >
             <Pencil />
-            {customer.phone ? (
-              <p className="pr-6">{formatPhone(customer.phone)}</p>
-            ) : (
-              <p className="flex items-center gap-2 pr-6 text-ink/60">
-                <AlertIcon className="size-5" label="Missing" />
-                No phone number
-              </p>
-            )}
-            {customer.email ? <p className="pr-6 text-sm text-ink/70">{customer.email}</p> : null}
-            {customer.notes ? <p className="mt-3 text-sm">Notes: {customer.notes}</p> : null}
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">Profile</p>
+            <p className="mt-1 pr-8 text-2xl font-semibold tracking-tight text-ink">{name}</p>
+            <p className="mt-1 text-sm text-ink/55">Tap to edit</p>
+            <div className="mt-4 space-y-1 border-t border-ink/8 pt-4">
+              {customer.phone ? (
+                <p className="pr-6 text-base">{formatPhone(customer.phone)}</p>
+              ) : (
+                <p className="flex items-center gap-2 pr-6 text-ink/60">
+                  <AlertIcon className="size-5" label="Missing" />
+                  No phone number
+                </p>
+              )}
+              {customer.email ? <p className="pr-6 text-sm text-ink/70">{customer.email}</p> : null}
+              {customer.notes ? <p className="mt-2 text-sm text-ink/80">Notes: {customer.notes}</p> : null}
+            </div>
           </Card>
           <h2 className="pt-2 text-lg font-semibold">Properties</h2>
           {homes.length === 0 ? <p className="text-sm text-ink/60">No properties yet.</p> : null}

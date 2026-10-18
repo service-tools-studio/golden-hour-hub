@@ -65,6 +65,25 @@ export function normalizeSearchText(value: string): string {
     .trim();
 }
 
+/** Active customer with the same first and last name (case- and spacing-insensitive). */
+export function findCustomerByExactName(
+  customers: Customer[],
+  firstName: string,
+  lastName: string,
+  excludeCustomerId?: string,
+): Customer | undefined {
+  const first = normalizeSearchText(firstName);
+  const last = normalizeSearchText(lastName);
+  if (!first || !last) return undefined;
+  return customers.find(
+    (customer) =>
+      customer.status === "ACTIVE" &&
+      customer.customerId !== excludeCustomerId &&
+      normalizeSearchText(customer.firstName) === first &&
+      normalizeSearchText(customer.lastName) === last,
+  );
+}
+
 export function buildCustomerSearchKeys(input: {
   firstName: string;
   lastName: string;

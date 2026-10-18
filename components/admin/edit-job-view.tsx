@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrivalWindowPicker } from "@/components/admin/arrival-window-picker";
 import { CleanerAvailabilityPreview } from "@/components/admin/cleaner-availability-preview";
@@ -493,6 +493,55 @@ export function EditJobView({
   );
 }
 
+function DeleteCleaningButton({
+  deleteBlocked,
+  onDelete,
+}: {
+  deleteBlocked: boolean;
+  onDelete: () => void;
+}) {
+  const [hintOpen, setHintOpen] = useState(false);
+
+  useEffect(() => {
+    if (!hintOpen) return;
+    const timer = window.setTimeout(() => setHintOpen(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [hintOpen]);
+
+  useEffect(() => {
+    if (!deleteBlocked) setHintOpen(false);
+  }, [deleteBlocked]);
+
+  return (
+    <div className="relative">
+      {hintOpen && deleteBlocked ? (
+        <p
+          role="tooltip"
+          className="absolute bottom-full left-0 right-0 z-10 mb-2 rounded-2xl bg-ink px-4 py-3 text-center text-sm leading-5 text-cream shadow-[0_8px_30px_rgba(51,51,51,0.2)]"
+        >
+          {CLEANING_DELETE_BLOCKED_MESSAGE}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          if (deleteBlocked) {
+            setHintOpen(true);
+            return;
+          }
+          onDelete();
+        }}
+        aria-disabled={deleteBlocked}
+        className={`flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4 ${
+          deleteBlocked ? "cursor-not-allowed opacity-50 no-underline" : ""
+        }`}
+      >
+        Delete cleaning
+      </button>
+    </div>
+  );
+}
+
 function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; customerId?: string; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
@@ -611,19 +660,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
           );
           return flag ? <Notice>{flag}</Notice> : null;
         }}
-        trailing={
-          deleteBlocked ? (
-            <p className="text-center text-sm text-ink/70">{CLEANING_DELETE_BLOCKED_MESSAGE}</p>
-          ) : (
-            <button
-              type="button"
-              onClick={remove}
-              className="flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
-            >
-              Delete cleaning
-            </button>
-          )
-        }
+        trailing={<DeleteCleaningButton deleteBlocked={deleteBlocked} onDelete={remove} />}
       />
     </Screen>
   );

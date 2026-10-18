@@ -21,7 +21,12 @@ import { SIGNED_OUT_STORAGE_KEY } from "@/lib/auth/signed-out-guard";
 import { mergeAdjacentWindows } from "@/lib/domain/availability";
 import { confirmedCompensationCents } from "@/lib/domain/compensation";
 import { deriveCrewSettings, validateProposedCrewSize } from "@/lib/domain/cleaners";
-import { snapshotVisit, validateCustomerInput, type CustomerInput } from "@/lib/domain/customers";
+import {
+  findCustomerByExactName,
+  snapshotVisit,
+  validateCustomerInput,
+  type CustomerInput,
+} from "@/lib/domain/customers";
 import {
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
@@ -832,6 +837,18 @@ export function HubProvider({
   function saveCustomer(input: CustomerInput, customerId?: string): ActionResult {
     const decision = validateCustomerInput(input);
     if (!decision.ok) return decision;
+    const nameCollision = findCustomerByExactName(
+      data.customers,
+      decision.value.firstName,
+      decision.value.lastName,
+      customerId,
+    );
+    if (nameCollision) {
+      return {
+        ok: false,
+        message: `${nameCollision.firstName} ${nameCollision.lastName} is already a customer.`,
+      };
+    }
     const now = new Date().toISOString();
     const id = customerId ?? `cust-${Date.now()}`;
     const existing = data.properties.filter((item) => item.customerId === id);

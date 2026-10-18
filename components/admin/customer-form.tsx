@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Field, fieldClass } from "@/components/ui";
-import { validateCustomerInput } from "@/lib/domain/customers";
+import { findCustomerByExactName, validateCustomerInput } from "@/lib/domain/customers";
 import type { Customer, Property } from "@/lib/domain/types";
 import { formatPhoneInput } from "@/lib/format";
 
@@ -223,16 +223,15 @@ export function CustomerForm({
     if (index >= 0 && name) clearError(`properties.${index}.${name}`);
   }
 
-  const sameName = (left: string, right: string) => left.trim().toLowerCase() === right.trim().toLowerCase();
-  const duplicate =
-    form.firstName.trim() && form.lastName.trim()
-      ? hub.customers.find(
-          (item) =>
-            item.customerId !== customer?.customerId &&
-            sameName(item.firstName, form.firstName) &&
-            sameName(item.lastName, form.lastName),
-        )
-      : undefined;
+  const duplicate = findCustomerByExactName(
+    hub.customers,
+    form.firstName,
+    form.lastName,
+    customer?.customerId,
+  );
+  const duplicateMessage = duplicate
+    ? `${duplicate.firstName} ${duplicate.lastName} is already a customer.`
+    : undefined;
 
   function fieldMessage(field: string) {
     return error?.field === field ? error.message : undefined;
@@ -325,30 +324,40 @@ export function CustomerForm({
     >
       <div className="grid grid-cols-2 gap-3">
         <Field id="customer-firstName" label="First name" error={fieldMessage("firstName")}>
-          <input className={inputClass(Boolean(fieldMessage("firstName")))} value={form.firstName} onChange={(event) => set("firstName", event.target.value)} aria-invalid={Boolean(fieldMessage("firstName"))} />
+          <input
+            className={inputClass(Boolean(fieldMessage("firstName") || duplicate))}
+            value={form.firstName}
+            onChange={(event) => set("firstName", event.target.value)}
+            aria-invalid={Boolean(fieldMessage("firstName") || duplicate)}
+            aria-describedby={duplicate ? "customer-duplicate" : undefined}
+          />
         </Field>
         <Field id="customer-lastName" label="Last name" error={fieldMessage("lastName")}>
-          <input className={inputClass(Boolean(fieldMessage("lastName")))} value={form.lastName} onChange={(event) => set("lastName", event.target.value)} aria-invalid={Boolean(fieldMessage("lastName"))} />
+          <input
+            className={inputClass(Boolean(fieldMessage("lastName") || duplicate))}
+            value={form.lastName}
+            onChange={(event) => set("lastName", event.target.value)}
+            aria-invalid={Boolean(fieldMessage("lastName") || duplicate)}
+            aria-describedby={duplicate ? "customer-duplicate" : undefined}
+          />
         </Field>
       </div>
       {duplicate ? (
         <div id="customer-duplicate" role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-base leading-6 text-red-700 ring-1 ring-red-600">
-          <p className="font-semibold">
-            {duplicate.firstName} {duplicate.lastName} is already a customer.
-          </p>
-          <p className="mt-1">
-            To update their info, go to{" "}
-            <Link
-              href={`/admin/customers/${duplicate.customerId}`}
-              data-skip-unsaved
-              className="font-semibold underline decoration-red-600/40 decoration-2 underline-offset-4"
-            >
-              their profile
-            </Link>
-            .
-          </p>
+          <p className="font-semibold">{duplicateMessage}</p>
+          <Link
+            href={`/admin/customers/${duplicate.customerId}`}
+            data-skip-unsaved
+            className="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+          >
+            View and edit existing profile
+          </Link>
         </div>
       ) : null}
+      <fieldset
+        disabled={Boolean(duplicate)}
+        className="m-0 min-w-0 space-y-3 border-0 p-0 disabled:pointer-events-none disabled:opacity-50"
+      >
       <Field id="customer-phone" label="Phone" error={fieldMessage("phone")}>
         <input className={inputClass(Boolean(fieldMessage("phone")))} type="tel" inputMode="tel" value={form.phone} onChange={(event) => set("phone", formatPhoneInput(event.target.value, form.phone))} aria-invalid={Boolean(fieldMessage("phone"))} />
       </Field>
@@ -516,7 +525,10 @@ export function CustomerForm({
           {fieldMessage("form")}
         </p>
       ) : null}
-      <button type="submit" className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
+      <button
+        type="submit"
+        className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream disabled:cursor-not-allowed"
+      >
         Save customer
       </button>
       {onCancel ? (
@@ -549,6 +561,7 @@ export function CustomerForm({
           Delete customer
         </button>
       ) : null}
+      </fieldset>
     </form>
   );
 }
