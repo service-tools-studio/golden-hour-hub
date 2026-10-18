@@ -8,7 +8,13 @@ import { helpersApproved, maxCrewSize } from "@/lib/domain/cleaners";
 import { confirmedCompensationCents, formatMoney } from "@/lib/domain/compensation";
 import { calculateRemainingHeadcount } from "@/lib/domain/scheduling";
 import { mondayOf } from "@/lib/domain/time";
-import { formatArrival, formatDuration, formatLongDate, cleanerServiceLabel } from "@/lib/format";
+import {
+  cleanerServiceLabel,
+  customerFirstNameForCleaner,
+  formatArrival,
+  formatDuration,
+  formatLongDate,
+} from "@/lib/format";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
 export function InvitationCard({
@@ -54,7 +60,7 @@ export function InvitationCard({
     <Card>
       <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">New job available</p>
       <h3 className="mt-1 text-xl font-semibold">
-        {job.snapshot.customerDisplayName} {cleanerServiceLabel(job.serviceType)}
+        {customerFirstNameForCleaner(job.snapshot)} {cleanerServiceLabel(job.serviceType)}
       </h3>
       <p className="mt-1 text-base text-ink/70">{formatLongDate(job.date)}</p>
       <div className="mt-3 flex items-start gap-2 text-base">

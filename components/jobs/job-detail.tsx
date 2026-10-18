@@ -17,6 +17,9 @@ import { AlertIcon, Card, PageHeader, Screen } from "@/components/ui";
 import { snapshotVisit } from "@/lib/domain/customers";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
+import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
+import { kelseyContactLinks } from "@/lib/contact";
+import { isAvailabilityWeekEditable, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import {
   CLEANING_DELETE_BLOCKED_MESSAGE,
@@ -43,7 +46,11 @@ import {
   serviceEmoji,
   cleanerAssignmentChangeSms,
   cleanerRemovedFromJobSms,
+  customerFirstNameForCleaner,
+  manualCleanerSmsBody,
+  waitingOnAvailabilityCopy,
   cleanerServiceLabel,
+  cleanerTextKelseyAboutJobBody,
   serviceLabel,
   smsHref,
 } from "@/lib/format";
@@ -301,14 +308,16 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                           cleaner.mobilePhone
                             ? smsHref(
                               cleaner.mobilePhone,
-                              cleanerAssignmentChangeSms({
-                                cleanerFirstName: cleaner.firstName,
-                                customerName: visit.customerDisplayName,
-                                date: assignment.serviceDate,
-                                arrivalWindowStart: assignment.arrivalWindowStart,
-                                arrivalWindowEnd: assignment.arrivalWindowEnd,
-                                expectedDurationMinutes: assignment.expectedDurationMinutes,
-                              }),
+                              manualCleanerSmsBody(
+                                cleanerAssignmentChangeSms({
+                                  cleanerFirstName: cleaner.firstName,
+                                  customerFirstName: customerFirstNameForCleaner(visit),
+                                  date: assignment.serviceDate,
+                                  arrivalWindowStart: assignment.arrivalWindowStart,
+                                  arrivalWindowEnd: assignment.arrivalWindowEnd,
+                                  expectedDurationMinutes: assignment.expectedDurationMinutes,
+                                }),
+                              ),
                             )
                             : null
                         }
@@ -602,7 +611,7 @@ function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string 
     setBusy(true);
     const body = cleanerRemovedFromJobSms({
       cleanerFirstName: cleaner.firstName,
-      customerName: job.snapshot.customerDisplayName,
+      customerFirstName: customerFirstNameForCleaner(job.snapshot),
       date: job.date,
     });
     try {
@@ -653,23 +662,59 @@ function assignmentSubtitle(assignment: JobAssignment): string {
 
 export function CleanerJobDetail({ jobId }: { jobId: string }) {
   const hub = useHub();
+  const kelseyPhoneDigits = useKelseyPhoneDigits();
   const cleaner = hub.cleaners.find((item) => item.cleanerId === hub.cleanerId);
   const job = hub.jobs.find((item) => item.jobId === jobId);
   const assignment = hub.assignments.find(
-    (item) => item.jobId === jobId && item.cleanerId === hub.cleanerId && item.status === "CONFIRMED",
+    (item) =>
+      item.jobId === jobId &&
+      item.cleanerId === hub.cleanerId &&
+      (item.status === "CONFIRMED" || item.status === "PENDING_AVAILABILITY"),
   );
   if (!cleaner || !job || !assignment) {
-    return <Missing label="That confirmed cleaning could not be found." href="/cleaner" />;
+    return <Missing label="That cleaning could not be found." href="/cleaner" />;
   }
+  const pendingAvailability = assignment.status === "PENDING_AVAILABILITY";
   const snapshotSizeLine = propertySizeLabel(
     job.snapshot.bedrooms,
     job.snapshot.bathrooms,
     job.snapshot.squareFeet,
   );
+  const kelseyContact = kelseyContactLinks(
+    kelseyPhoneDigits,
+    cleanerTextKelseyAboutJobBody({
+      cleanerFirstName: cleaner.firstName,
+      customerFirstName: customerFirstNameForCleaner(job.snapshot),
+      date: job.date,
+      serviceLabel: cleanerServiceLabel(job.serviceType),
+      arrivalWindowStart: assignment.arrivalWindowStart,
+      arrivalWindowEnd: assignment.arrivalWindowEnd,
+      expectedDurationMinutes: assignment.expectedDurationMinutes,
+      addressLine: fullAddress(job.snapshot),
+      payLine: payLine(assignment, !pendingAvailability),
+    }),
+  );
   return (
     <Screen>
-      <PageHeader eyebrow="Confirmed job" title={job.snapshot.customerDisplayName} subtitle={formatLongDate(job.date)} />
+      <PageHeader
+        eyebrow={pendingAvailability ? "Your job" : "Confirmed job"}
+        title={customerFirstNameForCleaner(job.snapshot)}
+        subtitle={formatLongDate(job.date)}
+      />
       <div className="space-y-3 px-5 pt-4">
+        {pendingAvailability ? (
+          <Card>
+            <p className="text-sm leading-5">{waitingOnAvailabilityCopy(hub.today, job.date)}</p>
+            {isAvailabilityWeekEditable(hub.today, job.date) ? (
+              <Link
+                href={`/cleaner/availability?week=${mondayOf(job.date)}`}
+                className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+              >
+                Submit availability
+              </Link>
+            ) : null}
+          </Card>
+        ) : null}
         <Card>
           <ServiceLine serviceType={job.serviceType} forCleaner />
           <p className="mt-3 text-sm text-ink/60">Arrival window</p>
@@ -689,48 +734,53 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
             <p className="mt-3 whitespace-pre-line text-sm">Preferences: {job.snapshot.preferences}</p>
           ) : null}
           {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
-          <div className="mt-4">
-            <AddToCalendarButton job={job} assignment={assignment} />
-          </div>
+          {pendingAvailability ? null : (
+            <div className="mt-4">
+              <AddToCalendarButton job={job} assignment={assignment} />
+            </div>
+          )}
         </Card>
         <Card>
           {helpersApproved(cleaner.maxHelperCount) ? (
             <>
-              <p className="text-base">Confirmed crew size: {assignment.confirmedCrewSize}</p>
+              <p className="text-base">
+                {pendingAvailability ? "Crew size" : "Confirmed crew size"}:{" "}
+                {assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize}
+              </p>
               <p className="mt-1 text-sm text-ink/70">
                 {formatMoney(assignment.payPerPersonCents)} per person
               </p>
             </>
           ) : null}
-          <p className="mt-2 text-xl font-semibold">{payLine(assignment, true)}</p>
+          <p className="mt-2 text-xl font-semibold">{payLine(assignment, !pendingAvailability)}</p>
           <p className="mt-4 text-sm leading-5 text-ink/70">
-            {helpersApproved(cleaner.maxHelperCount)
-              ? "Need to change your schedule or crew? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."
-              : "Need to change your schedule? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."}
+            {pendingAvailability
+              ? "Questions about this job? Contact Kelsey."
+              : helpersApproved(cleaner.maxHelperCount)
+                ? "Need to change your schedule or crew? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."
+                : "Need to change your schedule? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."}
           </p>
+          {kelseyContact ? (
+            <div className="mt-4 flex gap-2">
+              <a
+                href={kelseyContact.telHref}
+                className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+              >
+                Call Kelsey
+              </a>
+              <a
+                href={kelseyContact.smsHref}
+                className="flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-ink/20 bg-white text-base font-semibold text-ink"
+              >
+                Text Kelsey
+              </a>
+            </div>
+          ) : null}
         </Card>
-        {KELSEY_PHONE ? (
-          <div className="flex gap-2">
-            <a
-              href={`tel:+1${KELSEY_PHONE}`}
-              className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
-            >
-              Call Kelsey
-            </a>
-            <a
-              href={`sms:+1${KELSEY_PHONE}`}
-              className="flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-ink/20 bg-white text-base font-semibold text-ink"
-            >
-              Text Kelsey
-            </a>
-          </div>
-        ) : null}
       </div>
     </Screen>
   );
 }
-
-const KELSEY_PHONE = (process.env.KELSEY_PHONE ?? "").replace(/\D/g, "");
 
 function ServiceLine({
   serviceType,

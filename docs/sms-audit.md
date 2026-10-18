@@ -1,0 +1,41 @@
+# Text message bodies
+
+Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}`, `{arrivalWindow}`, `{duration}`, `{scheduledTime}`, `{arrivalTime}`, `{weekRange}`, `{link}`.
+
+## To cleaners
+
+**Direct assignment**
+
+> Hi {cleanerFirstName}! Golden Hour Hub here. You're assigned to {customerName} at {streetAddress} on {date}, arriving {arrivalWindow}. Details are in the Golden Hour Hub app.
+
+**Invitation**
+
+> Hi {cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for {customerName} on {date}, arriving {arrivalWindow}. Open the Golden Hour Hub app to accept or decline as soon as you can.
+
+**Invitation follow-up**
+
+> Hi {cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for {customerName} on {date} in the Golden Hour Hub app as soon as possible. (link)
+
+**Removed from cleaning**
+
+> Hi {cleanerFirstName}! Golden Hour Hub here. You've been removed from the cleaning for {customerName} on {date}. Reach out to Kelsey if you have questions.
+
+**Assignment details changed**
+
+> Hi {cleanerFirstName}! Golden Hour Hub here. The arrival window for your cleaning for {customerName} on {date} is now {arrivalWindow} · this is an approximately {duration} cleaning.
+
+**Arrival time changed**
+
+> Hi {cleanerFirstName}! Golden Hour Hub here. Your arrival time for {customerName} on {date} is now {arrivalWindow}.
+
+**Availability reminder (next week)**
+
+> Hi {cleanerFirstName}! Golden Hour Hub reminder: please submit your availability for next week ({weekRange}) by Sunday: {link}
+
+## To customers (manual only — no server send)
+
+Admin taps **Text client**; opens Messages with a prefilled body. Twilio never texts customers.
+
+**Arrival time update**
+
+> Hi {customerFirstName}! This is Golden Hour Cleaning Co. Your cleaning on {date} will start around {arrivalTime} instead of {scheduledTime}. Please allow our cleaner(s) a one-hour window of arrival / grace period due to coming from other jobs. Reply to this message if you need a different time.

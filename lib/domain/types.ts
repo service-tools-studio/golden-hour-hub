@@ -129,6 +129,8 @@ export type JobStatus = "DRAFT" | "SCHEDULED" | "CANCELED";
 
 export type JobCustomerSnapshot = {
   customerDisplayName: string;
+  /** First name only — used in cleaner-facing UI and texts. */
+  customerFirstName?: string;
   phone: string;
   email?: string;
   propertyId: string;

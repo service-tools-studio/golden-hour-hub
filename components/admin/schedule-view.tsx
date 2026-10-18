@@ -23,7 +23,14 @@ import {
   zonedParts,
 } from "@/lib/domain/time";
 import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment, RecurringSeries } from "@/lib/domain/types";
-import { cleanerArrivalChangeSms, formatLongDate, serviceLabel, smsHref } from "@/lib/format";
+import {
+  cleanerArrivalChangeSms,
+  customerFirstNameForCleaner,
+  formatLongDate,
+  manualCleanerSmsBody,
+  serviceLabel,
+  smsHref,
+} from "@/lib/format";
 
 type View = "day" | "month";
 
@@ -628,13 +635,15 @@ function NotifyCleanerDialog({ assignmentId, onClose }: { assignmentId: string; 
   const job = assignment ? hub.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
   if (!assignment || !cleaner || !job) return null;
   const phone = cleaner.mobilePhone;
-  const body = cleanerArrivalChangeSms({
-    cleanerFirstName: cleaner.firstName,
-    customerName: job.snapshot.customerDisplayName,
-    date: assignment.serviceDate,
-    arrivalWindowStart: assignment.arrivalWindowStart,
-    arrivalWindowEnd: assignment.arrivalWindowEnd,
-  });
+  const body = manualCleanerSmsBody(
+    cleanerArrivalChangeSms({
+      cleanerFirstName: cleaner.firstName,
+      customerFirstName: customerFirstNameForCleaner(job.snapshot),
+      date: assignment.serviceDate,
+      arrivalWindowStart: assignment.arrivalWindowStart,
+      arrivalWindowEnd: assignment.arrivalWindowEnd,
+    }),
+  );
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28" onClick={onClose}>
       <div

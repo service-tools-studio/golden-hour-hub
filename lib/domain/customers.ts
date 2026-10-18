@@ -182,6 +182,7 @@ export function validateCustomerInput(
 export function snapshotVisit(customer: Customer, property: Property): JobCustomerSnapshot {
   return {
     customerDisplayName: `${customer.firstName} ${customer.lastName}`,
+    customerFirstName: customer.firstName,
     phone: customer.phone,
     email: customer.email,
     propertyId: property.propertyId,

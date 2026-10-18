@@ -6,33 +6,22 @@ import { InvitationCard } from "@/components/cleaner/invitation-card";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import { calculateBlockedRange, isWithinRange } from "@/lib/domain/scheduling";
-import {
-  availabilityWeekBounds,
-  availabilityWeekOpensForEditing,
-  editableAvailabilityWeeks,
-  formatWeekRange,
-  isAvailabilityWeekEditable,
-  mondayOf,
-} from "@/lib/domain/time";
+import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { SmsOptInActionBanner } from "@/components/cleaner/sms-opt-in-action-banner";
 import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
-import { formatArrival, formatLongDate, cleanerServiceLabel } from "@/lib/format";
-
-const KELSEY_PHONE = (process.env.KELSEY_PHONE ?? "").replace(/\D/g, "");
+import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
+import { kelseyContactLinks } from "@/lib/contact";
+import {
+  cleanerServiceLabel,
+  customerFirstNameForCleaner,
+  formatArrival,
+  formatLongDate,
+  waitingOnAvailabilityCopy,
+} from "@/lib/format";
 
 const AVAILABILITY_MISMATCH_MESSAGE =
   "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
-
-function waitingOnAvailabilityCopy(today: string, serviceDate: string): string {
-  const week = availabilityWeekBounds(mondayOf(serviceDate));
-  const range = formatWeekRange(week.weekStart, week.weekEnd);
-  if (isAvailabilityWeekEditable(today, serviceDate)) {
-    return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submit the week of ${range} in Availability below.`;
-  }
-  const opens = availabilityWeekOpensForEditing(serviceDate);
-  return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submitting availability for the week of ${range} isn't open in the app yet — you can submit it starting ${formatLongDate(opens)}.`;
-}
 
 function inProgress(assignment: JobAssignment, now: number): boolean {
   return isWithinRange(
@@ -50,7 +39,7 @@ function JobCard({ assignment, job }: { assignment: JobAssignment; job: Job }) {
   return (
     <Link href={`/cleaner/jobs/${job.jobId}`} className="block">
       <Card>
-        <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
+        <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
         <p className="text-sm text-ink/70">
           {cleanerServiceLabel(job.serviceType)} · {formatLongDate(job.date)}
         </p>
@@ -62,6 +51,7 @@ function JobCard({ assignment, job }: { assignment: JobAssignment; job: Job }) {
 
 export function CleanerHome() {
   const hub = useHub();
+  const kelseyContact = kelseyContactLinks(useKelseyPhoneDigits());
   const now = useNow();
   const cleaner = hub.cleaners.find((item) => item.cleanerId === hub.cleanerId);
   if (!cleaner) return null;
@@ -125,18 +115,20 @@ export function CleanerHome() {
               const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
               if (!job) return null;
               return (
-                <Card key={assignment.assignmentId}>
-                  <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
-                  <p className="text-sm text-ink/70">
-                    {formatLongDate(job.date)}
-                    {(assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 1) > 1
-                      ? ` · ${assignment.pendingCrewSize ?? assignment.proposedCrewSize} people`
-                      : null}
-                  </p>
-                  <p className="mt-2 text-sm leading-5">
-                    {waitingOnAvailabilityCopy(hub.today, job.date)}
-                  </p>
-                </Card>
+                <Link key={assignment.assignmentId} href={`/cleaner/jobs/${job.jobId}`} className="block">
+                  <Card>
+                    <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
+                    <p className="text-sm text-ink/70">
+                      {formatLongDate(job.date)}
+                      {(assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 1) > 1
+                        ? ` · ${assignment.pendingCrewSize ?? assignment.proposedCrewSize} people`
+                        : null}
+                    </p>
+                    <p className="mt-2 text-sm leading-5">
+                      {waitingOnAvailabilityCopy(hub.today, job.date)}
+                    </p>
+                  </Card>
+                </Link>
               );
             })}
           </section>
@@ -151,7 +143,7 @@ export function CleanerHome() {
               const availabilityMismatch = Boolean(assignment.availabilityConflictWeekStart);
               return (
                 <Card key={assignment.assignmentId}>
-                  <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
+                  <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
                   <p className="text-sm text-ink/70">{formatLongDate(job.date)}</p>
                   <p className="mt-1 text-base font-medium text-ink">
                     {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
@@ -169,16 +161,16 @@ export function CleanerHome() {
                       >
                         Edit availability
                       </Link>
-                      {KELSEY_PHONE ? (
+                      {kelseyContact ? (
                         <div className="flex gap-2">
                           <a
-                            href={`tel:+1${KELSEY_PHONE}`}
+                            href={kelseyContact.telHref}
                             className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
                           >
                             Call Kelsey
                           </a>
                           <a
-                            href={`sms:+1${KELSEY_PHONE}`}
+                            href={kelseyContact.smsHref}
                             className="flex min-h-12 flex-1 items-center justify-center rounded-2xl border border-ink/20 bg-white text-base font-semibold text-ink"
                           >
                             Text Kelsey

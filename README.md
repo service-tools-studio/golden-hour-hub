@@ -15,7 +15,7 @@ The app is a mobile-first preview on sample data, plus the scheduling rules as t
 - Cleaner home, confirmed schedule, and weekly availability
 - Invitations, crew size, and pay checks for helper-approved and solo cleaners
 
-Sign-in and live SMS are not connected yet. With `DYNAMODB_TABLE_NAME` set, data lives in DynamoDB; without it, the preview store in the browser starts empty (no mock seed on load). Load cleaners with `npm run seed:cleaners`. The table design is in [docs/data-model.md](docs/data-model.md). Scheduling behavior is in [docs/scheduling-rules.md](docs/scheduling-rules.md).
+Sign-in and live SMS are not connected yet. With `DYNAMODB_TABLE_NAME` set, data lives in DynamoDB; without it, the preview store in the browser starts empty (no mock seed on load). Load cleaners with `npm run seed:cleaners`. The table design is in [docs/data-model.md](docs/data-model.md). Scheduling behavior is in [docs/scheduling-rules.md](docs/scheduling-rules.md). SMS message bodies are listed in [docs/sms-audit.md](docs/sms-audit.md).
 
 ## Local setup
 
@@ -33,7 +33,7 @@ Open [http://localhost:3000](http://localhost:3000). With `AUTH_SESSION_SECRET` 
 npm test
 ```
 
-With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER=twilio` and the Twilio variables to send for real (invite/direct assign and availability reminders). After upgrade, US SMS usually requires an **approved primary compliance profile** in [Twilio Trust Hub](https://console.twilio.com/us1/account/trust-hub) and often **A2P 10DLC** brand/campaign registration before messages deliver. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
+With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER=twilio` and the Twilio variables to send for real (cleaner invite/assign, reminders, and removal notices only — customer texts are always manual from the admin UI). After upgrade, US SMS usually requires an **approved primary compliance profile** in [Twilio Trust Hub](https://console.twilio.com/us1/account/trust-hub) and often **A2P 10DLC** brand/campaign registration before messages deliver. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
 
 ## AWS setup
 
@@ -86,6 +86,7 @@ See [.env.example](.env.example).
 | `TWILIO_AUTH_TOKEN` | Twilio auth token (server only) |
 | `TWILIO_FROM_NUMBER` | Twilio sender in E.164, e.g. `+15035551234` |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
+| `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links |
 | `GOOGLE_MAPS_API_KEY` | Server-only key for address typeahead (**Places API (New)**; restrict by API, not HTTP referrer) |
 | `GOOGLE_CALENDAR_ENABLED` | Leave `false` until sync is built |
 | `GOOGLE_CALENDAR_ID` | Target calendar, later |

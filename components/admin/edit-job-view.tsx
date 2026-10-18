@@ -23,6 +23,7 @@ import {
   dateReinviteNeeded,
   ESTIMATED_ON_SITE_FIELD_HINT,
   ESTIMATED_ON_SITE_FIELD_LABEL,
+  customerFirstNameForCleaner,
   directAssignmentSms,
   formatLongDate,
   formatTimeLabel,
@@ -52,7 +53,7 @@ async function notifyDirectAssignment(
 ) {
   const body = directAssignmentSms({
     cleanerFirstName: cleaner.firstName,
-    customerName: job.snapshot.customerDisplayName,
+    customerFirstName: customerFirstNameForCleaner(job.snapshot),
     streetAddress: job.snapshot.streetAddress,
     date: job.date,
     arrivalWindowStart,
@@ -75,7 +76,7 @@ async function notifyInviteAssignment(
 ) {
   const body = inviteAssignmentSms({
     cleanerFirstName: cleaner.firstName,
-    customerName: job.snapshot.customerDisplayName,
+    customerFirstName: customerFirstNameForCleaner(job.snapshot),
     date: job.date,
     arrivalWindowStart,
     arrivalWindowEnd,
@@ -91,7 +92,7 @@ async function notifyInviteAssignment(
 async function notifyInviteFollowUp(cleaner: CleanerProfile, job: Job) {
   const body = inviteFollowUpSms({
     cleanerFirstName: cleaner.firstName,
-    customerName: job.snapshot.customerDisplayName,
+    customerFirstName: customerFirstNameForCleaner(job.snapshot),
     date: job.date,
   });
   return deliverSchedulingFollowUpSms({ cleaner, body, manualDetail: "reminder" });

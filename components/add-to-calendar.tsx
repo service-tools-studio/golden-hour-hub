@@ -6,7 +6,7 @@ import { fullAddress } from "@/components/address-link";
 import { type CalendarEvent, googleCalendarUrl, icsDownloadPath, outlookCalendarUrl } from "@/lib/calendar";
 import { calculateBlockedRange } from "@/lib/domain/scheduling";
 import type { Job, JobAssignment } from "@/lib/domain/types";
-import { formatArrival, cleanerServiceLabel } from "@/lib/format";
+import { cleanerServiceLabel, customerFirstNameForCleaner, formatArrival } from "@/lib/format";
 
 export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): CalendarEvent {
   const range = calculateBlockedRange({
@@ -22,7 +22,7 @@ export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): Cale
   ].filter(Boolean);
   return {
     uid: `${assignment.assignmentId}@goldenhourhub`,
-    title: `Golden Hour: ${job.snapshot.customerDisplayName} – ${cleanerServiceLabel(job.serviceType)}`,
+    title: `Golden Hour: ${customerFirstNameForCleaner(job.snapshot)} – ${cleanerServiceLabel(job.serviceType)}`,
     start: range.startUtc,
     end: range.endUtc,
     location: fullAddress(job.snapshot),

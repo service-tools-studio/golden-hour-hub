@@ -1,7 +1,28 @@
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "./domain/cleaners";
-import type { AssignmentNotice, AssignmentStatus, CleanerProfile, JobAssignment, ServiceType } from "./domain/types";
+import type {
+  AssignmentNotice,
+  AssignmentStatus,
+  CleanerProfile,
+  JobAssignment,
+  JobCustomerSnapshot,
+  ServiceType,
+} from "./domain/types";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
-import { addDays, formatHm, formatLongDate, formatShortDate, formatTimeLabel, minutesFromTime, timeFromMinutes, zonedParts } from "./domain/time";
+import {
+  addDays,
+  availabilityWeekBounds,
+  availabilityWeekOpensForEditing,
+  formatHm,
+  formatLongDate,
+  formatShortDate,
+  formatTimeLabel,
+  formatWeekRange,
+  isAvailabilityWeekEditable,
+  minutesFromTime,
+  mondayOf,
+  timeFromMinutes,
+  zonedParts,
+} from "./domain/time";
 import { formatMoney } from "./domain/compensation";
 import { formatPhone, formatPhoneInput } from "./domain/customers";
 
@@ -47,6 +68,39 @@ export function propertySizeLabel(bedrooms: number, bathrooms: number, squareFee
 /** Cleaners see recurring visits as a standard clean; recurrence is an admin scheduling detail. */
 export function cleanerServiceLabel(serviceType: ServiceType): string {
   return serviceType === "RECURRING" ? "Standard clean" : serviceLabel(serviceType);
+}
+
+/** Customer first name for cleaner-facing copy (never last name). */
+export function customerFirstNameForCleaner(
+  snapshot: Pick<JobCustomerSnapshot, "customerDisplayName" | "customerFirstName">,
+): string {
+  const stored = snapshot.customerFirstName?.trim();
+  if (stored) return stored;
+  const first = snapshot.customerDisplayName.trim().split(/\s+/)[0];
+  return first || snapshot.customerDisplayName;
+}
+
+const PRODUCTION_CLEANER_HUB_URL = "https://hub.goldenhourcleaningco.com";
+
+export function cleanerHubAppUrl(path = "/cleaner"): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  const root = base && base.length > 0 ? base : PRODUCTION_CLEANER_HUB_URL;
+  return `${root}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+/** Admin iMessage prefill — drop automated “Golden Hour Hub here.” opener. */
+export function manualCleanerSmsBody(body: string): string {
+  return body.replace(/ Golden Hour Hub here\./g, "").replace(/ Golden Hour here\./g, "");
+}
+
+export function waitingOnAvailabilityCopy(today: string, serviceDate: string): string {
+  const week = availabilityWeekBounds(mondayOf(serviceDate));
+  const range = formatWeekRange(week.weekStart, week.weekEnd);
+  if (isAvailabilityWeekEditable(today, serviceDate)) {
+    return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submit the week of ${range} in Availability below.`;
+  }
+  const opens = availabilityWeekOpensForEditing(serviceDate);
+  return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submitting availability for the week of ${range} isn't open in the app yet — you can submit it starting ${formatLongDate(opens)}.`;
 }
 
 export function serviceEmoji(serviceType: ServiceType): string | null {
@@ -225,22 +279,22 @@ export function arrivalMismatchText(scheduledTime: string, firstName: string, ar
 
 /** Prefill for a manual admin `sms:` link only — never sent via Twilio from the server. */
 export function arrivalChangeSms(input: { customerFirstName: string; date: string; scheduledTime: string; arrivalTime: string }): string {
-  return `Hi ${input.customerFirstName}! This is Golden Hour Cleaning Co. Your cleaning on ${formatLongDate(input.date)} will start at ${input.arrivalTime} instead of ${input.scheduledTime}. Reply to this message if you need a different time.`;
+  return `Hi ${input.customerFirstName}! This is Golden Hour Cleaning Co. Your cleaning on ${formatLongDate(input.date)} will start around ${input.arrivalTime} instead of ${input.scheduledTime}. Please allow our cleaner(s) a one-hour window of arrival / grace period due to coming from other jobs. Reply to this message if you need a different time.`;
 }
 
 export function cleanerArrivalChangeSms(input: {
   cleanerFirstName: string;
-  customerName: string;
+  customerFirstName: string;
   date: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour here. Your arrival time for ${input.customerName} on ${formatLongDate(input.date)} is now ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. Your arrival time for ${input.customerFirstName} on ${formatLongDate(input.date)} is now ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}.`;
 }
 
 export function cleanerAssignmentChangeSms(input: {
   cleanerFirstName: string;
-  customerName: string;
+  customerFirstName: string;
   date: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
@@ -248,40 +302,71 @@ export function cleanerAssignmentChangeSms(input: {
 }): string {
   const window = hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd);
   const duration = formatDuration(input.expectedDurationMinutes);
-  return `Hi ${input.cleanerFirstName}! Golden Hour here. Your cleaning for ${input.customerName} on ${formatLongDate(input.date)} is now ${window} · ${duration} on site.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. The arrival window for your cleaning for ${input.customerFirstName} on ${formatLongDate(input.date)} is now ${window} · this is an approximately ${duration} cleaning.`;
 }
 
 export function directAssignmentSms(input: {
   cleanerFirstName: string;
-  customerName: string;
+  customerFirstName: string;
   streetAddress: string;
   date: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour here. You're assigned to ${input.customerName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Hub app.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You're assigned to ${input.customerFirstName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Hub app.`;
 }
 
 export function inviteAssignmentSms(input: {
   cleanerFirstName: string;
-  customerName: string;
+  customerFirstName: string;
   date: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub app to accept or decline as soon as you can.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for ${input.customerFirstName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub app to accept or decline as soon as you can.`;
 }
 
-export function inviteFollowUpSms(input: { cleanerFirstName: string; customerName: string; date: string }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)} in the Golden Hour Hub app as soon as possible.`;
+export function inviteFollowUpSms(input: {
+  cleanerFirstName: string;
+  customerFirstName: string;
+  date: string;
+  appUrl?: string;
+}): string {
+  const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for ${input.customerFirstName} on ${formatLongDate(input.date)} in the Golden Hour Hub app as soon as possible. ${link}`;
 }
 
 export function cleanerRemovedFromJobSms(input: {
   cleanerFirstName: string;
-  customerName: string;
+  customerFirstName: string;
   date: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You've been removed from the cleaning for ${input.customerName} on ${formatLongDate(input.date)}. Reach out to Kelsey if you have questions.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You've been removed from the cleaning for ${input.customerFirstName} on ${formatLongDate(input.date)}. Reach out to Kelsey if you have questions.`;
+}
+
+/** Prefill when a cleaner texts Kelsey from a job screen (manual `sms:` link only). */
+export function cleanerTextKelseyAboutJobBody(input: {
+  cleanerFirstName: string;
+  customerFirstName: string;
+  date: string;
+  serviceLabel: string;
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+  addressLine: string;
+  payLine: string;
+}): string {
+  const arrive = formatArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
+  const duration = formatDuration(input.expectedDurationMinutes);
+  return `Hi Kelsey — it's ${input.cleanerFirstName}. I have a question about this cleaning:
+
+${input.customerFirstName}
+${formatLongDate(input.date)} · ${input.serviceLabel}
+Arrive ${arrive} · ~${duration}
+${input.addressLine}
+${input.payLine}
+
+`;
 }
 
 export function smsHref(phone: string, body: string): string {
@@ -290,7 +375,7 @@ export function smsHref(phone: string, body: string): string {
 
 export function cleanerManualTextHref(phone: string, body: string): string | null {
   if (!/^\d{10}$/.test(phone)) return null;
-  return smsHref(phone, body);
+  return smsHref(phone, manualCleanerSmsBody(body));
 }
 
 export function earliestCleanerArrival<T extends { start: string }>(windows: T[]): T | null {

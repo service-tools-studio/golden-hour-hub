@@ -31,7 +31,7 @@ import {
   nextAvailabilityWeek,
   normalizeAvailabilityWeekStart,
 } from "@/lib/domain/time";
-import { formatArrival, formatLongDate } from "@/lib/format";
+import { customerFirstNameForCleaner, formatArrival, formatLongDate } from "@/lib/format";
 import type { AvailabilityWindow } from "@/lib/domain/types";
 
 function windowSignature(windows: AvailabilityWindow[]): string {
@@ -360,7 +360,7 @@ export function AvailabilityEditor() {
       const nowUncovered = assignmentUncoveredByAvailability(schedule, afterWindows);
       if (!wasCovered || !nowUncovered) continue;
       const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
-      const customer = job?.snapshot.customerDisplayName ?? "this customer";
+      const customer = job ? customerFirstNameForCleaner(job.snapshot) : "this customer";
       return `You’re confirmed for ${customer} on ${formatLongDate(assignment.serviceDate)} (${formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}). This change doesn’t cover that cleaning, and you will need to follow up with Kelsey.`;
     }
     return null;
