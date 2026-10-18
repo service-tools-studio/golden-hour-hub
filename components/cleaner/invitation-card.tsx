@@ -17,6 +17,15 @@ import {
 } from "@/lib/format";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
+function InvitationActionSpinner() {
+  return (
+    <span
+      className="inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+      aria-hidden="true"
+    />
+  );
+}
+
 export function InvitationCard({
   assignment,
   job,
@@ -43,6 +52,7 @@ export function InvitationCard({
   const initialCrew = bringsHelpers ? Math.min(assignment.proposedCrewSize, maxAttendance) : 1;
   const [crew, setCrew] = useState(initialCrew);
   const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState<"accept" | "decline" | null>(null);
   const attending = bringsHelpers ? crew : 1;
   const pay = confirmedCompensationCents({
     payType: assignment.payType,
@@ -52,13 +62,27 @@ export function InvitationCard({
   const hourlySuffix = assignment.payType === "HOURLY" ? "/hour" : "";
 
   async function accept() {
-    const result = await hub.acceptInvitation(assignment.assignmentId, attending);
-    setMessage(result.ok ? result.message ?? null : result.message);
+    if (pending) return;
+    setPending("accept");
+    setMessage(null);
+    try {
+      const result = await hub.acceptInvitation(assignment.assignmentId, attending);
+      setMessage(result.ok ? result.message ?? null : result.message);
+    } finally {
+      setPending(null);
+    }
   }
 
   async function decline() {
-    const result = await hub.declineInvitation(assignment.assignmentId);
-    if (!result.ok) setMessage(result.message);
+    if (pending) return;
+    setPending("decline");
+    setMessage(null);
+    try {
+      const result = await hub.declineInvitation(assignment.assignmentId);
+      if (!result.ok) setMessage(result.message);
+    } finally {
+      setPending(null);
+    }
   }
 
   return (
@@ -96,19 +120,20 @@ export function InvitationCard({
           <div className="mt-2 flex items-center justify-between rounded-2xl bg-cream px-3 py-2">
             <button
               type="button"
-              className="min-h-12 min-w-12 rounded-xl bg-white text-2xl"
+              className="min-h-12 min-w-12 rounded-xl bg-white text-2xl disabled:opacity-50"
               onClick={() => setCrew((value) => Math.max(1, value - 1))}
               aria-label="Fewer people"
+              disabled={pending !== null}
             >
               −
             </button>
             <p className="text-2xl font-semibold">{crew}</p>
             <button
               type="button"
-              className="min-h-12 min-w-12 rounded-xl bg-white text-2xl"
+              className="min-h-12 min-w-12 rounded-xl bg-white text-2xl disabled:opacity-50"
               onClick={() => setCrew((value) => Math.min(maxAttendance, value + 1))}
               aria-label="More people"
-              disabled={maxAttendance < 1}
+              disabled={pending !== null || maxAttendance < 1}
             >
               +
             </button>
@@ -137,11 +162,29 @@ export function InvitationCard({
           <Notice>{message}</Notice>
         </div>
       ) : null}
-      <div className="mt-4 space-y-2">
-        <PrimaryButton onClick={accept}>
-          {weekSubmitted ? (bringsHelpers ? "Confirm & Accept Job" : "Accept Job") : "I'll take this cleaning"}
+      <div className="mt-4 space-y-2" aria-busy={pending !== null}>
+        <PrimaryButton onClick={accept} disabled={pending !== null}>
+          {pending === "accept" ? (
+            <span className="inline-flex items-center gap-2">
+              <InvitationActionSpinner />
+              Accepting…
+            </span>
+          ) : weekSubmitted ? (
+            bringsHelpers ? "Confirm & Accept Job" : "Accept Job"
+          ) : (
+            "I'll take this cleaning"
+          )}
         </PrimaryButton>
-        <SecondaryButton onClick={decline}>Decline</SecondaryButton>
+        <SecondaryButton onClick={decline} disabled={pending !== null}>
+          {pending === "decline" ? (
+            <span className="inline-flex items-center gap-2">
+              <InvitationActionSpinner />
+              Declining…
+            </span>
+          ) : (
+            "Decline"
+          )}
+        </SecondaryButton>
       </div>
     </Card>
   );
