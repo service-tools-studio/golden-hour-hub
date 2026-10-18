@@ -56,7 +56,7 @@ function profile(
 }
 
 const CLEANERS: CleanerProfile[] = [
-  profile("claudia", "Claudia", "Maqueda Ramos", mockCleanerEmail("claudia"), "3233763753", 2, 2, 3500),
+  profile("claudia", "Claudia", "Maqueda Ramos", "jasminbergsgaard@gmail.com", "3233763753", 2, 2, 3500),
   profile("mariana", "Mariana", "Moncada", mockCleanerEmail("mariana"), "3233763753", 2, 4, 3000),
   profile("shariese", "Shariese", "Miles", "jasminmheart@gmail.com", "3233763753", 1, 0, 3000),
   profile("keshawna", "Keshawna", "Arrollado", mockCleanerEmail("keshawna"), "3233763753", 1, 0, 3000),

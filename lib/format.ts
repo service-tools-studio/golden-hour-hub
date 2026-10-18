@@ -62,6 +62,10 @@ export function serviceEmoji(serviceType: ServiceType): string | null {
   }
 }
 
+/** Admin duration controls and schedule summaries that derive on-site end times. */
+export const ESTIMATED_ON_SITE_FIELD_LABEL = "Estimated cleaning time";
+export const ESTIMATED_ON_SITE_FIELD_HINT = "Counted after the arrival window ends.";
+
 export function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
@@ -265,15 +269,28 @@ export function inviteAssignmentSms(input: {
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour here. You have a cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub app to accept or decline as soon as you can.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub app to accept or decline as soon as you can.`;
 }
 
 export function inviteFollowUpSms(input: { cleanerFirstName: string; customerName: string; date: string }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour reminder: please accept or decline your cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)} in the Golden Hour Hub app as soon as possible.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for ${input.customerName} on ${formatLongDate(input.date)} in the Golden Hour Hub app as soon as possible.`;
+}
+
+export function cleanerRemovedFromJobSms(input: {
+  cleanerFirstName: string;
+  customerName: string;
+  date: string;
+}): string {
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You've been removed from the cleaning for ${input.customerName} on ${formatLongDate(input.date)}. Reach out to Kelsey if you have questions.`;
 }
 
 export function smsHref(phone: string, body: string): string {
   return `sms:+1${phone}?&body=${encodeURIComponent(body)}`;
+}
+
+export function cleanerManualTextHref(phone: string, body: string): string | null {
+  if (!/^\d{10}$/.test(phone)) return null;
+  return smsHref(phone, body);
 }
 
 export function earliestCleanerArrival<T extends { start: string }>(windows: T[]): T | null {
@@ -292,8 +309,14 @@ export function noticeFlagText(firstName: string, gap: "assignment" | "changes")
 
 export function assignmentFormStatus(status: JobAssignment["status"] | "DRAFT"): string {
   if (status === "INVITED" || status === "DECLINED") return "Invite sent";
-  if (status === "CONFIRMED" || status === "PENDING_AVAILABILITY") return "Assignment confirmed";
+  if (status === "CONFIRMED") return "Assignment confirmed";
+  if (status === "PENDING_AVAILABILITY") return "Assigned — awaiting availability";
   return "Draft assignment";
+}
+
+/** Only invited or confirmed assignments track what was texted to the cleaner. */
+export function assignmentTracksCleanerNotification(status: JobAssignment["status"]): boolean {
+  return status === "INVITED" || status === "CONFIRMED" || status === "PENDING_AVAILABILITY";
 }
 
 export function payLine(assignment: JobAssignment, confirmed: boolean): string {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { cognitoConfigured, previewAuthEnabled } from "@/lib/auth/config";
@@ -40,6 +41,15 @@ export default async function LoginPage() {
       )}
       {cognitoConfigured() ? <LoginSessionRedirect /> : null}
       {cognitoConfigured() ? <LoginForm /> : null}
+      <footer className="mt-auto pt-10 text-center text-sm text-ink/55">
+        <Link href="/privacy" className="font-medium text-ink/70 underline decoration-gold decoration-2 underline-offset-4">
+          Privacy policy
+        </Link>
+        <span className="mx-2" aria-hidden="true">·</span>
+        <Link href="/terms" className="font-medium text-ink/70 underline decoration-gold decoration-2 underline-offset-4">
+          Terms &amp; conditions
+        </Link>
+      </footer>
     </main>
   );
 }

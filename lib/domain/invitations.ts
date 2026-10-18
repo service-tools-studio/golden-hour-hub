@@ -8,7 +8,7 @@ import {
   validateRequestedCrewSize,
   type ScheduleWindow,
 } from "./scheduling.ts";
-import { formatLongDate } from "./time.ts";
+import { formatLongDate, mondayOf } from "./time.ts";
 import type { CleanerProfile, Job, JobAssignment, Result } from "./types.ts";
 
 export type InvitationDecision =
@@ -168,6 +168,58 @@ export function availabilityFollowUpReason(
     return `${firstName} submitted availability for the week of ${week}, but this cleaning falls outside those hours. Follow up with ${firstName}.`;
   }
   return `${firstName}'s submitted availability for the week of ${week} conflicts with another confirmed cleaning. Follow up with ${firstName}.`;
+}
+
+function isAvailabilityAttentionReason(
+  assignment: Pick<JobAssignment, "attentionReason" | "availabilityConflictWeekStart">,
+): boolean {
+  if (assignment.availabilityConflictWeekStart) return true;
+  const reason = assignment.attentionReason ?? "";
+  return reason.includes("submitted availability") || reason.includes("falls outside those hours");
+}
+
+/** Re-evaluates a stored availability warning against the schedule shown in the admin form. */
+export function liveAvailabilityAttentionMessage(input: {
+  assignment: Pick<JobAssignment, "attentionReason" | "availabilityConflictWeekStart" | "assignmentId">;
+  cleaner: Pick<CleanerProfile, "cleanerId" | "firstName">;
+  serviceDate: string;
+  windows: ScheduleWindow[];
+  confirmedAssignments: JobAssignment[];
+  arrivalWindowStart: string;
+  arrivalWindowEnd: string;
+  expectedDurationMinutes: number;
+}): string | null {
+  const stored = input.assignment.attentionReason;
+  if (!stored) return null;
+  if (!isAvailabilityAttentionReason(input.assignment)) return stored;
+
+  const blocked = calculateBlockedRange({
+    date: input.serviceDate,
+    arrivalWindowStart: input.arrivalWindowStart,
+    arrivalWindowEnd: input.arrivalWindowEnd,
+    expectedDurationMinutes: input.expectedDurationMinutes,
+  });
+  const fits = availabilityCoversBlockedRange(input.windows, blocked);
+  const conflict = detectConfirmedAssignmentConflict({
+    cleanerId: input.cleaner.cleanerId,
+    candidate: {
+      serviceDate: input.serviceDate,
+      arrivalWindowStart: input.arrivalWindowStart,
+      arrivalWindowEnd: input.arrivalWindowEnd,
+      expectedDurationMinutes: input.expectedDurationMinutes,
+    },
+    confirmedAssignments: input.confirmedAssignments
+      .filter((item) => item.status === "CONFIRMED")
+      .map(toAssignmentSchedule),
+    ignoreAssignmentId: input.assignment.assignmentId,
+  });
+
+  if (fits && !conflict) return null;
+
+  const weekStart = input.assignment.availabilityConflictWeekStart ?? mondayOf(input.serviceDate);
+  if (!fits) return availabilityFollowUpReason(input.cleaner.firstName, weekStart, "outside");
+  if (conflict) return availabilityFollowUpReason(input.cleaner.firstName, weekStart, "conflict");
+  return null;
 }
 
 /**

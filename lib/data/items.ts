@@ -242,6 +242,9 @@ function readCleaner(item: DynamoItem): CleanerProfile {
       typeof item.typicalHourlyRateCents === "number" && item.typicalHourlyRateCents >= 0
         ? item.typicalHourlyRateCents
         : 3000,
+    cognitoSub: optionalString(item, "cognitoSub"),
+    smsSchedulingOptIn: typeof item.smsSchedulingOptIn === "boolean" ? item.smsSchedulingOptIn : undefined,
+    smsOptInRecordedAt: optionalString(item, "smsOptInRecordedAt"),
     createdAt: stringField(item, "createdAt"),
     createdBy: stringField(item, "createdBy"),
     updatedAt: stringField(item, "updatedAt"),

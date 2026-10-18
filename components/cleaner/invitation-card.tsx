@@ -74,7 +74,7 @@ export function InvitationCard({
           <dd>{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-ink/60">Expected duration</dt>
+          <dt className="text-ink/60">Estimated time on site</dt>
           <dd>{formatDuration(assignment.expectedDurationMinutes)}</dd>
         </div>
       </dl>

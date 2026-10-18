@@ -14,6 +14,7 @@ function authEnforced(): boolean {
 function requiredRoleForPath(pathname: string): "ADMIN" | "CLEANER" | null {
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return "ADMIN";
   if (pathname === "/cleaner" || pathname.startsWith("/cleaner/")) return "CLEANER";
+  if (pathname === "/onboarding/sms" || pathname.startsWith("/onboarding/")) return "CLEANER";
   return null;
 }
 
@@ -43,5 +44,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin", "/admin/:path*", "/cleaner", "/cleaner/:path*"],
+  matcher: ["/admin", "/admin/:path*", "/cleaner", "/cleaner/:path*", "/onboarding/sms", "/onboarding/:path*"],
 };

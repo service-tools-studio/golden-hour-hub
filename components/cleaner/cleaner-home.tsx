@@ -8,6 +8,8 @@ import { useNow } from "@/components/use-now";
 import { calculateBlockedRange, isWithinRange } from "@/lib/domain/scheduling";
 import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
+import { SmsOptInActionBanner } from "@/components/cleaner/sms-opt-in-action-banner";
+import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
 import { formatArrival, formatLongDate, cleanerServiceLabel } from "@/lib/format";
 
 const KELSEY_PHONE = (process.env.KELSEY_PHONE ?? "").replace(/\D/g, "");
@@ -69,6 +71,7 @@ export function CleanerHome() {
     );
   const happening = confirmed.filter((item) => inProgress(item.assignment, now));
   const upcoming = confirmed.filter((item) => item.job.date >= hub.today && !happening.includes(item));
+  const showSmsOptInBanner = invitations.length > 0 && !cleanerAllowsSchedulingSms(cleaner);
 
   return (
     <Screen>
@@ -94,6 +97,7 @@ export function CleanerHome() {
               if (!job) return null;
               return <InvitationCard key={assignment.assignmentId} assignment={assignment} job={job} cleaner={cleaner} />;
             })}
+            {showSmsOptInBanner ? <SmsOptInActionBanner /> : null}
           </section>
         ) : null}
 
@@ -130,6 +134,9 @@ export function CleanerHome() {
                 <Card key={assignment.assignmentId}>
                   <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
                   <p className="text-sm text-ink/70">{formatLongDate(job.date)}</p>
+                  <p className="mt-1 text-base font-medium text-ink">
+                    {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
+                  </p>
                   <p className="mt-2 text-sm leading-5">
                     {availabilityMismatch
                       ? AVAILABILITY_MISMATCH_MESSAGE

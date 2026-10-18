@@ -2,19 +2,27 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { sendCleanerText } from "@/app/actions/notifications";
-import { assignmentSmsToast, followUpSmsToast } from "@/lib/sms-notify";
+import { CleanerAvailabilityPreview } from "@/components/admin/cleaner-availability-preview";
+import {
+  deliverSchedulingCleanerSms,
+  deliverSchedulingFollowUpSms,
+} from "@/lib/cleaner/deliver-scheduling-sms";
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
 import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
+import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
 import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
+import { windowsForCleaner } from "@/lib/domain/scheduling";
 import {
   assignmentFormStatus,
+  assignmentTracksCleanerNotification,
   dateReinviteNeeded,
+  ESTIMATED_ON_SITE_FIELD_HINT,
+  ESTIMATED_ON_SITE_FIELD_LABEL,
   directAssignmentSms,
   formatLongDate,
   formatTimeLabel,
@@ -29,6 +37,7 @@ import {
 
 const DEFAULT_PAY_TYPE: PayType = "HOURLY";
 const FALLBACK_HOURLY_RATE_CENTS = 3000;
+const ASSIGNMENT_DURATIONS = Array.from({ length: 12 }, (_, index) => (index + 1) * 60);
 
 function cleaningHref(jobId: string, from: CleaningOrigin | undefined) {
   return withOrigin(`/admin/jobs/${jobId}`, from);
@@ -49,12 +58,12 @@ async function notifyDirectAssignment(
     arrivalWindowStart,
     arrivalWindowEnd,
   });
-  try {
-    const sms = await sendCleanerText(cleaner.mobilePhone, body);
-    return assignmentSmsToast(cleaner.firstName, assignmentMessage, sms);
-  } catch {
-    return `${assignmentMessage ?? "Saved."} Text not sent to ${cleaner.firstName}. The server could not send SMS.`;
-  }
+  return deliverSchedulingCleanerSms({
+    cleaner,
+    body,
+    assignmentMessage,
+    manualDetail: "assignment notice",
+  });
 }
 
 async function notifyInviteAssignment(
@@ -71,12 +80,12 @@ async function notifyInviteAssignment(
     arrivalWindowStart,
     arrivalWindowEnd,
   });
-  try {
-    const sms = await sendCleanerText(cleaner.mobilePhone, body);
-    return assignmentSmsToast(cleaner.firstName, assignmentMessage, sms);
-  } catch {
-    return `${assignmentMessage ?? "Saved."} Text not sent to ${cleaner.firstName}. The server could not send SMS.`;
-  }
+  return deliverSchedulingCleanerSms({
+    cleaner,
+    body,
+    assignmentMessage,
+    manualDetail: "invitation",
+  });
 }
 
 async function notifyInviteFollowUp(cleaner: CleanerProfile, job: Job) {
@@ -85,12 +94,7 @@ async function notifyInviteFollowUp(cleaner: CleanerProfile, job: Job) {
     customerName: job.snapshot.customerDisplayName,
     date: job.date,
   });
-  try {
-    const sms = await sendCleanerText(cleaner.mobilePhone, body);
-    return followUpSmsToast(cleaner.firstName, sms);
-  } catch {
-    return `Text not sent to ${cleaner.firstName}. The server could not send SMS.`;
-  }
+  return deliverSchedulingFollowUpSms({ cleaner, body, manualDetail: "reminder" });
 }
 
 function cleaningSubtitle(job: Job, start: string | undefined): string {
@@ -219,6 +223,9 @@ export function EditJobView({
   const initialArrival = defaultArrival(arrivalWindows, jobStart);
   const [arrivalStart, setArrivalStart] = useState(assignment?.arrivalWindowStart ?? initialArrival?.start ?? "");
   const [arrivalEnd, setArrivalEnd] = useState(assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "");
+  const [duration, setDuration] = useState(
+    assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
+  );
   const [crew, setCrew] = useState(assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1);
   const [payType, setPayType] = useState<PayType>(assignment?.payType ?? DEFAULT_PAY_TYPE);
   const [pay, setPay] = useState(
@@ -226,7 +233,7 @@ export function EditJobView({
   );
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const assignmentSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, crew, payType, pay });
+  const assignmentSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const assignmentBaseline = useRef<string | null>(null);
   if (assignment && assignmentBaseline.current === null) assignmentBaseline.current = assignmentSnapshot;
   const assignmentDirty = assignmentBaseline.current !== null && assignmentBaseline.current !== assignmentSnapshot;
@@ -234,11 +241,24 @@ export function EditJobView({
   const maxCrew = cleaner ? 1 + cleaner.maxHelperCount : 1;
 
   const statusLabel = assignmentFormStatus(assignment?.status ?? "DRAFT");
-  const gap = assignment
-    ? noticeGap(false, assignmentNoticeFrom(assignment), assignment.lastNotified)
-    : null;
+  const gap =
+    assignment && assignmentTracksCleanerNotification(assignment.status)
+      ? noticeGap(false, assignmentNoticeFrom(assignment), assignment.lastNotified)
+      : null;
   const flag = cleaner && gap ? noticeFlagText(cleaner.firstName, gap) : null;
-  const scheduleWarning = assignment?.attentionReason ?? null;
+  const scheduleWarning =
+    assignment && cleaner && job
+      ? liveAvailabilityAttentionMessage({
+          assignment,
+          cleaner,
+          serviceDate: assignment.serviceDate,
+          windows: windowsForCleaner(hub.availability, cleaner.cleanerId),
+          confirmedAssignments: hub.assignments,
+          arrivalWindowStart: arrivalStart,
+          arrivalWindowEnd: arrivalEnd,
+          expectedDurationMinutes: duration,
+        })
+      : null;
   const weekSubmitted = Boolean(
     cleaner &&
       job &&
@@ -255,7 +275,7 @@ export function EditJobView({
         assignmentNoticeFrom({
           arrivalWindowStart: arrivalStart,
           arrivalWindowEnd: arrivalEnd,
-          expectedDurationMinutes: job?.expectedDurationMinutes ?? assignment.expectedDurationMinutes,
+          expectedDurationMinutes: duration,
           proposedCrewSize: crew,
           payType,
           payPerPersonCents: payPerPersonCentsPreview,
@@ -263,6 +283,9 @@ export function EditJobView({
         assignment.lastNotified,
       ) === null,
   );
+  const dayAvailability = hub.availability
+    .filter((window) => window.cleanerId === cleaner?.cleanerId && window.date === job?.date)
+    .map((window) => ({ start: window.start, end: window.end }));
 
   async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
     if (!job || !cleaner) return false;
@@ -278,7 +301,7 @@ export function EditJobView({
       propertyId: job.propertyId,
       arrivalWindowStart: arrivalStart,
       arrivalWindowEnd: arrivalEnd,
-      expectedDurationMinutes: job.expectedDurationMinutes ?? assignment?.expectedDurationMinutes ?? 240,
+      expectedDurationMinutes: duration,
       proposedCrewSize: crew,
       payType,
       payPerPersonCents,
@@ -290,9 +313,19 @@ export function EditJobView({
       return false;
     }
     if (mode === "DIRECT") {
-      hub.flash(await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+      const outcome = await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
+      hub.flash(outcome.toast);
+      if (outcome.manual) {
+        hub.showManualCleanerText(outcome.manual);
+        return true;
+      }
     } else if (mode === "INVITE") {
-      hub.flash(await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+      const outcome = await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
+      hub.flash(outcome.toast);
+      if (outcome.manual) {
+        hub.showManualCleanerText(outcome.manual);
+        return true;
+      }
     } else if (result.message) {
       hub.flash(result.message);
     }
@@ -302,7 +335,9 @@ export function EditJobView({
 
   async function sendInviteFollowUp() {
     if (!job || !cleaner || !followUpReady) return;
-    hub.flash(await notifyInviteFollowUp(cleaner, job));
+    const outcome = await notifyInviteFollowUp(cleaner, job);
+    hub.flash(outcome.toast);
+    if (outcome.manual) hub.showManualCleanerText(outcome.manual);
   }
 
   function saveAndLeave() {
@@ -363,6 +398,17 @@ export function EditJobView({
             ))}
           </select>
         </Field>
+        <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
+        {cleaner && job ? (
+          <CleanerAvailabilityPreview
+            cleanerName={cleaner.firstName}
+            date={job.date}
+            availabilityWindows={dayAvailability}
+            arrivalStart={arrivalStart}
+            arrivalEnd={arrivalEnd}
+            durationMinutes={duration}
+          />
+        ) : null}
         {maxCrew > 1 ? (
           <CountField
             label="Crew"
@@ -430,8 +476,10 @@ export function EditJobView({
 function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; customerId?: string; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
+  const [navigatingAway, setNavigatingAway] = useState(false);
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
   const [pickedDate, setPickedDate] = useState<string | null>(null);
+  if (navigatingAway) return null;
   if (!job) {
     return (
       <Screen>
@@ -492,6 +540,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
     const result = hub.deleteJob(cleaning.jobId);
     if (!result.ok) return;
     if (result.message) hub.flash(result.message);
+    setNavigatingAway(true);
     router.push(`/admin/customers/${cleaning.customerId}`);
   }
 
@@ -577,6 +626,9 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const initialArrival = defaultArrival(windows, jobStart);
   const [arrivalStart, setArrivalStart] = useState(savedDetail?.arrivalWindowStart ?? initialArrival?.start ?? "");
   const [arrivalEnd, setArrivalEnd] = useState(savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "");
+  const [duration, setDuration] = useState(
+    savedDetail?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
+  );
   const [crew, setCrew] = useState(savedDetail?.proposedCrewSize ?? usualCrew);
   const [payType, setPayType] = useState<PayType>(savedDetail?.payType ?? DEFAULT_PAY_TYPE);
   const [pay, setPay] = useState(
@@ -585,15 +637,16 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [navigatingAway, setNavigatingAway] = useState(false);
-  const draftSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, crew, payType, pay });
+  const draftSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const draftBaseline = useRef<string | null>(null);
   if (job && cleaner && draftBaseline.current === null) draftBaseline.current = draftSnapshot;
   const draftDirty = draftBaseline.current !== null && draftBaseline.current !== draftSnapshot;
   useUnsavedNavigation(Boolean(job && cleaner), () => draftDirty, setLeaveHref);
   const maxCrew = cleaner ? 1 + cleaner.maxHelperCount : 1;
+  const dayAvailability = hub.availability
+    .filter((window) => window.cleanerId === cleanerId && window.date === job?.date)
+    .map((window) => ({ start: window.start, end: window.end }));
 
-  const gap = savedDetail ? noticeGap(true, savedDetail) : null;
-  const flag = cleaner && gap ? noticeFlagText(cleaner.firstName, gap) : null;
   const weekSubmitted = Boolean(
     cleaner &&
       job &&
@@ -613,7 +666,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       propertyId: job.propertyId,
       arrivalWindowStart: arrivalStart,
       arrivalWindowEnd: arrivalEnd,
-      expectedDurationMinutes: job.expectedDurationMinutes ?? savedDetail?.expectedDurationMinutes ?? 240,
+      expectedDurationMinutes: duration,
       proposedCrewSize: crew,
       payType,
       payPerPersonCents,
@@ -632,14 +685,24 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       }
       return true;
     }
-    setNavigatingAway(true);
     if (mode === "DIRECT") {
-      hub.flash(await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+      const outcome = await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
+      hub.flash(outcome.toast);
+      if (outcome.manual) {
+        hub.showManualCleanerText(outcome.manual);
+        return true;
+      }
     } else if (mode === "INVITE") {
-      hub.flash(await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message));
+      const outcome = await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
+      hub.flash(outcome.toast);
+      if (outcome.manual) {
+        hub.showManualCleanerText(outcome.manual);
+        return true;
+      }
     } else if (result.message) {
       hub.flash(result.message);
     }
+    setNavigatingAway(true);
     router.push(nextHref ?? cleaningHref(job.jobId, from));
     return true;
   }
@@ -676,7 +739,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
         }}
       >
         {message ? <Notice>{message}</Notice> : null}
-        <AssignmentStatus label="Draft assignment" flag={flag} />
+        <AssignmentStatus label="Draft assignment" flag={null} />
         <Field label="Arrival window">
           <select
             className={fieldClass}
@@ -696,6 +759,15 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
             ))}
           </select>
         </Field>
+        <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
+        <CleanerAvailabilityPreview
+          cleanerName={cleaner.firstName}
+          date={job.date}
+          availabilityWindows={dayAvailability}
+          arrivalStart={arrivalStart}
+          arrivalEnd={arrivalEnd}
+          durationMinutes={duration}
+        />
         {maxCrew > 1 ? (
           <CountField
             label="Crew"
@@ -797,6 +869,37 @@ function AssignmentStatus({
       ) : null}
       {flag ? <div className="mt-3"><Notice>{flag}</Notice></div> : null}
     </div>
+  );
+}
+
+function AssignmentDurationField({
+  duration,
+  onChange,
+  onDirty,
+}: {
+  duration: number;
+  onChange: (minutes: number) => void;
+  onDirty: () => void;
+}) {
+  const options = ASSIGNMENT_DURATIONS.includes(duration) ? ASSIGNMENT_DURATIONS : [duration, ...ASSIGNMENT_DURATIONS];
+  return (
+    <Field label={ESTIMATED_ON_SITE_FIELD_LABEL}>
+      <select
+        className={fieldClass}
+        value={duration}
+        onChange={(event) => {
+          onChange(Number(event.target.value));
+          onDirty();
+        }}
+      >
+        {options.map((minutes) => (
+          <option key={minutes} value={minutes}>
+            {minutes % 60 === 0 ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}` : `${minutes} min`}
+          </option>
+        ))}
+      </select>
+      <p className="mt-1.5 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
+    </Field>
   );
 }
 

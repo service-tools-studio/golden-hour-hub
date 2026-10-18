@@ -1,7 +1,7 @@
 "use server";
 
-import { AuthError } from "@/lib/auth/guards";
-import { requireAdmin } from "@/lib/auth/guards";
+import { AuthError, requireAdmin } from "@/lib/auth/guards";
+import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
 import { dynamoConfigured, loadHub } from "@/lib/data/repository";
 import { emptyHub } from "@/lib/mock/seed";
 import { SmsDeliveryError, sendSms } from "@/lib/services/sms";
@@ -20,7 +20,7 @@ export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
 
     for (const cleanerId of cleanerIds) {
       const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId && item.status === "ACTIVE");
-      if (!cleaner) continue;
+      if (!cleaner || !cleanerAllowsSchedulingSms(cleaner)) continue;
       const submitted = hub.submissions.some(
         (submission) => submission.cleanerId === cleanerId && submission.weekStart === week.weekStart,
       );

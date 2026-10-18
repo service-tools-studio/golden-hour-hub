@@ -51,6 +51,10 @@ export type CleanerProfile = {
   maxHelperCount: number;
   /** Default per-person hourly pay in cents for staffing and estimates. */
   typicalHourlyRateCents: number;
+  /** True when the cleaner opted in to automated scheduling SMS; false when they declined. */
+  smsSchedulingOptIn?: boolean;
+  /** When opt-in or decline was recorded (ISO). Absent until SMS onboarding is completed. */
+  smsOptInRecordedAt?: string;
   createdAt: string;
   createdBy: string;
   updatedAt: string;

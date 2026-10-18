@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cognitoConfigured } from "@/lib/auth/config";
 import { completeNewPassword } from "@/lib/auth/cognito";
 import { hubPasswordUpdatedSetupMessage, jasminSetupPhone } from "@/lib/auth/messages";
+import { postSignInRedirect } from "@/lib/auth/post-sign-in-redirect";
 import { createSessionFromTokens, setAuthCookie } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
@@ -33,6 +34,6 @@ export async function POST(request: Request) {
     );
   }
   await setAuthCookie(created.cookieValue);
-  const redirect = created.session.role === "ADMIN" ? "/admin" : "/cleaner";
+  const redirect = await postSignInRedirect(created.session);
   return NextResponse.json({ ok: true, role: created.session.role, redirect });
 }

@@ -310,6 +310,7 @@ export function planOccurrenceStaffing(input: {
       continue;
     }
 
+    const weekSubmitted = input.availabilityByCleaner[entry.cleanerId]?.submitted ?? false;
     assignments.push(
       buildAssignment(
         {
@@ -318,6 +319,7 @@ export function planOccurrenceStaffing(input: {
           mode: "DIRECT",
           nowIso: input.nowIso,
           newId: input.newId,
+          pendingAvailability: !weekSubmitted,
         },
         entry,
       ),

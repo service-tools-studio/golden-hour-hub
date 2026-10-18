@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
+import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
 import { AddToCalendarButton } from "@/components/add-to-calendar";
 import { AddressLink, fullAddress } from "@/components/address-link";
 import {
@@ -29,6 +30,7 @@ import {
   formatDuration,
   formatLongDate,
   formatScheduleFacts,
+  assignmentTracksCleanerNotification,
   noticeFlagText,
   noticeGap,
   payLine,
@@ -36,6 +38,7 @@ import {
   reinviteFlagText,
   serviceEmoji,
   cleanerAssignmentChangeSms,
+  cleanerRemovedFromJobSms,
   cleanerServiceLabel,
   serviceLabel,
   smsHref,
@@ -86,6 +89,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [navigatingAway, setNavigatingAway] = useState(false);
   const [dismissedNotices, setDismissedNotices] = useState<Set<string>>(() => new Set());
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
   const assignments = hub.assignments.filter(
@@ -127,6 +131,8 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
   const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;
   const sizeLine = propertySizeLabel(visit.bedrooms, visit.bathrooms, visit.squareFeet);
+  if (navigatingAway) return null;
+
   const reinviteFlag = reinviteFlagText(
     assignments
       .filter((assignment) => dateReinviteNeeded(assignment, job.date))
@@ -214,7 +220,6 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
               if (!cleaner) return null;
               const detail = job.draftCleanerDetails?.find((item) => item.cleanerId === cleanerId);
-              const gap = detail ? noticeGap(true, detail) : null;
               return (
                 <div key={cleanerId} className="flex items-start justify-between gap-3">
                   <Link href={editPath(job.jobId, from, { cleaner: cleanerId })} className="block min-w-0 flex-1">
@@ -226,7 +231,6 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         <p className="mt-0.5 text-sm text-ink/55">
                           Draft assignment{detail.proposedCrewSize > 1 ? ` · crew of ${detail.proposedCrewSize}` : ""}
                         </p>
-                        {gap ? <p className="mt-1 text-sm font-semibold text-red-700">{noticeFlagText(cleaner.firstName, gap)}</p> : null}
                         <ScheduleFacts
                           date={job.date}
                           arrivalWindowStart={detail.arrivalWindowStart}
@@ -254,7 +258,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               const cleaner = hub.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
               if (!cleaner) return null;
               const declined = assignment.status === "DECLINED";
-              const gap = noticeGap(false, assignment, assignment.lastNotified);
+              const gap = assignmentTracksCleanerNotification(assignment.status)
+                ? noticeGap(false, assignment, assignment.lastNotified)
+                : null;
               const noticeKey = assignmentNoticeDismissKey(assignment);
               const showNotice = Boolean(gap) && !dismissedNotices.has(noticeKey);
               return (
@@ -350,6 +356,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               const result = hub.deleteJob(job.jobId);
               if (result.message) hub.flash(result.message);
               if (!result.ok) return;
+              setNavigatingAway(true);
               if (groupedCustomerDayView(from)) {
                 const remaining = customerCleaningsOnDate(hub.jobs, job.customerId, job.date).filter(
                   (item) => item.jobId !== job.jobId,
@@ -561,16 +568,49 @@ function RecurringCard({
 
 function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string }) {
   const hub = useHub();
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    if (busy) return;
+    const job = hub.jobs.find((item) => item.jobId === jobId);
+    const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
+    const result = hub.removeJobCleaner(jobId, cleanerId);
+    if (!result.ok) {
+      if (result.message) hub.flash(result.message);
+      return;
+    }
+    if (!job || !cleaner) {
+      if (result.message) hub.flash(result.message);
+      return;
+    }
+    setBusy(true);
+    const body = cleanerRemovedFromJobSms({
+      cleanerFirstName: cleaner.firstName,
+      customerName: job.snapshot.customerDisplayName,
+      date: job.date,
+    });
+    try {
+      const outcome = await deliverSchedulingCleanerSms({
+        cleaner,
+        body,
+        assignmentMessage: result.message,
+        manualDetail: "removal notice",
+      });
+      hub.flash(outcome.toast);
+      if (outcome.manual) hub.showManualCleanerText(outcome.manual);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <button
       type="button"
-      className="shrink-0 text-sm font-semibold underline"
-      onClick={() => {
-        const result = hub.removeJobCleaner(jobId, cleanerId);
-        if (result.message) hub.flash(result.message);
-      }}
+      disabled={busy}
+      className="shrink-0 text-sm font-semibold underline disabled:text-ink/40"
+      onClick={() => remove()}
     >
-      Remove
+      {busy ? "Removing…" : "Remove"}
     </button>
   );
 }
@@ -618,6 +658,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           <ServiceLine serviceType={job.serviceType} forCleaner />
           <p className="mt-3 text-sm text-ink/60">Arrival window</p>
           <p className="text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
+          <p className="mt-1 text-sm text-ink/60">Estimated time on site</p>
           <p className="text-sm text-ink/70">{formatDuration(assignment.expectedDurationMinutes)}</p>
           <div className="mt-4 flex items-start gap-2 text-base">
             <span aria-hidden="true">📍</span>
@@ -706,8 +747,8 @@ function ScheduleFacts({
   const facts = formatScheduleFacts(input);
   const items = [
     ["Arrive", facts.arrive],
-    ["Length", facts.length],
-    ["Ends", facts.ends],
+    ["Est. on site", facts.length],
+    ["Est. end", facts.ends],
   ] as const;
   return (
     <div className={`mt-3 flex flex-wrap gap-x-6 gap-y-2 rounded-2xl px-3 py-2.5 ${muted ? "bg-white/50" : "bg-cream"}`}>

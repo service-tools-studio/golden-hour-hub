@@ -6,6 +6,9 @@ import {
   declineInvitationAction,
   submitAvailabilityAction,
 } from "@/app/actions/cleaner-hub";
+import { ManualCleanerTextPrompt } from "@/components/admin/manual-cleaner-text-prompt";
+import { PreviewModeBanner } from "@/components/preview-mode-banner";
+import type { ManualCleanerTextPrompt as ManualCleanerTextOffer } from "@/lib/cleaner/deliver-scheduling-sms";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
@@ -136,6 +139,8 @@ type HubContextValue = HubState & {
   /** True when AUTH_SESSION_SECRET is unset (browser role picker at /). */
   previewAuth: boolean;
   flash: (message: string) => void;
+  showManualCleanerText: (prompt: ManualCleanerTextOffer) => void;
+  dismissManualCleanerText: () => void;
   enterAdmin: () => void;
   enterCleaner: (cleanerId: string) => void;
   signOut: () => void;
@@ -182,6 +187,7 @@ type HubContextValue = HubState & {
   deleteSeries: (seriesId: string) => ActionResult;
   /** Extend recurring job occurrences through the current horizon (safe to call often). */
   refreshRecurringHorizon: () => void;
+  applyCleanerSmsConsent: (input: { smsSchedulingOptIn: boolean; smsOptInRecordedAt: string }) => void;
 };
 
 const HubContext = createContext<HubContextValue | null>(null);
@@ -284,6 +290,7 @@ export function HubProvider({
     return { ...emptyHub(today), role: initialAuth.role, cleanerId: initialAuth.cleanerId };
   });
   const [toast, setToast] = useState<string | null>(null);
+  const [manualCleanerText, setManualCleanerText] = useState<ManualCleanerTextOffer | null>(null);
   const [previewAuth, setPreviewAuth] = useState(initialPreviewAuth && previewAuthAllowed());
   const [ready, setReady] = useState(false);
   const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
@@ -1693,6 +1700,23 @@ export function HubProvider({
     return { ok: true, message: "Cleaning deleted." };
   }
 
+  function applyCleanerSmsConsent(input: { smsSchedulingOptIn: boolean; smsOptInRecordedAt: string }): void {
+    if (!data.cleanerId) return;
+    setState({
+      ...data,
+      cleaners: data.cleaners.map((cleaner) =>
+        cleaner.cleanerId === data.cleanerId
+          ? {
+              ...cleaner,
+              smsSchedulingOptIn: input.smsSchedulingOptIn,
+              smsOptInRecordedAt: input.smsOptInRecordedAt,
+              updatedAt: input.smsOptInRecordedAt,
+            }
+          : cleaner,
+      ),
+    });
+  }
+
   function refreshRecurringHorizon(): void {
     if (data.series.length === 0) return;
     const today = todayInBusinessZone();
@@ -1739,6 +1763,8 @@ export function HubProvider({
     ready,
     previewAuth,
     flash: (message) => setToast(message),
+    showManualCleanerText: (prompt) => setManualCleanerText(prompt),
+    dismissManualCleanerText: () => setManualCleanerText(null),
     enterAdmin: () => {
       if (!previewAuth || !previewAuthAllowed()) return;
       const full = previewDynamoHubRef.current;
@@ -1795,16 +1821,33 @@ export function HubProvider({
     deleteJob,
     deleteSeries,
     refreshRecurringHorizon,
+    applyCleanerSmsConsent,
   };
 
   return (
     <HubContext.Provider value={value}>
+      <PreviewModeBanner />
       {children}
-      {toast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex justify-center px-5">
-          <p role="status" className="rounded-full bg-mint px-4 py-2 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(51,51,51,0.12)]">
-            {toast}
-          </p>
+      {toast || manualCleanerText ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex flex-col items-center gap-2 px-5">
+          {toast ? (
+            <p
+              role="status"
+              className="rounded-full bg-mint px-4 py-2 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(51,51,51,0.12)]"
+            >
+              {toast}
+            </p>
+          ) : null}
+          {manualCleanerText ? (
+            <div className="pointer-events-auto w-full max-w-md">
+              <ManualCleanerTextPrompt
+                firstName={manualCleanerText.firstName}
+                href={manualCleanerText.href}
+                detail={manualCleanerText.detail}
+                onDismiss={() => setManualCleanerText(null)}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </HubContext.Provider>

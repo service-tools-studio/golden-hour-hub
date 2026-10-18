@@ -12,7 +12,13 @@ import { searchCustomers } from "@/lib/domain/customers";
 import { recurrenceSummary } from "@/lib/domain/recurrence";
 import { addDays, dayOfWeek, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
 import type { Property, ServiceType } from "@/lib/domain/types";
-import { formatLongDate, hourWindowLabel, serviceLabel } from "@/lib/format";
+import {
+  ESTIMATED_ON_SITE_FIELD_HINT,
+  ESTIMATED_ON_SITE_FIELD_LABEL,
+  formatLongDate,
+  hourWindowLabel,
+  serviceLabel,
+} from "@/lib/format";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { calculateQuoteEstimate, type CleanType, type QuoteEstimate } from "@/lib/portableQuoteEstimate";
 
@@ -592,7 +598,7 @@ export function CleaningForm({
               <p className="mt-1.5 text-sm text-ink/60">Admin only. Cleaners never see this.</p>
             </Field>
 
-            <Field label="Cleaning duration">
+            <Field label={ESTIMATED_ON_SITE_FIELD_LABEL}>
               <select
                 className={fieldClass}
                 value={duration}
@@ -607,6 +613,7 @@ export function CleaningForm({
                   </option>
                 ))}
               </select>
+              <p className="mt-1.5 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
             </Field>
 
             <Field label="Special instructions">
