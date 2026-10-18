@@ -15,8 +15,10 @@ export function HeaderAuthAction() {
         type="button"
         className={className}
         onClick={() => {
-          hub.signOut();
-          router.replace("/");
+          void (async () => {
+            await hub.signOut();
+            router.replace("/");
+          })();
         }}
       >
         Switch
@@ -31,8 +33,10 @@ export function HeaderAuthAction() {
       type="button"
       className={className}
       onClick={() => {
-        hub.signOut();
-        router.replace("/login");
+        void (async () => {
+          await hub.signOut();
+          window.location.replace("/login");
+        })();
       }}
     >
       Log out

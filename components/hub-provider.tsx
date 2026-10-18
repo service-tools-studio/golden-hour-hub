@@ -12,6 +12,7 @@ import type { ManualCleanerTextPrompt as ManualCleanerTextOffer } from "@/lib/cl
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
+import { SIGNED_OUT_STORAGE_KEY } from "@/lib/auth/signed-out-guard";
 import { mergeAdjacentWindows } from "@/lib/domain/availability";
 import { confirmedCompensationCents } from "@/lib/domain/compensation";
 import { deriveCrewSettings, validateProposedCrewSize } from "@/lib/domain/cleaners";
@@ -145,7 +146,7 @@ type HubContextValue = HubState & {
   dismissManualCleanerText: () => void;
   enterAdmin: () => void;
   enterCleaner: (cleanerId: string) => void;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   acceptInvitation: (assignmentId: string, crewSize: number) => AsyncActionResult;
   declineInvitation: (assignmentId: string) => AsyncActionResult;
   submitAvailability: (
@@ -1850,8 +1851,14 @@ export function HubProvider({
       }
       setState({ ...data, role: "CLEANER", cleanerId });
     },
-    signOut: () => {
-      if (!previewAuth) void fetch("/api/auth/logout", { method: "POST" });
+    signOut: async () => {
+      if (!previewAuth) {
+        try {
+          await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+        } catch {
+          /* still clear local session */
+        }
+      }
       const full = previewDynamoHubRef.current;
       if (full) {
         setState({ ...withCurrentHorizon(full), role: null, cleanerId: null });
@@ -1860,6 +1867,7 @@ export function HubProvider({
       }
       try {
         sessionStorage.removeItem(SESSION_KEY);
+        sessionStorage.setItem(SIGNED_OUT_STORAGE_KEY, String(Date.now()));
       } catch {
         /* ignore */
       }

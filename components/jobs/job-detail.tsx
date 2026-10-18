@@ -648,7 +648,7 @@ function assignmentSubtitle(assignment: JobAssignment): string {
     case "PENDING_AVAILABILITY":
       return `Confirmed${crewText}`;
     case "INVITED":
-      return `Awaiting invite${crewText}`;
+      return `Awaiting response to invite${crewText}`;
     case "NEEDS_ATTENTION":
       return "Needs attention";
     case "DECLINED":

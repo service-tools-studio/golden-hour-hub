@@ -6,6 +6,7 @@ import { PasswordInput } from "@/components/password-input";
 import { LivePasswordRequirements, PasswordRequirements } from "@/components/password-requirements";
 import { fetchPasswordRequirements, isPasswordPolicyMessage } from "@/lib/auth/password-requirements-client";
 import type { PasswordRule } from "@/lib/auth/password-rules";
+import { clearSignedOutGuard, signedOutRecently } from "@/lib/auth/signed-out-guard";
 import type { HubSetupVariant, SignInApiResult } from "@/lib/auth/sign-in-types";
 
 type ChallengeState = { email: string; session: string };
@@ -32,6 +33,7 @@ export function LoginForm() {
   const [requirementsIntro, setRequirementsIntro] = useState("Your new password must include:");
   const [hubSetup, setHubSetup] = useState<HubSetupVariant | null>(null);
   const [pending, startTransition] = useTransition();
+  const [blockAutofillSubmit, setBlockAutofillSubmit] = useState(() => signedOutRecently());
 
   const refreshRequirements = useCallback(async () => {
     try {
@@ -76,8 +78,14 @@ export function LoginForm() {
     setError(result.message ?? "That password doesn't meet our security rules yet.");
   }
 
+  function unlockLoginFields() {
+    setBlockAutofillSubmit(false);
+    clearSignedOutGuard();
+  }
+
   function submitLogin(event: React.FormEvent) {
     event.preventDefault();
+    if (blockAutofillSubmit) return;
     setError(null);
     setPasswordPolicyError(false);
     setHubSetup(null);
@@ -200,14 +208,20 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={submitLogin} className="mt-8 space-y-4">
+    <form
+      onSubmit={submitLogin}
+      onPointerDown={unlockLoginFields}
+      className="mt-8 space-y-4"
+    >
       <label className="block">
         <span className="text-sm font-medium text-ink/70">Email</span>
         <input
           type="email"
           autoComplete="email"
           required
+          readOnly={blockAutofillSubmit}
           value={email}
+          onFocus={unlockLoginFields}
           onChange={(event) => setEmail(event.target.value)}
           className="mt-1 min-h-12 w-full rounded-2xl border border-ink/15 bg-white px-4 text-base"
         />
@@ -217,6 +231,8 @@ export function LoginForm() {
         <PasswordInput
           autoComplete="current-password"
           required
+          readOnly={blockAutofillSubmit}
+          onFocus={unlockLoginFields}
           value={password}
           onChange={setPassword}
         />

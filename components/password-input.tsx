@@ -37,9 +37,11 @@ type PasswordInputProps = {
   onChange: (value: string) => void;
   autoComplete?: string;
   required?: boolean;
+  readOnly?: boolean;
+  onFocus?: () => void;
 };
 
-export function PasswordInput({ id, value, onChange, autoComplete, required }: PasswordInputProps) {
+export function PasswordInput({ id, value, onChange, autoComplete, required, readOnly, onFocus }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -49,6 +51,8 @@ export function PasswordInput({ id, value, onChange, autoComplete, required }: P
         type={visible ? "text" : "password"}
         autoComplete={autoComplete}
         required={required}
+        readOnly={readOnly}
+        onFocus={onFocus}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="min-h-12 w-full rounded-2xl border border-ink/15 bg-white py-3 pl-4 pr-12 text-base"

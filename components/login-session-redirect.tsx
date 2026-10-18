@@ -2,13 +2,16 @@
 
 import { useEffect } from "react";
 
+import { signedOutRecently } from "@/lib/auth/signed-out-guard";
+
 /** If Cognito session is still valid, leave the login page. */
 export function LoginSessionRedirect() {
   useEffect(() => {
     let cancelled = false;
     async function check() {
+      if (signedOutRecently()) return;
       try {
-        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
         const data = (await response.json()) as {
           session?: { role: "ADMIN" | "CLEANER" } | null;
         };

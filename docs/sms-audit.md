@@ -38,4 +38,4 @@ Admin taps **Text client**; opens Messages with a prefilled body. Twilio never t
 
 **Arrival time update**
 
-> Hi {customerFirstName}! This is Golden Hour Cleaning Co. Your cleaning on {date} will start around {arrivalTime} instead of {scheduledTime}. Please allow our cleaner(s) a one-hour window of arrival / grace period due to coming from other jobs. Reply to this message if you need a different time.
+> Hi {customerFirstName}! This is Golden Hour Cleaning Co. We wanted to let you know that your cleaning on {date} is now expected to begin around {arrivalTime} instead of {scheduledTime}. Please allow a one-hour arrival window, as our cleaners may be coming from other appointments. If this timing doesn't work for you, just reply to this message and we'll be happy to coordinate!
