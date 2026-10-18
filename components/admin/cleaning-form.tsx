@@ -252,6 +252,13 @@ export function CleaningForm({
     const window = oneHourWindow(start);
     setArrivalStart(window.start);
     setArrivalEnd(window.end);
+    setCleanerArrivals((current) =>
+      current.map((arrival) =>
+        draftCleanerIds.includes(arrival.cleanerId)
+          ? { ...arrival, arrivalWindowStart: window.start, arrivalWindowEnd: window.end }
+          : arrival,
+      ),
+    );
     setMessage(null);
   }
 

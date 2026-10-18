@@ -35,12 +35,15 @@ import {
   formatArrival,
   formatTimeLabel,
   formatDuration,
+  ESTIMATED_ON_SITE_FIELD_LABEL,
+  formatEstimatedOnSiteEnd,
   formatLongDate,
   formatScheduleFacts,
   assignmentNotifiesOnRemoval,
   assignmentTracksCleanerNotification,
   noticeFlagText,
   noticeGap,
+  assignmentPayPerPersonDetail,
   payLine,
   propertySizeLabel,
   reinviteFlagText,
@@ -682,6 +685,11 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
     job.snapshot.bathrooms,
     job.snapshot.squareFeet,
   );
+  const estimatedEnd = formatEstimatedOnSiteEnd(
+    assignment.arrivalWindowStart,
+    assignment.arrivalWindowEnd,
+    assignment.expectedDurationMinutes,
+  );
   const kelseyContact = kelseyContactLinks(
     kelseyPhoneDigits,
     cleanerTextKelseyAboutJobBody({
@@ -693,7 +701,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
       arrivalWindowEnd: assignment.arrivalWindowEnd,
       expectedDurationMinutes: assignment.expectedDurationMinutes,
       addressLine: fullAddress(job.snapshot),
-      payLine: payLine(assignment, !pendingAvailability),
+      payLine: payLine(assignment, !pendingAvailability, cleaner),
     }),
   );
   return (
@@ -721,8 +729,9 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           <ServiceLine serviceType={job.serviceType} forCleaner />
           <p className="mt-3 text-sm text-ink/60">Arrival window</p>
           <p className="text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
-          <p className="mt-1 text-sm text-ink/60">Estimated time on site</p>
+          <p className="mt-1 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_LABEL}</p>
           <p className="text-sm text-ink/70">{formatDuration(assignment.expectedDurationMinutes)}</p>
+          {estimatedEnd ? <p className="mt-1.5 text-sm text-ink/70">Estimated end {estimatedEnd}</p> : null}
           <div className="mt-4 flex items-start gap-2 text-base">
             <span aria-hidden="true">📍</span>
             <AddressLink address={fullAddress(job.snapshot)}>
@@ -750,11 +759,14 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
                 {assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize}
               </p>
               <p className="mt-1 text-sm text-ink/70">
-                {formatMoney(assignment.payPerPersonCents)} per person
+                {assignmentPayPerPersonDetail(
+                  assignment,
+                  assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize,
+                )}
               </p>
             </>
           ) : null}
-          <p className="mt-2 text-xl font-semibold">{payLine(assignment, !pendingAvailability)}</p>
+          <p className="mt-2 text-xl font-semibold">{payLine(assignment, !pendingAvailability, cleaner)}</p>
           <p className="mt-4 text-sm leading-5 text-ink/70">
             {pendingAvailability
               ? "Questions about this job? Contact Kelsey."

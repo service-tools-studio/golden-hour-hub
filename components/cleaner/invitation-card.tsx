@@ -4,15 +4,17 @@ import { useState } from "react";
 import { AddressLink, fullAddress } from "@/components/address-link";
 import { useHub } from "@/components/hub-provider";
 import { Card, Notice, PrimaryButton, SecondaryButton } from "@/components/ui";
-import { helpersApproved, maxCrewSize } from "@/lib/domain/cleaners";
-import { confirmedCompensationCents, formatMoney } from "@/lib/domain/compensation";
-import { calculateRemainingHeadcount } from "@/lib/domain/scheduling";
+import { helpersApproved } from "@/lib/domain/cleaners";
+import { confirmedCompensationCents } from "@/lib/domain/compensation";
+import { invitationAttendanceBounds } from "@/lib/domain/scheduling";
 import { mondayOf } from "@/lib/domain/time";
 import {
+  cleanerInvitationPayLines,
   cleanerServiceLabel,
   customerFirstNameForCleaner,
   formatArrival,
   formatDuration,
+  formatEstimatedOnSiteEnd,
   formatLongDate,
 } from "@/lib/format";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
@@ -36,21 +38,12 @@ export function InvitationCard({
   cleaner: CleanerProfile;
 }) {
   const hub = useHub();
-  const remaining = calculateRemainingHeadcount(
-    job.headcountNeeded,
-    hub.assignments.filter((item) => item.jobId === job.jobId),
-  );
   const bringsHelpers = helpersApproved(cleaner.maxHelperCount);
+  const attendance = invitationAttendanceBounds(assignment.proposedCrewSize, cleaner.maxHelperCount);
   const weekSubmitted = hub.submissions.some(
     (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === mondayOf(job.date),
   );
-  const maxAttendance = Math.min(
-    assignment.proposedCrewSize,
-    maxCrewSize(cleaner.maxHelperCount),
-    Math.max(remaining, 1),
-  );
-  const initialCrew = bringsHelpers ? Math.min(assignment.proposedCrewSize, maxAttendance) : 1;
-  const [crew, setCrew] = useState(initialCrew);
+  const [crew, setCrew] = useState(attendance.default);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<"accept" | "decline" | null>(null);
   const attending = bringsHelpers ? crew : 1;
@@ -59,7 +52,18 @@ export function InvitationCard({
     payPerPersonCents: assignment.payPerPersonCents,
     confirmedCrewSize: attending,
   });
-  const hourlySuffix = assignment.payType === "HOURLY" ? "/hour" : "";
+  const estimatedEnd = formatEstimatedOnSiteEnd(
+    assignment.arrivalWindowStart,
+    assignment.arrivalWindowEnd,
+    assignment.expectedDurationMinutes,
+  );
+  const invitePayLines = cleanerInvitationPayLines({
+    bringsHelpers,
+    payType: assignment.payType,
+    crewTotalCents: pay,
+    perPersonCents: assignment.payPerPersonCents,
+    crewSize: bringsHelpers ? assignment.proposedCrewSize : 1,
+  });
 
   async function accept() {
     if (pending) return;
@@ -110,7 +114,15 @@ export function InvitationCard({
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-ink/60">Estimated cleaning time</dt>
-          <dd>{formatDuration(assignment.expectedDurationMinutes)}</dd>
+          <dd className="text-right">
+            {formatDuration(assignment.expectedDurationMinutes)}
+            {estimatedEnd ? (
+              <>
+                <br />
+                <span className="text-sm text-ink/70">Estimated end {estimatedEnd}</span>
+              </>
+            ) : null}
+          </dd>
         </div>
       </dl>
       {bringsHelpers ? (
@@ -121,9 +133,9 @@ export function InvitationCard({
             <button
               type="button"
               className="min-h-12 min-w-12 rounded-xl bg-white text-2xl disabled:opacity-50"
-              onClick={() => setCrew((value) => Math.max(1, value - 1))}
+              onClick={() => setCrew((value) => Math.max(attendance.min, value - 1))}
               aria-label="Fewer people"
-              disabled={pending !== null}
+              disabled={pending !== null || crew <= attendance.min}
             >
               −
             </button>
@@ -131,30 +143,29 @@ export function InvitationCard({
             <button
               type="button"
               className="min-h-12 min-w-12 rounded-xl bg-white text-2xl disabled:opacity-50"
-              onClick={() => setCrew((value) => Math.min(maxAttendance, value + 1))}
+              onClick={() => setCrew((value) => Math.min(attendance.max, value + 1))}
               aria-label="More people"
-              disabled={pending !== null || maxAttendance < 1}
+              disabled={pending !== null || crew >= attendance.max}
             >
               +
             </button>
           </div>
           <p className="mt-2 text-sm text-ink/60">
-            This number includes you. The most for this invite is {maxAttendance} {maxAttendance === 1 ? "person" : "people"}.
+            This number includes you. The most for this invite is {attendance.max} {attendance.max === 1 ? "person" : "people"}.
           </p>
-          <p className="mt-3 text-base">
-            {assignment.payType === "FLAT" ? "Flat rate" : "Rate"}: {formatMoney(pay)}
-            {assignment.payType === "HOURLY" ? hourlySuffix : ""} total
-            <br />
-            {crew} {crew === 1 ? "person" : "people"} → {formatMoney(assignment.payPerPersonCents)} per person
-            {assignment.payType === "HOURLY" ? hourlySuffix : ""}
-          </p>
+          <div className="mt-3 space-y-1 text-base">
+            {invitePayLines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
         </div>
       ) : (
-        <div className="mt-4 space-y-2">
-          <p className="text-base font-medium">
-            {assignment.payType === "FLAT" ? "Flat rate" : "Your pay"}: {formatMoney(pay)}
-            {assignment.payType === "HOURLY" ? "/hour" : ""}
-          </p>
+        <div className="mt-4 space-y-1">
+          {invitePayLines.map((line) => (
+            <p key={line} className="text-base font-medium">
+              {line}
+            </p>
+          ))}
         </div>
       )}
       {message ? (

@@ -7,6 +7,15 @@ import type {
   JobCustomerSnapshot,
   ServiceType,
 } from "./domain/types";
+import {
+  assignmentPayFieldAriaLabel,
+  assignmentPayFieldHints,
+  assignmentPayFieldLabel,
+  assignmentPayPerPersonDetail,
+  assignmentPaySummaryLine,
+  cleanerInvitationPayLines,
+} from "./domain/pay-copy";
+import { cleaningTimeSpan } from "./domain/availability";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import {
   addDays,
@@ -125,6 +134,17 @@ export function formatDuration(minutes: number): string {
   if (remainder === 0) return hours === 1 ? "1 hour" : `${hours} hours`;
   if (hours === 0) return `${remainder} min`;
   return `${hours} hr ${remainder} min`;
+}
+
+/** On-site end time after the arrival window ends (same rule as admin duration hint). */
+export function formatEstimatedOnSiteEnd(
+  arrivalWindowStart: string,
+  arrivalWindowEnd: string,
+  expectedDurationMinutes: number,
+): string | null {
+  const span = cleaningTimeSpan(arrivalWindowStart, arrivalWindowEnd, expectedDurationMinutes);
+  if (!span) return null;
+  return formatTimeLabel(span.end);
 }
 
 export function formatArrival(start: string, end: string): string {
@@ -311,8 +331,10 @@ export function directAssignmentSms(input: {
   date: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
+  appUrl?: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You're assigned to ${input.customerFirstName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Hub app.`;
+  const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You're assigned to ${input.customerFirstName} at ${input.streetAddress} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Details are in the Golden Hour Hub app: ${link}`;
 }
 
 export function inviteAssignmentSms(input: {
@@ -321,8 +343,10 @@ export function inviteAssignmentSms(input: {
   date: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
+  appUrl?: string;
 }): string {
-  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for ${input.customerFirstName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub app to accept or decline as soon as you can.`;
+  const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for ${input.customerFirstName} on ${formatLongDate(input.date)}, arriving ${hourWindowLabel(input.arrivalWindowStart, input.arrivalWindowEnd)}. Open the Golden Hour Hub app to accept or decline as soon as you can: ${link}`;
 }
 
 export function inviteFollowUpSms(input: {
@@ -332,7 +356,7 @@ export function inviteFollowUpSms(input: {
   appUrl?: string;
 }): string {
   const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
-  return `Hi ${input.cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for ${input.customerFirstName} on ${formatLongDate(input.date)} in the Golden Hour Hub app as soon as possible. ${link}`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for ${input.customerFirstName} on ${formatLongDate(input.date)} in the Golden Hour Hub app as soon as possible: ${link}`;
 }
 
 export function cleanerRemovedFromJobSms(input: {
@@ -408,10 +432,19 @@ export function assignmentNotifiesOnRemoval(status: JobAssignment["status"] | un
   return status === "CONFIRMED" || status === "PENDING_AVAILABILITY" || status === "NEEDS_ATTENTION";
 }
 
-export function payLine(assignment: JobAssignment, confirmed: boolean): string {
-  const cents = confirmed
-    ? (assignment.confirmedTotalPayCents ?? assignment.proposedTotalPayCents)
-    : assignment.proposedTotalPayCents;
-  if (assignment.payType === "HOURLY") return `${formatMoney(cents)}/hour`;
-  return `${formatMoney(cents)} flat`;
+export {
+  assignmentPayFieldAriaLabel,
+  assignmentPayFieldHints,
+  assignmentPayFieldLabel,
+  assignmentPayPerPersonDetail,
+  cleanerInvitationPayLines,
+};
+
+export function payLine(
+  assignment: JobAssignment,
+  confirmed: boolean,
+  cleaner?: Pick<CleanerProfile, "maxHelperCount">,
+): string {
+  const bringsHelpers = cleaner ? helpersApproved(cleaner.maxHelperCount) : false;
+  return assignmentPaySummaryLine(assignment, confirmed, bringsHelpers);
 }

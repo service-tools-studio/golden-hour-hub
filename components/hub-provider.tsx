@@ -252,6 +252,31 @@ function withEarliestArrival(job: Job, _assignments: JobAssignment[]): Job {
   return job;
 }
 
+function jobWithCleaningArrival(job: Job, arrivalWindowStart: string, arrivalWindowEnd: string, now: string): Job {
+  return {
+    ...job,
+    arrivalWindowStart,
+    arrivalWindowEnd,
+    updatedAt: now,
+    updatedBy: "kelsey",
+  };
+}
+
+function syncJobAssignmentsToCleaningArrival(
+  assignments: JobAssignment[],
+  jobId: string,
+  arrivalWindowStart: string,
+  arrivalWindowEnd: string,
+  now: string,
+): JobAssignment[] {
+  return assignments.map((item) => {
+    if (item.jobId !== jobId) return item;
+    if (item.status === "CANCELED" || item.status === "EXPIRED_JOB_FILLED") return item;
+    if (item.arrivalWindowStart === arrivalWindowStart && item.arrivalWindowEnd === arrivalWindowEnd) return item;
+    return { ...item, arrivalWindowStart, arrivalWindowEnd, updatedAt: now };
+  });
+}
+
 function assignmentSavedMessage(
   cleaner: CleanerProfile,
   assignment: Pick<JobAssignment, "status" | "attentionReason">,
@@ -1190,9 +1215,6 @@ export function HubProvider({
     }
     const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
     if (!crew.ok) return crew;
-    if (input.proposedCrewSize > job.headcountNeeded) {
-      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
-    }
     if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
       return { ok: false, message: "Enter the pay per person." };
     }
@@ -1238,7 +1260,7 @@ export function HubProvider({
         assignment.status !== "EXPIRED_JOB_FILLED",
     );
     if (already) return { ok: false, message: "That cleaner is already assigned on this cleaning." };
-    if (detail.proposedCrewSize > job.headcountNeeded) {
+    if (input.mode === "DIRECT" && detail.proposedCrewSize > job.headcountNeeded) {
       return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
     }
     const now = new Date().toISOString();
@@ -1340,7 +1362,7 @@ export function HubProvider({
     }
     const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
     if (!crew.ok) return crew;
-    if (input.proposedCrewSize > job.headcountNeeded) {
+    if (input.mode === "DIRECT" && input.proposedCrewSize > job.headcountNeeded) {
       return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
     }
     if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
@@ -1360,7 +1382,7 @@ export function HubProvider({
         arrivalWindowEnd: input.arrivalWindowEnd,
         expectedDurationMinutes: input.expectedDurationMinutes,
       });
-      const nextAssignments = data.assignments.map((item) => {
+      let nextAssignments = data.assignments.map((item) => {
         if (item.assignmentId !== existing.assignmentId) return item;
         let nextItem: JobAssignment = {
           ...item,
@@ -1383,7 +1405,17 @@ export function HubProvider({
         }
         return nextItem;
       });
-      const next = withEarliestArrival({ ...job, updatedAt: now, updatedBy: "kelsey" }, nextAssignments);
+      nextAssignments = syncJobAssignmentsToCleaningArrival(
+        nextAssignments,
+        job.jobId,
+        input.arrivalWindowStart,
+        input.arrivalWindowEnd,
+        now,
+      );
+      const next = withEarliestArrival(
+        jobWithCleaningArrival(job, input.arrivalWindowStart, input.arrivalWindowEnd, now),
+        nextAssignments,
+      );
       setState({
         ...data,
         jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
@@ -1435,18 +1467,28 @@ export function HubProvider({
       lastNotified: notice,
       notifiedServiceDate: job.date,
     };
-    const nextAssignments = existing
+    let nextAssignments = existing
       ? data.assignments.map((item) => (item.assignmentId === existing.assignmentId ? savedAssignment : item))
       : [...data.assignments, savedAssignment];
+    nextAssignments = syncJobAssignmentsToCleaningArrival(
+      nextAssignments,
+      job.jobId,
+      input.arrivalWindowStart,
+      input.arrivalWindowEnd,
+      now,
+    );
     const next = withEarliestArrival(
-      {
-        ...job,
-        draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
-        draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
-        status: "SCHEDULED",
-        updatedAt: now,
-        updatedBy: "kelsey",
-      },
+      jobWithCleaningArrival(
+        {
+          ...job,
+          draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
+          draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
+          status: "SCHEDULED",
+        },
+        input.arrivalWindowStart,
+        input.arrivalWindowEnd,
+        now,
+      ),
       nextAssignments,
     );
     let assignments = nextAssignments;

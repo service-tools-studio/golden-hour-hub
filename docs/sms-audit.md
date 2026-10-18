@@ -6,15 +6,15 @@ Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}
 
 **Direct assignment**
 
-> Hi {cleanerFirstName}! Golden Hour Hub here. You're assigned to {customerName} at {streetAddress} on {date}, arriving {arrivalWindow}. Details are in the Golden Hour Hub app.
+> Hi {cleanerFirstName}! Golden Hour Hub here. You're assigned to {customerName} at {streetAddress} on {date}, arriving {arrivalWindow}. Details are in the Golden Hour Hub app: {link}
 
 **Invitation**
 
-> Hi {cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for {customerName} on {date}, arriving {arrivalWindow}. Open the Golden Hour Hub app to accept or decline as soon as you can.
+> Hi {cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for {customerName} on {date}, arriving {arrivalWindow}. Open the Golden Hour Hub app to accept or decline as soon as you can: {link}
 
 **Invitation follow-up**
 
-> Hi {cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for {customerName} on {date} in the Golden Hour Hub app as soon as possible. (link)
+> Hi {cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for {customerName} on {date} in the Golden Hour Hub app as soon as possible: {link}
 
 **Removed from cleaning**
 

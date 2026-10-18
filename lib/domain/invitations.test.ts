@@ -94,6 +94,19 @@ describe("invitation acceptance", () => {
     assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 1, confirmedTotalPayCents: 5000 });
   });
 
+  it("lets a cleaner accept up to the proposed crew when job headcount is lower", () => {
+    const result = validateInvitationAcceptance({
+      assignment: invite({ proposedCrewSize: 2, proposedTotalPayCents: 10000 }),
+      job: { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 1 },
+      cleaner: { cleanerId: "claudia", status: "ACTIVE", maxHelperCount: 2 },
+      requestedCrewSize: 2,
+      jobAssignments: [invite({ proposedCrewSize: 2, proposedTotalPayCents: 10000 })],
+      cleanerConfirmedAssignments: [],
+      availabilityWindows: openWindow,
+    });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", confirmedCrewSize: 2, confirmedTotalPayCents: 10000 });
+  });
+
   it("uses the stored rate for hourly crew pay", () => {
     const result = validateInvitationAcceptance({
       assignment: invite({ payType: "HOURLY", payPerPersonCents: 3500, proposedTotalPayCents: 7000 }),

@@ -125,6 +125,39 @@ export function calculateRemainingHeadcount(
   return headcountNeeded - calculateConfirmedHeadcount(assignments);
 }
 
+/** Max crew the admin may propose for one cleaner on a job, given headcount and other staffed assignments. */
+export function proposedCrewCeiling(input: {
+  headcountNeeded: number;
+  maxHelperCount: number;
+  assignments: Array<
+    Pick<JobAssignment, "assignmentId" | "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">
+  >;
+  assignmentId?: string;
+}): number {
+  const cleanerMax = maxCrewSize(input.maxHelperCount);
+  if (input.headcountNeeded <= 0) return cleanerMax;
+  const others = input.assignments.filter((item) => item.assignmentId !== input.assignmentId);
+  const usedByOthers = calculateConfirmedHeadcount(others);
+  const open = input.headcountNeeded - usedByOthers;
+  return Math.min(cleanerMax, Math.max(open, 1));
+}
+
+/** Keep the stepper able to return to the crew size when the form was opened. */
+export function assignmentCrewStepperMax(ceiling: number, openedAtCrew: number): number {
+  return Math.max(ceiling, openedAtCrew);
+}
+
+/** Cleaner invite accept stepper: default to proposed crew, adjustable up to proposed and cleaner max. */
+export function invitationAttendanceBounds(proposedCrewSize: number, maxHelperCount: number): {
+  min: number;
+  max: number;
+  default: number;
+} {
+  const max = Math.min(proposedCrewSize, maxCrewSize(maxHelperCount));
+  const safeMax = Math.max(max, 1);
+  return { min: 1, max: safeMax, default: safeMax };
+}
+
 export function assignmentBlocksCleaningDeletion(status: JobAssignment["status"]): boolean {
   return status === "CONFIRMED" || status === "PENDING_AVAILABILITY" || status === "NEEDS_ATTENTION";
 }

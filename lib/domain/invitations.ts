@@ -45,10 +45,11 @@ export function validateInvitationAcceptance(input: {
     input.job.headcountNeeded,
     input.jobAssignments.filter((assignment) => assignment.assignmentId !== input.assignment.assignmentId),
   );
+  const headcountForInvite = Math.max(remainingHeadcount, input.assignment.proposedCrewSize);
   const crew = validateRequestedCrewSize({
     maxHelperCount: input.cleaner.maxHelperCount,
     requestedCrewSize: input.requestedCrewSize,
-    remainingHeadcount,
+    remainingHeadcount: headcountForInvite,
   });
   if (!crew.ok) return crew;
 

@@ -14,14 +14,17 @@ import { useHubSyncBlocker } from "@/components/hub-sync";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
-import { calculateFlatPayPerPerson, formatMoney } from "@/lib/domain/compensation";
-import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
+import { calculateFlatPayPerPerson } from "@/lib/domain/compensation";
+import { helpersApproved, personName, typicalCrewSize } from "@/lib/domain/cleaners";
 import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
 import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
 import { CLEANING_DELETE_BLOCKED_MESSAGE, jobHasCleanerBlockingDeletion, windowsForCleaner } from "@/lib/domain/scheduling";
 import {
   assignmentFormStatus,
+  assignmentPayFieldAriaLabel,
+  assignmentPayFieldHints,
+  assignmentPayFieldLabel,
   assignmentTracksCleanerNotification,
   dateReinviteNeeded,
   ESTIMATED_ON_SITE_FIELD_HINT,
@@ -103,6 +106,21 @@ async function notifyInviteFollowUp(cleaner: CleanerProfile, job: Job) {
 function cleaningSubtitle(job: Job, start: string | undefined): string {
   const when = start ? `${formatLongDate(job.date)} at ${formatTimeLabel(start)}` : formatLongDate(job.date);
   return `${job.snapshot.customerDisplayName} · ${when}`;
+}
+
+function jobCleaningWindow(job: Job | undefined): { start: string; end: string } | null {
+  if (!job?.arrivalWindowStart || !job?.arrivalWindowEnd) return null;
+  return { start: job.arrivalWindowStart, end: job.arrivalWindowEnd };
+}
+
+function cleaningArrivalForForm(
+  job: Job | undefined,
+  windows: { start: string; end: string }[],
+  jobStart: string | undefined,
+): { start: string; end: string } | null {
+  const fromJob = jobCleaningWindow(job);
+  if (fromJob) return fromJob;
+  return defaultArrival(windows, jobStart) ?? null;
 }
 
 function cleaningStart(
@@ -242,9 +260,14 @@ export function EditJobView({
     assignment ? { start: assignment.arrivalWindowStart, end: assignment.arrivalWindowEnd } : undefined,
   );
   const jobStart = cleaningStart(job, hub, assignment?.cleanerId ?? "");
+  const cleaningArrival = cleaningArrivalForForm(job, arrivalWindows, jobStart);
   const initialArrival = defaultArrival(arrivalWindows, jobStart);
-  const [arrivalStart, setArrivalStart] = useState(assignment?.arrivalWindowStart ?? initialArrival?.start ?? "");
-  const [arrivalEnd, setArrivalEnd] = useState(assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "");
+  const [arrivalStart, setArrivalStart] = useState(
+    cleaningArrival?.start ?? assignment?.arrivalWindowStart ?? initialArrival?.start ?? "",
+  );
+  const [arrivalEnd, setArrivalEnd] = useState(
+    cleaningArrival?.end ?? assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "",
+  );
   const [duration, setDuration] = useState(
     assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
   );
@@ -406,7 +429,7 @@ export function EditJobView({
     <Screen>
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
-        subtitle={cleaningSubtitle(job, jobStart)}
+        subtitle={cleaningSubtitle(job, job.arrivalWindowStart ?? jobStart)}
         crumb={{ href: cleaningHref(job.jobId, from), label: "Cleaning" }}
       />
       <form
@@ -442,10 +465,10 @@ export function EditJobView({
         ) : null}
         {maxCrew > 1 ? (
           <CountField
-            label="Crew"
+            label="Crew size (including you)"
             value={crew}
             min={1}
-            max={job.headcountNeeded > 0 ? Math.min(maxCrew, job.headcountNeeded) : maxCrew}
+            max={maxCrew}
             onChange={(next) => {
               const nextPay = preservePerPersonCrewPay(pay, crew, next);
               setCrew(next);
@@ -455,6 +478,7 @@ export function EditJobView({
           />
         ) : null}
         <AssignmentPayPerCrewGroup
+          bringsHelpers={cleaner ? helpersApproved(cleaner.maxHelperCount) : false}
           payType={payType}
           pay={pay}
           crew={crew}
@@ -689,9 +713,14 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     savedDetail ? { start: savedDetail.arrivalWindowStart, end: savedDetail.arrivalWindowEnd } : undefined,
   );
   const jobStart = cleaningStart(job, hub, cleanerId);
+  const cleaningArrival = cleaningArrivalForForm(job, windows, jobStart);
   const initialArrival = defaultArrival(windows, jobStart);
-  const [arrivalStart, setArrivalStart] = useState(savedDetail?.arrivalWindowStart ?? initialArrival?.start ?? "");
-  const [arrivalEnd, setArrivalEnd] = useState(savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "");
+  const [arrivalStart, setArrivalStart] = useState(
+    cleaningArrival?.start ?? savedDetail?.arrivalWindowStart ?? initialArrival?.start ?? "",
+  );
+  const [arrivalEnd, setArrivalEnd] = useState(
+    cleaningArrival?.end ?? savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "",
+  );
   const [duration, setDuration] = useState(
     savedDetail?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
   );
@@ -801,7 +830,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     <Screen>
       <PageHeader
         title={personName(cleaner.firstName, cleaner.lastName)}
-        subtitle={cleaningSubtitle(job, jobStart)}
+        subtitle={cleaningSubtitle(job, job.arrivalWindowStart ?? jobStart)}
         crumb={{ href: cleaningHref(job.jobId, from), label: "Cleaning" }}
       />
       <form
@@ -835,10 +864,10 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
         />
         {maxCrew > 1 ? (
           <CountField
-            label="Crew"
+            label="Crew size (including you)"
             value={crew}
             min={1}
-            max={job.headcountNeeded > 0 ? Math.min(maxCrew, job.headcountNeeded) : maxCrew}
+            max={maxCrew}
             onChange={(next) => {
               const nextPay = preservePerPersonCrewPay(pay, crew, next);
               setCrew(next);
@@ -848,6 +877,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
           />
         ) : null}
         <AssignmentPayPerCrewGroup
+          bringsHelpers={cleaner ? helpersApproved(cleaner.maxHelperCount) : false}
           payType={payType}
           pay={pay}
           crew={crew}
@@ -1031,22 +1061,34 @@ function AssignmentSaveChoices({
 }
 
 function AssignmentPayPerCrewGroup({
+  bringsHelpers,
   payType,
   pay,
   crew,
   onPayTypeChange,
   onPayChange,
 }: {
+  bringsHelpers: boolean;
   payType: PayType;
   pay: string;
   crew: number;
   onPayTypeChange: (value: PayType) => void;
   onPayChange: (value: string) => void;
 }) {
+  const crewTotalCents = dollarsToCents(pay);
   const perPersonCents = perPersonCentsFromCrewPayInput(pay, crew);
-  const hourly = payType === "HOURLY";
+  const hints =
+    crewTotalCents !== null && perPersonCents !== null
+      ? assignmentPayFieldHints({
+          bringsHelpers,
+          payType,
+          crewTotalCents,
+          perPersonCents,
+          crewSize: crew,
+        })
+      : [];
   return (
-    <Group label={hourly ? "Pay per crew per hour" : "Pay per crew"}>
+    <Group label={assignmentPayFieldLabel(bringsHelpers, payType)}>
       <div className="flex gap-2">
         <div className="flex rounded-full bg-white p-1">
           {(["FLAT", "HOURLY"] as const).map((item) => (
@@ -1064,16 +1106,16 @@ function AssignmentPayPerCrewGroup({
         <input
           inputMode="decimal"
           className={fieldClass}
-          aria-label={hourly ? "Crew pay per hour" : "Crew pay"}
+          aria-label={assignmentPayFieldAriaLabel(bringsHelpers, payType)}
           value={pay}
           onChange={(event) => onPayChange(event.target.value)}
         />
       </div>
-      {perPersonCents !== null ? (
-        <p className="mt-1.5 text-sm text-ink/70">
-          {formatMoney(perPersonCents)} per person{hourly ? " per hour" : ""}, {crew} person crew
+      {hints.map((hint) => (
+        <p key={hint} className="mt-1.5 text-sm text-ink/70">
+          {hint}
         </p>
-      ) : null}
+      ))}
     </Group>
   );
 }

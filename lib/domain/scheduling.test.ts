@@ -22,6 +22,9 @@ import {
   calculateInvitedHeadcount,
   cleaningCoverage,
   calculateRemainingHeadcount,
+  proposedCrewCeiling,
+  assignmentCrewStepperMax,
+  invitationAttendanceBounds,
   claimHeadcount,
   detectConfirmedAssignmentConflict,
   findCompatibleCleaners,
@@ -332,6 +335,50 @@ describe("headcount and helper approval", () => {
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.message, "You can only attend on your own for this job.");
     assert.equal(validateRequestedCrewSize({ maxHelperCount: 0, requestedCrewSize: 1, remainingHeadcount: 3 }).ok, true);
+  });
+
+  it("defaults invitation attendance to proposed crew within cleaner max", () => {
+    assert.deepEqual(invitationAttendanceBounds(2, 2), { min: 1, max: 2, default: 2 });
+    assert.deepEqual(invitationAttendanceBounds(3, 1), { min: 1, max: 2, default: 2 });
+    assert.deepEqual(invitationAttendanceBounds(1, 0), { min: 1, max: 1, default: 1 });
+  });
+
+  it("caps proposed crew by open headcount excluding the assignment being edited", () => {
+    const assignments = [
+      {
+        assignmentId: "a1",
+        status: "CONFIRMED" as const,
+        confirmedCrewSize: 1,
+        pendingCrewSize: undefined,
+        proposedCrewSize: 1,
+      },
+      {
+        assignmentId: "a2",
+        status: "PENDING_AVAILABILITY" as const,
+        confirmedCrewSize: undefined,
+        pendingCrewSize: 2,
+        proposedCrewSize: 2,
+      },
+    ];
+    assert.equal(
+      proposedCrewCeiling({
+        headcountNeeded: 3,
+        maxHelperCount: 2,
+        assignments,
+        assignmentId: "a2",
+      }),
+      2,
+    );
+    assert.equal(
+      proposedCrewCeiling({
+        headcountNeeded: 3,
+        maxHelperCount: 2,
+        assignments,
+        assignmentId: "a1",
+      }),
+      1,
+    );
+    assert.equal(assignmentCrewStepperMax(1, 2), 2);
   });
 
   it("keeps the final headcount slot safe when two confirmations read the same count", () => {
