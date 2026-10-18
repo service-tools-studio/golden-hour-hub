@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   acceptInvitationAction,
   declineInvitationAction,
@@ -8,7 +9,10 @@ import {
 } from "@/app/actions/cleaner-hub";
 import { ManualCleanerTextPrompt } from "@/components/admin/manual-cleaner-text-prompt";
 import { PreviewModeBanner } from "@/components/preview-mode-banner";
-import type { ManualCleanerTextPrompt as ManualCleanerTextOffer } from "@/lib/cleaner/deliver-scheduling-sms";
+import {
+  queueSchedulingSmsDelivery,
+  type ManualCleanerTextPrompt as ManualCleanerTextOffer,
+} from "@/lib/cleaner/deliver-scheduling-sms";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
@@ -42,6 +46,7 @@ import { emptyHub, type HubData } from "@/lib/mock/seed";
 import type {
   AppRole,
   AvailabilityWindow,
+  CleanerProfile,
   CleanerStatus,
   Customer,
   AssignmentNotice,
@@ -142,6 +147,13 @@ type HubContextValue = HubState & {
   /** True when AUTH_SESSION_SECRET is unset (browser role picker at /). */
   previewAuth: boolean;
   flash: (message: string) => void;
+  /** Toast plus spinner until {@link clearActionLoading} (e.g. while navigating after an action). */
+  flashLoading: (message: string) => void;
+  clearActionLoading: () => void;
+  queueSchedulingSms: (
+    promise: Promise<{ toast: string; manual?: ManualCleanerTextOffer }>,
+    fallbackSavedMessage?: string,
+  ) => void;
   showManualCleanerText: (prompt: ManualCleanerTextOffer) => void;
   dismissManualCleanerText: () => void;
   enterAdmin: () => void;
@@ -232,6 +244,20 @@ function withEarliestArrival(job: Job, _assignments: JobAssignment[]): Job {
   return job;
 }
 
+function assignmentSavedMessage(
+  cleaner: CleanerProfile,
+  assignment: Pick<JobAssignment, "status" | "attentionReason">,
+  mode: "INVITE" | "DIRECT",
+): string {
+  if (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)) {
+    return `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`;
+  }
+  if (assignment.status === "CONFIRMED") return "Cleaning assigned.";
+  if (assignment.status === "INVITED") return "Invitation sent.";
+  if (assignment.status === "PENDING_AVAILABILITY" && mode === "DIRECT") return "Cleaning assigned.";
+  return `Saved. Waiting for ${cleaner.firstName} to confirm.`;
+}
+
 function readSession(): { role: AppRole | null; cleanerId: string | null } {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
@@ -300,6 +326,9 @@ export function HubProvider({
     return { ...emptyHub(today), role: initialAuth.role, cleanerId: initialAuth.cleanerId };
   });
   const [toast, setToast] = useState<string | null>(null);
+  const [notificationPending, setNotificationPending] = useState(0);
+  const [actionLoading, setActionLoading] = useState(0);
+  const pathname = usePathname();
   const [manualCleanerText, setManualCleanerText] = useState<ManualCleanerTextOffer | null>(null);
   const [deletedJobUndo, setDeletedJobUndo] = useState<DeletedJobSnapshot | null>(null);
   const deletedJobUndoTimerRef = useRef<number | null>(null);
@@ -309,13 +338,37 @@ export function HubProvider({
   const bootstrappedRef = useRef(false);
   /** Full hub from Dynamo when using preview auth (role picker without Cognito session). */
   const previewDynamoHubRef = useRef<HubData | null>(null);
+  const persistQueueRef = useRef<HubData | null>(null);
+  const persistRunningRef = useRef(false);
+
+  async function drainPersistQueue() {
+    if (persistRunningRef.current) return;
+    persistRunningRef.current = true;
+    try {
+      while (persistQueueRef.current) {
+        const payload = persistQueueRef.current;
+        persistQueueRef.current = null;
+        const result = await persistAdminHub(payload);
+        if (!result.ok) {
+          setToast(result.message);
+        }
+      }
+    } finally {
+      persistRunningRef.current = false;
+      if (persistQueueRef.current) void drainPersistQueue();
+    }
+  }
 
   useEffect(() => {
-    if (!toast) return;
+    setActionLoading(0);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!toast || actionLoading > 0) return;
     const duration = toast.length > 80 ? 8000 : 2400;
     const timer = window.setTimeout(() => setToast(null), duration);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [toast, actionLoading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -436,7 +489,7 @@ export function HubProvider({
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, cleanerId: state.cleanerId }));
       if (previewAuth) return;
       if (state.role === "ADMIN") {
-        void persistAdminHub({
+        persistQueueRef.current = {
           today: state.today,
           cleaners: state.cleaners,
           customers: state.customers,
@@ -446,7 +499,8 @@ export function HubProvider({
           assignments: state.assignments,
           availability: state.availability,
           submissions: state.submissions,
-        });
+        };
+        void drainPersistQueue();
       }
       return;
     }
@@ -1075,14 +1129,7 @@ export function HubProvider({
       jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
       assignments: nextAssignments,
     });
-    const message =
-      assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)
-        ? `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`
-        : assignment.status === "CONFIRMED"
-          ? "Cleaning assigned."
-          : assignment.status === "INVITED"
-            ? "Invitation sent."
-            : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
+    const message = assignmentSavedMessage(cleaner, assignment, input.mode);
     return { ok: true, jobId: job.jobId, message };
   }
 
@@ -1252,14 +1299,8 @@ export function HubProvider({
       jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
       assignments,
     });
-    const message =
-      savedAssignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(savedAssignment.attentionReason)
-        ? `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`
-        : savedAssignment.status === "CONFIRMED"
-          ? "Cleaning assigned."
-          : savedAssignment.status === "INVITED"
-            ? "Invitation sent."
-            : `Saved. Waiting for ${cleaner.firstName} to confirm.`;
+    const assignMode = input.mode === "INVITE" ? "INVITE" : "DIRECT";
+    const message = assignmentSavedMessage(cleaner, savedAssignment, assignMode);
     return { ok: true, jobId: job.jobId, message };
   }
 
@@ -1827,6 +1868,21 @@ export function HubProvider({
     ready,
     previewAuth,
     flash: (message) => setToast(message),
+    flashLoading: (message) => {
+      setToast(message);
+      setActionLoading((count) => count + 1);
+    },
+    clearActionLoading: () => setActionLoading((count) => Math.max(0, count - 1)),
+    queueSchedulingSms: (promise, fallbackSavedMessage) => {
+      setNotificationPending((count) => count + 1);
+      queueSchedulingSmsDelivery(
+        (message) => setToast(message),
+        (prompt) => setManualCleanerText(prompt),
+        promise,
+        fallbackSavedMessage,
+        () => setNotificationPending((count) => Math.max(0, count - 1)),
+      );
+    },
     showManualCleanerText: (prompt) => setManualCleanerText(prompt),
     dismissManualCleanerText: () => setManualCleanerText(null),
     enterAdmin: () => {
@@ -1900,8 +1956,34 @@ export function HubProvider({
     <HubContext.Provider value={value}>
       <PreviewModeBanner />
       {children}
-      {toast || deletedJobUndo || manualCleanerText ? (
+      {notificationPending > 0 || actionLoading > 0 || toast || deletedJobUndo || manualCleanerText ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex flex-col items-center gap-2 px-5">
+          {actionLoading > 0 && !toast && !deletedJobUndo && notificationPending === 0 ? (
+            <p
+              role="status"
+              aria-live="polite"
+              className="flex items-center justify-center rounded-full bg-mint px-4 py-2.5 shadow-[0_8px_24px_rgba(51,51,51,0.12)]"
+            >
+              <span
+                className="size-4 animate-spin rounded-full border-2 border-ink/25 border-t-ink"
+                aria-hidden="true"
+              />
+              <span className="sr-only">Loading…</span>
+            </p>
+          ) : null}
+          {notificationPending > 0 && !toast && !deletedJobUndo && actionLoading === 0 ? (
+            <p
+              role="status"
+              aria-live="polite"
+              className="flex items-center justify-center rounded-full bg-mint px-4 py-2.5 shadow-[0_8px_24px_rgba(51,51,51,0.12)]"
+            >
+              <span
+                className="size-4 animate-spin rounded-full border-2 border-ink/25 border-t-ink"
+                aria-hidden="true"
+              />
+              <span className="sr-only">Sending notification…</span>
+            </p>
+          ) : null}
           {deletedJobUndo ? (
             <div
               role="status"
@@ -1922,9 +2004,16 @@ export function HubProvider({
           ) : toast ? (
             <p
               role="status"
-              className="rounded-full bg-mint px-4 py-2 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(51,51,51,0.12)]"
+              aria-live="polite"
+              className="flex max-w-md items-center gap-2 rounded-full bg-mint px-4 py-2 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(51,51,51,0.12)]"
             >
-              {toast}
+              {actionLoading > 0 ? (
+                <span
+                  className="size-4 shrink-0 animate-spin rounded-full border-2 border-ink/25 border-t-ink"
+                  aria-hidden="true"
+                />
+              ) : null}
+              <span>{toast}</span>
             </p>
           ) : null}
           {manualCleanerText ? (

@@ -15,8 +15,8 @@ import { kelseyContactLinks } from "@/lib/contact";
 import {
   cleanerServiceLabel,
   customerFirstNameForCleaner,
-  formatArrival,
   formatLongDate,
+  formatTimeLabel,
   waitingOnAvailabilityCopy,
 } from "@/lib/format";
 
@@ -41,9 +41,9 @@ function JobCard({ assignment, job }: { assignment: JobAssignment; job: Job }) {
       <Card>
         <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
         <p className="text-sm text-ink/70">
-          {cleanerServiceLabel(job.serviceType)} · {formatLongDate(job.date)}
+          {cleanerServiceLabel(job.serviceType)} · {formatLongDate(job.date)} ·{" "}
+          {formatTimeLabel(assignment.arrivalWindowStart)}
         </p>
-        <p className="mt-2 text-base">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
       </Card>
     </Link>
   );
@@ -118,7 +118,7 @@ export function CleanerHome() {
                   <Card>
                     <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
                     <p className="text-sm text-ink/70">
-                      {formatLongDate(job.date)}
+                      {formatLongDate(job.date)} · {formatTimeLabel(assignment.arrivalWindowStart)}
                       {(assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 1) > 1
                         ? ` · ${assignment.pendingCrewSize ?? assignment.proposedCrewSize} people`
                         : null}
@@ -143,9 +143,8 @@ export function CleanerHome() {
               return (
                 <Card key={assignment.assignmentId}>
                   <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
-                  <p className="text-sm text-ink/70">{formatLongDate(job.date)}</p>
-                  <p className="mt-1 text-base font-medium text-ink">
-                    {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
+                  <p className="text-sm text-ink/70">
+                    {formatLongDate(job.date)} · {formatTimeLabel(assignment.arrivalWindowStart)}
                   </p>
                   <p className="mt-2 text-sm leading-5">
                     {availabilityMismatch

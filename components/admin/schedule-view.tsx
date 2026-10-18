@@ -23,14 +23,7 @@ import {
   zonedParts,
 } from "@/lib/domain/time";
 import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment, RecurringSeries } from "@/lib/domain/types";
-import {
-  cleanerArrivalChangeSms,
-  customerFirstNameForCleaner,
-  formatLongDate,
-  manualCleanerSmsBody,
-  serviceLabel,
-  smsHref,
-} from "@/lib/format";
+import { formatLongDate, serviceLabel } from "@/lib/format";
 
 type View = "day" | "month";
 
@@ -101,38 +94,38 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
       {searchOpen ? (
         <ScheduleSearch query={query} onQuery={setQuery} onClose={closeSearch} fieldRef={searchField} matches={matches} />
       ) : (
-      <div className="space-y-4 px-5 pt-4">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          <FilterChip active={showingAll} onClick={() => setSelectedIds([])} label="All" />
-          {cleaners.map((cleaner) => (
-            <FilterChip
-              key={cleaner.cleanerId}
-              active={!showingAll && selectedIds.includes(cleaner.cleanerId)}
-              onClick={() => toggleCleaner(cleaner.cleanerId)}
-              label={cleaner.firstName}
+        <div className="space-y-4 px-5 pt-4">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            <FilterChip active={showingAll} onClick={() => setSelectedIds([])} label="All" />
+            {cleaners.map((cleaner) => (
+              <FilterChip
+                key={cleaner.cleanerId}
+                active={!showingAll && selectedIds.includes(cleaner.cleanerId)}
+                onClick={() => toggleCleaner(cleaner.cleanerId)}
+                label={cleaner.firstName}
+              />
+            ))}
+          </div>
+          {view === "day" ? (
+            <DayView
+              key={dayViewKey}
+              date={date}
+              cleanerIds={visible.map((cleaner) => cleaner.cleanerId)}
+              onDate={setDate}
+              onMonth={() => setView("month")}
             />
-          ))}
+          ) : null}
+          {view === "month" ? (
+            <MonthView
+              date={date}
+              cleanerIds={visible.map((cleaner) => cleaner.cleanerId)}
+              onPickDay={(next) => {
+                setDate(next);
+                setView("day");
+              }}
+            />
+          ) : null}
         </div>
-        {view === "day" ? (
-          <DayView
-            key={dayViewKey}
-            date={date}
-            cleanerIds={visible.map((cleaner) => cleaner.cleanerId)}
-            onDate={setDate}
-            onMonth={() => setView("month")}
-          />
-        ) : null}
-        {view === "month" ? (
-          <MonthView
-            date={date}
-            cleanerIds={visible.map((cleaner) => cleaner.cleanerId)}
-            onPickDay={(next) => {
-              setDate(next);
-              setView("day");
-            }}
-          />
-        ) : null}
-      </div>
       )}
       {searchOpen ? null : (
         <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] z-20 mx-auto w-full max-w-md px-5">
@@ -281,9 +274,8 @@ function FilterChip({ active, label, onClick }: { active: boolean; label: string
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold ${
-        active ? "bg-gold text-ink" : "bg-white text-ink/70"
-      }`}
+      className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold ${active ? "bg-gold text-ink" : "bg-white text-ink/70"
+        }`}
     >
       {label}
     </button>
@@ -390,9 +382,8 @@ function DayView({
                   <button key={day} type="button" onClick={() => onDate(day)} className="flex flex-col items-center gap-1 py-1" aria-current={today ? "date" : undefined}>
                     <span className="text-[11px] font-semibold text-ink/40">{WEEKDAY_LETTERS[index]}</span>
                     <span
-                      className={`flex size-9 items-center justify-center rounded-full text-base ${
-                        today ? "bg-mint font-semibold text-ink" : selected ? "bg-ink/10 font-semibold text-ink" : "text-ink"
-                      }`}
+                      className={`flex size-9 items-center justify-center rounded-full text-base ${today ? "bg-mint font-semibold text-ink" : selected ? "bg-ink/10 font-semibold text-ink" : "text-ink"
+                        }`}
                     >
                       {Number(day.slice(8))}
                     </span>
@@ -564,8 +555,6 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
   const nowMs = useNow();
   const now = date === hub.today ? nowMinutes(nowMs) : null;
   const showNow = now != null && now >= grid.start && now <= grid.end;
-  const [movedAssignmentId, setMovedAssignmentId] = useState<string | null>(null);
-
   return (
     <div className="rounded-3xl bg-white px-2 pb-3 pt-2">
       <div className="relative" style={{ height }}>
@@ -589,21 +578,17 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
           </div>
         ) : null}
         <div className="absolute right-1 left-12" style={{ top: 0, height }}>
-          {laidOut.map((event) =>
-            event.assignmentId && event.windowMinutes ? (
-              <DraggableBooking key={event.id} event={event} gridStart={grid.start} onMoved={setMovedAssignmentId} />
-            ) : (
-              <Link
-                key={event.id}
-                href={event.href}
-                aria-label={`${event.title}. ${event.subtitle}. ${event.location ? `${event.location}. ` : ""}${event.time}`}
-                className={`absolute z-10 overflow-hidden rounded-md text-ink ${TONE_CLASS[event.tone]}`}
-                style={eventBoxStyle(event, grid.start)}
-              >
-                <EventBody event={event} />
-              </Link>
-            ),
-          )}
+          {laidOut.map((event) => (
+            <Link
+              key={event.id}
+              href={event.href}
+              aria-label={`${event.title}. ${event.subtitle}. ${event.location ? `${event.location}. ` : ""}${event.time}`}
+              className={`absolute overflow-hidden rounded-md text-ink ${TONE_CLASS[event.tone]} ${event.tone === "pending" ? "z-[15]" : "z-10"}`}
+              style={eventBoxStyle(event, grid.start)}
+            >
+              <EventBody event={event} />
+            </Link>
+          ))}
         </div>
       </div>
       {built.quiet.length > 0 ? (
@@ -621,79 +606,9 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
           <span className="text-ink/70">No cleaner assigned · No time set</span>
         </Link>
       ))}
-      {movedAssignmentId ? (
-        <NotifyCleanerDialog assignmentId={movedAssignmentId} onClose={() => setMovedAssignmentId(null)} />
-      ) : null}
     </div>
   );
 }
-
-function NotifyCleanerDialog({ assignmentId, onClose }: { assignmentId: string; onClose: () => void }) {
-  const hub = useHub();
-  const assignment = hub.assignments.find((item) => item.assignmentId === assignmentId);
-  const cleaner = assignment ? hub.cleaners.find((item) => item.cleanerId === assignment.cleanerId) : undefined;
-  const job = assignment ? hub.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
-  if (!assignment || !cleaner || !job) return null;
-  const phone = cleaner.mobilePhone;
-  const body = manualCleanerSmsBody(
-    cleanerArrivalChangeSms({
-      cleanerFirstName: cleaner.firstName,
-      customerFirstName: customerFirstNameForCleaner(job.snapshot),
-      date: assignment.serviceDate,
-      arrivalWindowStart: assignment.arrivalWindowStart,
-      arrivalWindowEnd: assignment.arrivalWindowEnd,
-    }),
-  );
-  return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="notify-cleaner-title"
-        className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 id="notify-cleaner-title" className="text-lg font-semibold">
-          Arrival time changed
-        </h2>
-        <p className="mt-1 text-sm leading-5 text-ink/70">
-          You are changing {cleaner.firstName}&apos;s arrival time for this job. Would you like to notify {cleaner.firstName}?
-        </p>
-        <div className="mt-4 space-y-2">
-          {phone ? (
-            <>
-              <a
-                href={smsHref(phone, body)}
-                onClick={() => {
-                  hub.markAssignmentNotified(assignment.assignmentId);
-                  onClose();
-                }}
-                className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
-              >
-                Text {cleaner.firstName}
-              </a>
-              <a
-                href={`tel:+1${phone}`}
-                onClick={() => {
-                  hub.markAssignmentNotified(assignment.assignmentId);
-                  onClose();
-                }}
-                className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-cream text-base font-semibold text-ink"
-              >
-                Call {cleaner.firstName}
-              </a>
-            </>
-          ) : null}
-          <button type="button" onClick={onClose} className="min-h-12 w-full text-base font-semibold text-ink/70">
-            Dismiss
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const SNAP_MINUTES = 15;
 
 function eventBoxStyle(
   event: { startMin: number; endMin: number; column: number; columns: number },
@@ -705,120 +620,6 @@ function eventBoxStyle(
     left: `calc(${(event.column / event.columns) * 100}% + 2px)`,
     width: `calc(${100 / event.columns}% - 4px)`,
   };
-}
-
-function snappedStart(originStart: number, span: number, deltaY: number) {
-  const raw = originStart + (deltaY / HOUR_PX) * 60;
-  const snapped = Math.round(raw / SNAP_MINUTES) * SNAP_MINUTES;
-  return Math.max(0, Math.min(24 * 60 - span, snapped));
-}
-
-function DraggableBooking({
-  event,
-  gridStart,
-  onMoved,
-}: {
-  event: DayEvent & { column: number; columns: number };
-  gridStart: number;
-  onMoved: (assignmentId: string) => void;
-}) {
-  const hub = useHub();
-  const drag = useRef<{
-    pointerId: number;
-    originX: number;
-    originY: number;
-    originStart: number;
-    moved: boolean;
-    sideways: boolean;
-  } | null>(null);
-  const suppressClick = useRef(false);
-  const [previewStart, setPreviewStart] = useState<number | null>(null);
-  const span = event.endMin - event.startMin;
-  const startMin = previewStart ?? event.startMin;
-  const shown = { ...event, startMin, endMin: startMin + span, time: rangeLabel(startMin, startMin + span) };
-
-  if (previewStart != null && !drag.current && event.startMin === previewStart) setPreviewStart(null);
-
-  function onPointerDown(pointer: React.PointerEvent<HTMLAnchorElement>) {
-    if (pointer.button !== 0) return;
-    drag.current = {
-      pointerId: pointer.pointerId,
-      originX: pointer.clientX,
-      originY: pointer.clientY,
-      originStart: event.startMin,
-      moved: false,
-      sideways: false,
-    };
-    try {
-      pointer.currentTarget.setPointerCapture(pointer.pointerId);
-    } catch {
-      // Synthetic events used in tests cannot capture the pointer.
-    }
-  }
-
-  function onPointerMove(pointer: React.PointerEvent<HTMLAnchorElement>) {
-    const state = drag.current;
-    if (!state || state.pointerId !== pointer.pointerId) return;
-    const delta = pointer.clientY - state.originY;
-    if (state.sideways) return;
-    if (!state.moved) {
-      const sideways = Math.abs(pointer.clientX - state.originX);
-      if (Math.max(sideways, Math.abs(delta)) < 6) return;
-      if (sideways > Math.abs(delta)) {
-        state.sideways = true;
-        return;
-      }
-    }
-    state.moved = true;
-    setPreviewStart(snappedStart(state.originStart, span, delta));
-  }
-
-  function finish(pointer: React.PointerEvent<HTMLAnchorElement>, commit: boolean) {
-    const state = drag.current;
-    if (!state || state.pointerId !== pointer.pointerId) return;
-    drag.current = null;
-    if (state.moved) pointer.stopPropagation();
-    if (!commit || !state.moved || !event.assignmentId || !event.windowMinutes) {
-      setPreviewStart(null);
-      return;
-    }
-    suppressClick.current = true;
-    const next = snappedStart(state.originStart, span, pointer.clientY - state.originY);
-    if (next === event.startMin) {
-      setPreviewStart(null);
-      return;
-    }
-    const result = hub.moveAssignmentTime(event.assignmentId, timeFromMinutes(next), timeFromMinutes(next + event.windowMinutes));
-    if (!result.ok) {
-      setPreviewStart(null);
-      hub.flash(result.message);
-      return;
-    }
-    setPreviewStart(next);
-    onMoved(event.assignmentId);
-  }
-
-  return (
-    <a
-      href={event.href}
-      draggable={false}
-      aria-label={`${shown.title}. ${shown.subtitle}. ${shown.location ? `${shown.location}. ` : ""}${shown.time}`}
-      onDragStart={(native) => native.preventDefault()}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={(pointer) => finish(pointer, true)}
-      onPointerCancel={(pointer) => finish(pointer, false)}
-      onClick={(click) => {
-        if (!suppressClick.current) return;
-        click.preventDefault();
-        suppressClick.current = false;
-      }}
-      className={`absolute cursor-grab touch-none overflow-hidden rounded-md text-ink select-none active:cursor-grabbing ${TONE_CLASS[event.tone]} ${previewStart != null ? "z-30 shadow-[0_8px_24px_rgba(51,51,51,0.16)]" : event.tone === "pending" ? "z-[15]" : "z-10"}`}
-      style={eventBoxStyle(shown, gridStart)}
-    >
-      <EventBody event={shown} />
-    </a>
-  );
 }
 
 function EventBody({ event }: { event: DayEvent }) {
@@ -958,11 +759,11 @@ function buildDayEvents(input: {
     const span =
       arrivalStart && arrivalEnd
         ? calculateBlockedRange({
-            date: job.date,
-            arrivalWindowStart: arrivalStart,
-            arrivalWindowEnd: arrivalEnd,
-            expectedDurationMinutes: job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes ?? 0,
-          }).spans.find((item) => item.date === input.date)
+          date: job.date,
+          arrivalWindowStart: arrivalStart,
+          arrivalWindowEnd: arrivalEnd,
+          expectedDurationMinutes: job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes ?? 0,
+        }).spans.find((item) => item.date === input.date)
         : undefined;
     if (!span || span.endMin <= span.startMin) {
       untimed.push({ jobId: job.jobId, title, href });
@@ -995,7 +796,7 @@ const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
 
 function pendingLabel(assignment: JobAssignment): string {
   if (assignment.attentionReason) return assignment.attentionReason;
-  if (assignment.status === "PENDING_AVAILABILITY") return "Confirmed, but availability not submitted";
+  if (assignment.status === "PENDING_AVAILABILITY") return "Committed, pending availability submission";
   if (assignment.status === "NEEDS_ATTENTION") return "Needs attention";
   return "Invitation pending";
 }
@@ -1202,43 +1003,42 @@ function MonthView({
         ))}
       </div>
       <div ref={scroller} className="max-h-[calc(100dvh-18rem)] overflow-y-auto">
-      {months.map((month) => (
-        <section key={month} data-month={month.slice(0, 7)} className="px-1 pt-3">
-          <h2 className="px-1 text-4xl font-semibold tracking-tight">{monthTitle(month)}</h2>
-          <div className="mt-2">
-            {monthRows(month).map((row, rowIndex) => (
-              <div key={`${month}-${rowIndex}`} className="grid grid-cols-7">
-                {row.map((day, dayIndex) =>
-                  day ? (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => onPickDay(day)}
-                      aria-current={day === hub.today ? "date" : undefined}
-                      className="flex min-h-12 flex-col items-center justify-center text-sm text-ink"
-                    >
-                      <span
-                        className={`flex size-8 items-center justify-center rounded-full ${
-                          day === hub.today ? "bg-mint font-semibold" : ""
-                        }`}
+        {months.map((month) => (
+          <section key={month} data-month={month.slice(0, 7)} className="px-1 pt-3">
+            <h2 className="px-1 text-4xl font-semibold tracking-tight">{monthTitle(month)}</h2>
+            <div className="mt-2">
+              {monthRows(month).map((row, rowIndex) => (
+                <div key={`${month}-${rowIndex}`} className="grid grid-cols-7">
+                  {row.map((day, dayIndex) =>
+                    day ? (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => onPickDay(day)}
+                        aria-current={day === hub.today ? "date" : undefined}
+                        className="flex min-h-12 flex-col items-center justify-center text-sm text-ink"
                       >
-                        {Number(day.slice(8))}
-                      </span>
-                      <span className="mt-0.5 flex h-1.5 items-center justify-center gap-0.5" aria-hidden="true">
-                        {scheduled.has(day) ? <span className="size-1.5 rounded-full bg-gold" /> : null}
-                        {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" /> : null}
-                        {!scheduled.has(day) && !openings.has(day) ? <span className="size-1.5" /> : null}
-                      </span>
-                    </button>
-                  ) : (
-                    <span key={`${month}-empty-${rowIndex}-${dayIndex}`} />
-                  ),
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
+                        <span
+                          className={`flex size-8 items-center justify-center rounded-full ${day === hub.today ? "bg-mint font-semibold" : ""
+                            }`}
+                        >
+                          {Number(day.slice(8))}
+                        </span>
+                        <span className="mt-0.5 flex h-1.5 items-center justify-center gap-0.5" aria-hidden="true">
+                          {scheduled.has(day) ? <span className="size-1.5 rounded-full bg-gold" /> : null}
+                          {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" /> : null}
+                          {!scheduled.has(day) && !openings.has(day) ? <span className="size-1.5" /> : null}
+                        </span>
+                      </button>
+                    ) : (
+                      <span key={`${month}-empty-${rowIndex}-${dayIndex}`} />
+                    ),
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );

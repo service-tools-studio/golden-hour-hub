@@ -55,7 +55,7 @@ export function DashboardView() {
   const missingPhone = hub.customers
     .filter((customer) => customer.phone.replace(/\D/g, "") === "")
     .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
-  const staffed = upcoming.filter((job) => !unstaffed.includes(job));
+  const staffed = upcoming.filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon);
 
   return (
     <Screen>

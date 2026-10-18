@@ -37,6 +37,7 @@ import {
   formatDuration,
   formatLongDate,
   formatScheduleFacts,
+  assignmentNotifiesOnRemoval,
   assignmentTracksCleanerNotification,
   noticeFlagText,
   noticeGap,
@@ -593,49 +594,50 @@ function RecurringCard({
 
 function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string }) {
   const hub = useHub();
-  const [busy, setBusy] = useState(false);
 
-  async function remove() {
-    if (busy) return;
+  function remove() {
     const job = hub.jobs.find((item) => item.jobId === jobId);
     const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
+    const assignment = hub.assignments.find(
+      (item) =>
+        item.jobId === jobId &&
+        item.cleanerId === cleanerId &&
+        item.status !== "CANCELED" &&
+        item.status !== "EXPIRED_JOB_FILLED",
+    );
+    const notify = assignmentNotifiesOnRemoval(assignment?.status);
     const result = hub.removeJobCleaner(jobId, cleanerId);
     if (!result.ok) {
       if (result.message) hub.flash(result.message);
       return;
     }
-    if (!job || !cleaner) {
+    if (!notify || !job || !cleaner) {
       if (result.message) hub.flash(result.message);
       return;
     }
-    setBusy(true);
     const body = cleanerRemovedFromJobSms({
       cleanerFirstName: cleaner.firstName,
       customerFirstName: customerFirstNameForCleaner(job.snapshot),
       date: job.date,
     });
-    try {
-      const outcome = await deliverSchedulingCleanerSms({
+    hub.queueSchedulingSms(
+      deliverSchedulingCleanerSms({
         cleaner,
         body,
         assignmentMessage: result.message,
         manualDetail: "removal notice",
-      });
-      hub.flash(outcome.toast);
-      if (outcome.manual) hub.showManualCleanerText(outcome.manual);
-    } finally {
-      setBusy(false);
-    }
+      }),
+      result.message,
+    );
   }
 
   return (
     <button
       type="button"
-      disabled={busy}
       className="shrink-0 text-sm font-semibold underline disabled:text-ink/40"
       onClick={() => remove()}
     >
-      {busy ? "Removing…" : "Remove"}
+      Remove
     </button>
   );
 }

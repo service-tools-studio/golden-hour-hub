@@ -13,19 +13,14 @@ export async function sendCleanerText(
 ): Promise<CleanerTextResult> {
   try {
     await requireAdmin();
-  } catch (error) {
-    if (error instanceof AuthError) return { ok: false, message: error.message };
-    return { ok: false, message: "You do not have access to send texts." };
-  }
-  if (options?.cleanerId && dynamoConfigured()) {
-    const hub = await loadHub();
-    const cleaner = hub.cleaners.find((item) => item.cleanerId === options.cleanerId);
-    if (cleaner && !cleanerAllowsSchedulingSms(cleaner)) {
-      return { ok: false, message: `${cleaner.firstName} has not opted in to SMS notifications.` };
+    if (options?.cleanerId && dynamoConfigured()) {
+      const hub = await loadHub();
+      const cleaner = hub.cleaners.find((item) => item.cleanerId === options.cleanerId);
+      if (cleaner && !cleanerAllowsSchedulingSms(cleaner)) {
+        return { ok: false, message: `${cleaner.firstName} has not opted in to SMS notifications.` };
+      }
     }
-  }
-  if (!/^\d{10}$/.test(to)) return { ok: false, message: "This cleaner has no mobile number on file." };
-  try {
+    if (!/^\d{10}$/.test(to)) return { ok: false, message: "This cleaner has no mobile number on file." };
     const result = await sendSms({ to, body });
     return {
       ok: true,
@@ -33,6 +28,7 @@ export async function sendCleanerText(
       confirmed: result.provider === "twilio" && result.confirmed === true,
     };
   } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error(error);
     const message =
       error instanceof SmsDeliveryError ? error.userMessage : "The text could not be sent. Please try again.";

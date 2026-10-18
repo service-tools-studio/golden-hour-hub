@@ -38,6 +38,25 @@ export async function deliverSchedulingCleanerSms(input: {
   }
 }
 
+/** Run SMS after the hub mutation is saved; never blocks or rolls back the mutation. */
+export function queueSchedulingSmsDelivery(
+  flash: (message: string) => void,
+  showManual: (manual: ManualCleanerTextPrompt) => void,
+  promise: Promise<{ toast: string; manual?: ManualCleanerTextPrompt }>,
+  fallbackSavedMessage?: string,
+  onSettled?: () => void,
+): void {
+  void promise
+    .then((outcome) => {
+      flash(outcome.toast);
+      if (outcome.manual) showManual(outcome.manual);
+    })
+    .catch(() => {
+      flash(`${fallbackSavedMessage?.trim() || "Saved."} Text could not be sent.`);
+    })
+    .finally(() => onSettled?.());
+}
+
 export async function deliverSchedulingFollowUpSms(input: {
   cleaner: CleanerProfile;
   body: string;

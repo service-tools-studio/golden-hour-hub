@@ -403,6 +403,11 @@ export function assignmentTracksCleanerNotification(status: JobAssignment["statu
   return status === "INVITED" || status === "CONFIRMED" || status === "PENDING_AVAILABILITY";
 }
 
+/** Removal SMS only when the cleaner had committed (direct assign or confirmed), not invite-only. */
+export function assignmentNotifiesOnRemoval(status: JobAssignment["status"] | undefined): boolean {
+  return status === "CONFIRMED" || status === "PENDING_AVAILABILITY" || status === "NEEDS_ATTENTION";
+}
+
 export function payLine(assignment: JobAssignment, confirmed: boolean): string {
   const cents = confirmed
     ? (assignment.confirmedTotalPayCents ?? assignment.proposedTotalPayCents)

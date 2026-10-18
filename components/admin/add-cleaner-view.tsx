@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
@@ -11,7 +12,9 @@ import { hourWindowLabel } from "@/lib/format";
 export function AddCleanerView({ jobId, from }: { jobId: string; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
+  const [navigating, setNavigating] = useState(false);
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
+
   if (!job) {
     return (
       <Screen>
@@ -42,9 +45,14 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
       : null;
 
   function add(cleanerId: string) {
+    if (navigating) return;
     const result = hub.addJobCleaner(jobId, cleanerId);
-    if (!result.ok) return;
-    if (result.message) hub.flash(result.message);
+    if (!result.ok) {
+      if (result.message) hub.flash(result.message);
+      return;
+    }
+    setNavigating(true);
+    if (result.message) hub.flashLoading(result.message);
     router.push(withOrigin(`/admin/jobs/${jobId}/edit`, from, { cleaner: cleanerId }));
   }
 
@@ -68,8 +76,9 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
             <button
               key={cleaner.cleanerId}
               type="button"
+              disabled={navigating}
               onClick={() => add(cleaner.cleanerId)}
-              className="block min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-left"
+              className="block min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-left disabled:opacity-70"
             >
               <span className="block text-base font-semibold">{personName(cleaner.firstName, cleaner.lastName)}</span>
               {pills.length > 0 ? (

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrivalWindowPicker } from "@/components/admin/arrival-window-picker";
 import { CleanerAvailabilityPreview } from "@/components/admin/cleaner-availability-preview";
 import {
   deliverSchedulingCleanerSms,
@@ -27,7 +28,6 @@ import {
   directAssignmentSms,
   formatLongDate,
   formatTimeLabel,
-  hourWindowLabel,
   hourWindows,
   inviteAssignmentSms,
   inviteFollowUpSms,
@@ -239,6 +239,7 @@ export function EditJobView({
   const assignmentBaseline = useRef<string | null>(null);
   if (assignment && assignmentBaseline.current === null) assignmentBaseline.current = assignmentSnapshot;
   const assignmentDirty = assignmentBaseline.current !== null && assignmentBaseline.current !== assignmentSnapshot;
+  const hideAssignmentActions = assignment?.status === "CONFIRMED" && !assignmentDirty;
   useUnsavedNavigation(Boolean(job && assignment && cleaner && assignmentId), () => assignmentDirty, setLeaveHref);
   const maxCrew = cleaner ? 1 + cleaner.maxHelperCount : 1;
 
@@ -319,39 +320,29 @@ export function EditJobView({
       return false;
     }
     if (mode === "DIRECT") {
-      const outcome = await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
-      hub.flash(outcome.toast);
-      if (outcome.manual) {
-        setAssigning(null);
-        hub.showManualCleanerText(outcome.manual);
-        return true;
-      }
+      hub.queueSchedulingSms(
+        notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        result.message,
+      );
     } else if (mode === "INVITE") {
-      const outcome = await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
-      hub.flash(outcome.toast);
-      if (outcome.manual) {
-        setAssigning(null);
-        hub.showManualCleanerText(outcome.manual);
-        return true;
-      }
+      hub.queueSchedulingSms(
+        notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        result.message,
+      );
     } else if (result.message) {
       hub.flash(result.message);
     }
+    setAssigning(null);
     if (mode === "DRAFT" && nextHref) setAssigning(null);
     router.push(nextHref ?? cleaningHref(jobId, from));
     return true;
   }
 
-  async function sendInviteFollowUp() {
+  function sendInviteFollowUp() {
     if (!job || !cleaner || !followUpReady || assigning) return;
     setAssigning("FOLLOW_UP");
-    try {
-      const outcome = await notifyInviteFollowUp(cleaner, job);
-      hub.flash(outcome.toast);
-      if (outcome.manual) hub.showManualCleanerText(outcome.manual);
-    } finally {
-      setAssigning(null);
-    }
+    hub.queueSchedulingSms(notifyInviteFollowUp(cleaner, job));
+    setAssigning(null);
   }
 
   function saveAndLeave() {
@@ -394,23 +385,15 @@ export function EditJobView({
         {message ? <Notice>{message}</Notice> : null}
         <AssignmentStatus label={statusLabel} flag={flag} scheduleWarning={scheduleWarning} />
         <Field label="Arrival window">
-          <select
-            className={fieldClass}
-            value={arrivalStart}
-            onChange={(event) => {
-              const window = arrivalWindows.find((item) => item.start === event.target.value);
-              if (!window) return;
-              setArrivalStart(window.start);
-              setArrivalEnd(window.end);
+          <ArrivalWindowPicker
+            start={arrivalStart}
+            end={arrivalEnd}
+            onChange={(nextStart, nextEnd) => {
+              setArrivalStart(nextStart);
+              setArrivalEnd(nextEnd);
               setMessage(null);
             }}
-          >
-            {arrivalWindows.map((window) => (
-              <option key={window.start} value={window.start}>
-                {hourWindowLabel(window.start, window.end)}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
         {cleaner && job ? (
@@ -462,17 +445,19 @@ export function EditJobView({
             />
           </div>
         </Group>
-        <AssignmentSaveChoices
-          assigning={assigning}
-          directAssignNote={
-            weekSubmitted
-              ? null
-              : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
-          }
-          inviteLabel={followUpReady ? "Send follow up" : "Save and send invite"}
-          onInvite={() => (followUpReady ? sendInviteFollowUp() : submit("INVITE"))}
-          onSave={submit}
-        />
+        {hideAssignmentActions ? null : (
+          <AssignmentSaveChoices
+            assigning={assigning}
+            directAssignNote={
+              weekSubmitted
+                ? null
+                : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
+            }
+            inviteLabel={followUpReady ? "Send follow up" : "Save and send invite"}
+            onInvite={() => (followUpReady ? sendInviteFollowUp() : submit("INVITE"))}
+            onSave={submit}
+          />
+        )}
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}
@@ -716,24 +701,19 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       return true;
     }
     if (mode === "DIRECT") {
-      const outcome = await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
-      hub.flash(outcome.toast);
-      if (outcome.manual) {
-        setAssigning(null);
-        hub.showManualCleanerText(outcome.manual);
-        return true;
-      }
+      hub.queueSchedulingSms(
+        notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        result.message,
+      );
     } else if (mode === "INVITE") {
-      const outcome = await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
-      hub.flash(outcome.toast);
-      if (outcome.manual) {
-        setAssigning(null);
-        hub.showManualCleanerText(outcome.manual);
-        return true;
-      }
+      hub.queueSchedulingSms(
+        notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        result.message,
+      );
     } else if (result.message) {
       hub.flash(result.message);
     }
+    setAssigning(null);
     setNavigatingAway(true);
     router.push(nextHref ?? cleaningHref(job.jobId, from));
     return true;
@@ -773,23 +753,15 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
         {message ? <Notice>{message}</Notice> : null}
         <AssignmentStatus label="Draft assignment" flag={null} />
         <Field label="Arrival window">
-          <select
-            className={fieldClass}
-            value={arrivalStart}
-            onChange={(event) => {
-              const window = windows.find((item) => item.start === event.target.value);
-              if (!window) return;
-              setArrivalStart(window.start);
-              setArrivalEnd(window.end);
+          <ArrivalWindowPicker
+            start={arrivalStart}
+            end={arrivalEnd}
+            onChange={(nextStart, nextEnd) => {
+              setArrivalStart(nextStart);
+              setArrivalEnd(nextEnd);
               setMessage(null);
             }}
-          >
-            {windows.map((window) => (
-              <option key={window.start} value={window.start}>
-                {hourWindowLabel(window.start, window.end)}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
         <CleanerAvailabilityPreview
