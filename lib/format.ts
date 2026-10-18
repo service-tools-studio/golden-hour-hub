@@ -152,9 +152,9 @@ export function relativeDay(date: string, today: string): string {
 export function assignmentStatusLabel(status: AssignmentStatus): string {
   switch (status) {
     case "INVITED":
-      return "Awaiting";
+      return "Awaiting invite";
     case "PENDING_AVAILABILITY":
-      return "Waiting on availability";
+      return "Confirmed";
     case "CONFIRMED":
       return "Confirmed";
     case "NEEDS_ATTENTION":
@@ -169,8 +169,7 @@ export function assignmentStatusLabel(status: AssignmentStatus): string {
 }
 
 export function crewLine(cleaner: CleanerProfile, assignment: JobAssignment): string {
-  if (assignment.status === "INVITED") return `${cleaner.firstName} — Awaiting`;
-  if (assignment.status === "PENDING_AVAILABILITY") return `${cleaner.firstName} — Awaiting`;
+  if (assignment.status === "INVITED") return `${cleaner.firstName} — Awaiting invite`;
   if (assignment.status === "NEEDS_ATTENTION") return `${cleaner.firstName} — Needs attention`;
   if (assignment.status === "DECLINED") return `${cleaner.firstName} — Declined`;
   if (assignment.status === "EXPIRED_JOB_FILLED") return `${cleaner.firstName} — Job filled`;
@@ -310,7 +309,7 @@ export function noticeFlagText(firstName: string, gap: "assignment" | "changes")
 export function assignmentFormStatus(status: JobAssignment["status"] | "DRAFT"): string {
   if (status === "INVITED" || status === "DECLINED") return "Invite sent";
   if (status === "CONFIRMED") return "Assignment confirmed";
-  if (status === "PENDING_AVAILABILITY") return "Assigned — awaiting availability";
+  if (status === "PENDING_AVAILABILITY") return "Assignment confirmed";
   return "Draft assignment";
 }
 

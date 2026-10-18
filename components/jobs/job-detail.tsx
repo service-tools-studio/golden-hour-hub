@@ -18,7 +18,11 @@ import { snapshotVisit } from "@/lib/domain/customers";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
 import type { Job, JobAssignment } from "@/lib/domain/types";
-import { calculateConfirmedHeadcount } from "@/lib/domain/scheduling";
+import {
+  CLEANING_DELETE_BLOCKED_MESSAGE,
+  calculateConfirmedHeadcount,
+  jobHasCleanerBlockingDeletion,
+} from "@/lib/domain/scheduling";
 import { seriesSummary } from "@/lib/mock/seed";
 import {
   arrivalChangeSms,
@@ -101,6 +105,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const needed = job.headcountNeeded > 0 ? String(job.headcountNeeded) : "not set";
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
+  const deleteCleaningBlocked = jobHasCleanerBlockingDeletion(hub.assignments, job.jobId);
   const earliest = earliestCleanerArrival(cleanerArrivals(job, hub.assignments, hub.cleaners));
   const customer = hub.customers.find((item) => item.customerId === job.customerId);
   const arrivalFlag =
@@ -352,6 +357,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             confirmDelete={confirmDelete}
             onAskDelete={() => setConfirmDelete(true)}
             onCloseDelete={() => setConfirmDelete(false)}
+            deleteCleaningBlocked={deleteCleaningBlocked}
             onDeleteCleaning={() => {
               const result = hub.deleteJob(job.jobId);
               if (result.message) hub.flash(result.message);
@@ -492,6 +498,7 @@ function RecurringCard({
   confirmDelete,
   onAskDelete,
   onCloseDelete,
+  deleteCleaningBlocked,
   onDeleteCleaning,
   onDeleteSchedule,
 }: {
@@ -505,6 +512,7 @@ function RecurringCard({
   placeAddress: string;
   detail: string;
   confirmDelete: boolean;
+  deleteCleaningBlocked: boolean;
   onAskDelete: () => void;
   onCloseDelete: () => void;
   onDeleteCleaning: () => void;
@@ -515,7 +523,7 @@ function RecurringCard({
   return (
     <>
       <Card>
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Recurring</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Recurring schedule</p>
         <p className="mt-1 text-lg font-semibold">{summary}</p>
         <p className="mt-1 text-sm text-ink/70">
           {place}
@@ -532,7 +540,7 @@ function RecurringCard({
           onClick={onAskDelete}
           className="mt-1 flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
         >
-          Delete
+          Delete schedule
         </button>
       </Card>
       {confirmDelete ? (
@@ -548,8 +556,16 @@ function RecurringCard({
               Delete
             </h2>
             <p className="mt-1 text-sm leading-5 text-ink/70">Remove only this cleaning, or the whole recurring schedule?</p>
+            {deleteCleaningBlocked ? (
+              <p className="mt-3 text-sm text-ink/70">{CLEANING_DELETE_BLOCKED_MESSAGE}</p>
+            ) : null}
             <div className="mt-4 space-y-2">
-              <button type="button" onClick={onDeleteCleaning} className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink">
+              <button
+                type="button"
+                disabled={deleteCleaningBlocked}
+                onClick={onDeleteCleaning}
+                className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink disabled:opacity-50"
+              >
                 This cleaning · {dateLabel}
               </button>
               <button type="button" onClick={onDeleteSchedule} className="min-h-12 w-full rounded-2xl bg-red-700 text-base font-semibold text-white">
@@ -620,10 +636,10 @@ function assignmentSubtitle(assignment: JobAssignment): string {
   const crewText = crew > 1 ? ` · crew of ${crew}` : "";
   switch (assignment.status) {
     case "CONFIRMED":
+    case "PENDING_AVAILABILITY":
       return `Confirmed${crewText}`;
     case "INVITED":
-    case "PENDING_AVAILABILITY":
-      return `Awaiting confirmation${crewText}`;
+      return `Awaiting invite${crewText}`;
     case "NEEDS_ATTENTION":
       return "Needs attention";
     case "DECLINED":

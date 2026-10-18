@@ -119,6 +119,12 @@ export function editableAvailabilityWeeks(today: string): { weekStart: string; w
   return [availabilityWeekBounds(current), availabilityWeekBounds(addDays(current, 7))];
 }
 
+/** Last calendar day (Sunday) in the availability submission window for `today`. */
+export function editableAvailabilityHorizonEnd(today: string): string {
+  const weeks = editableAvailabilityWeeks(today);
+  return weeks[weeks.length - 1].weekEnd;
+}
+
 export function normalizeAvailabilityWeekStart(today: string, candidate?: string | null): string {
   const weeks = editableAvailabilityWeeks(today);
   if (candidate && weeks.some((week) => week.weekStart === candidate)) return candidate;

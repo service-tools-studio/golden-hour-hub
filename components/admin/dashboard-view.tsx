@@ -10,7 +10,7 @@ import {
   cleaningCoverage,
   isWithinRange,
 } from "@/lib/domain/scheduling";
-import { addDays } from "@/lib/domain/time";
+import { editableAvailabilityHorizonEnd } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { crewLine, formatLongDate, relativeDay, serviceLabel } from "@/lib/format";
 
@@ -45,13 +45,13 @@ export function DashboardView() {
         (job.status === "SCHEDULED" || job.status === "DRAFT") && job.date >= hub.today && !happening.includes(job),
     )
     .sort((a, b) => a.date.localeCompare(b.date));
-  const horizon = addDays(hub.today, 14);
+  const staffingHorizon = editableAvailabilityHorizonEnd(hub.today);
   const unstaffed = upcoming.filter((job) => {
     if (job.status === "DRAFT" || job.headcountNeeded < 1) return true;
     const people = calculateConfirmedHeadcount(hub.assignments.filter((item) => item.jobId === job.jobId));
     return people < job.headcountNeeded;
   });
-  const needsAttention = unstaffed.filter((job) => job.date <= horizon);
+  const needsAttention = unstaffed.filter((job) => job.date <= staffingHorizon);
   const missingPhone = hub.customers
     .filter((customer) => customer.phone.replace(/\D/g, "") === "")
     .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
@@ -94,7 +94,9 @@ export function DashboardView() {
           <h2 className={heading}>Jobs needing attention</h2>
           {needsAttention.length === 0 ? (
             <Card>
-              <p className="text-base text-ink/70">Nothing in the next 2 weeks needs attention.</p>
+              <p className="text-base text-ink/70">
+                Nothing through {formatLongDate(staffingHorizon)} needs attention.
+              </p>
             </Card>
           ) : (
             needsAttention.map((job) => <JobStaffingCard key={job.jobId} jobId={job.jobId} />)
@@ -167,7 +169,7 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
             const mark =
               assignment.availabilityConflictWeekStart
                 ? "⚠"
-                : assignment.status === "CONFIRMED"
+                : assignment.status === "CONFIRMED" || assignment.status === "PENDING_AVAILABILITY"
                   ? "✓"
                   : assignment.status === "DECLINED"
                     ? "✕"

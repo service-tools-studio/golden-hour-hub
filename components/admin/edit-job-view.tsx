@@ -16,7 +16,7 @@ import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
 import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
 import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
-import { windowsForCleaner } from "@/lib/domain/scheduling";
+import { CLEANING_DELETE_BLOCKED_MESSAGE, jobHasCleanerBlockingDeletion, windowsForCleaner } from "@/lib/domain/scheduling";
 import {
   assignmentFormStatus,
   assignmentTracksCleanerNotification,
@@ -233,6 +233,7 @@ export function EditJobView({
   );
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<AssigningMode | null>(null);
   const assignmentSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const assignmentBaseline = useRef<string | null>(null);
   if (assignment && assignmentBaseline.current === null) assignmentBaseline.current = assignmentSnapshot;
@@ -288,12 +289,15 @@ export function EditJobView({
     .map((window) => ({ start: window.start, end: window.end }));
 
   async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
-    if (!job || !cleaner) return false;
+    if (!job || !cleaner || assigning) return false;
     const payPerPersonCents = dollarsToCents(pay);
     if (payPerPersonCents === null) {
       setMessage("Enter the pay per person, like 50 or 50.00.");
       return false;
     }
+    if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
+    else if (mode === "DRAFT" && nextHref) setAssigning("DRAFT");
+
     const result = hub.completeAssignment({
       jobId,
       assignmentId,
@@ -309,6 +313,7 @@ export function EditJobView({
       mode,
     });
     if (!result.ok) {
+      setAssigning(null);
       setMessage(result.message);
       return false;
     }
@@ -316,6 +321,7 @@ export function EditJobView({
       const outcome = await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
       hub.flash(outcome.toast);
       if (outcome.manual) {
+        setAssigning(null);
         hub.showManualCleanerText(outcome.manual);
         return true;
       }
@@ -323,21 +329,28 @@ export function EditJobView({
       const outcome = await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
       hub.flash(outcome.toast);
       if (outcome.manual) {
+        setAssigning(null);
         hub.showManualCleanerText(outcome.manual);
         return true;
       }
     } else if (result.message) {
       hub.flash(result.message);
     }
+    if (mode === "DRAFT" && nextHref) setAssigning(null);
     router.push(nextHref ?? cleaningHref(jobId, from));
     return true;
   }
 
   async function sendInviteFollowUp() {
-    if (!job || !cleaner || !followUpReady) return;
-    const outcome = await notifyInviteFollowUp(cleaner, job);
-    hub.flash(outcome.toast);
-    if (outcome.manual) hub.showManualCleanerText(outcome.manual);
+    if (!job || !cleaner || !followUpReady || assigning) return;
+    setAssigning("FOLLOW_UP");
+    try {
+      const outcome = await notifyInviteFollowUp(cleaner, job);
+      hub.flash(outcome.toast);
+      if (outcome.manual) hub.showManualCleanerText(outcome.manual);
+    } finally {
+      setAssigning(null);
+    }
   }
 
   function saveAndLeave() {
@@ -449,6 +462,7 @@ export function EditJobView({
           </div>
         </Group>
         <AssignmentSaveChoices
+          assigning={assigning}
           directAssignNote={
             weekSubmitted
               ? null
@@ -536,9 +550,14 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
     return { ok: true };
   }
 
+  const deleteBlocked = jobHasCleanerBlockingDeletion(hub.assignments, cleaning.jobId);
+
   function remove() {
     const result = hub.deleteJob(cleaning.jobId);
-    if (!result.ok) return;
+    if (!result.ok) {
+      if (result.message) hub.flash(result.message);
+      return;
+    }
     if (result.message) hub.flash(result.message);
     setNavigatingAway(true);
     router.push(`/admin/customers/${cleaning.customerId}`);
@@ -587,13 +606,17 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
           return flag ? <Notice>{flag}</Notice> : null;
         }}
         trailing={
-          <button
-            type="button"
-            onClick={remove}
-            className="flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
-          >
-            Delete cleaning
-          </button>
+          deleteBlocked ? (
+            <p className="text-center text-sm text-ink/70">{CLEANING_DELETE_BLOCKED_MESSAGE}</p>
+          ) : (
+            <button
+              type="button"
+              onClick={remove}
+              className="flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
+            >
+              Delete cleaning
+            </button>
+          )
         }
       />
     </Screen>
@@ -637,6 +660,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [navigatingAway, setNavigatingAway] = useState(false);
+  const [assigning, setAssigning] = useState<AssigningMode | null>(null);
   const draftSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const draftBaseline = useRef<string | null>(null);
   if (job && cleaner && draftBaseline.current === null) draftBaseline.current = draftSnapshot;
@@ -654,12 +678,15 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   );
 
   async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
-    if (!job || !cleaner) return false;
+    if (!job || !cleaner || assigning) return false;
     const payPerPersonCents = dollarsToCents(pay);
     if (payPerPersonCents === null) {
       setMessage("Enter the pay per person, like 50 or 50.00.");
       return false;
     }
+    if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
+    else if (mode === "DRAFT" && nextHref) setAssigning("DRAFT");
+
     const result = hub.completeAssignment({
       jobId: job.jobId,
       cleanerId: cleaner.cleanerId,
@@ -674,12 +701,14 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       mode,
     });
     if (!result.ok) {
+      setAssigning(null);
       setMessage(result.message);
       return false;
     }
     if (mode === "DRAFT") {
       if (result.message) hub.flash(result.message);
       if (nextHref) {
+        setAssigning(null);
         setNavigatingAway(true);
         router.push(nextHref);
       }
@@ -689,6 +718,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       const outcome = await notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
       hub.flash(outcome.toast);
       if (outcome.manual) {
+        setAssigning(null);
         hub.showManualCleanerText(outcome.manual);
         return true;
       }
@@ -696,6 +726,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       const outcome = await notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message);
       hub.flash(outcome.toast);
       if (outcome.manual) {
+        setAssigning(null);
         hub.showManualCleanerText(outcome.manual);
         return true;
       }
@@ -808,6 +839,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
           </div>
         </Group>
         <AssignmentSaveChoices
+          assigning={assigning}
           directAssignNote={
             weekSubmitted
               ? null
@@ -903,30 +935,69 @@ function AssignmentDurationField({
   );
 }
 
+type AssigningMode = "DRAFT" | "INVITE" | "DIRECT" | "FOLLOW_UP";
+
+function AssigningSpinner() {
+  return (
+    <span
+      className="inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+      aria-hidden="true"
+    />
+  );
+}
+
 function AssignmentSaveChoices({
+  assigning = null,
   directAssignNote,
   inviteLabel = "Save and send invite",
   onInvite,
   onSave,
 }: {
+  assigning?: AssigningMode | null;
   directAssignNote: string | null;
   inviteLabel?: string;
   onInvite: () => void;
   onSave: (mode: "DRAFT" | "INVITE" | "DIRECT") => void;
 }) {
+  const busy = assigning !== null;
+  const inviteBusy = assigning === "INVITE" || assigning === "FOLLOW_UP";
   return (
-    <div className="space-y-2">
-      <SecondaryButton type="submit">Save draft</SecondaryButton>
-      <PrimaryButton type="button" onClick={onInvite}>
-        {inviteLabel}
+    <div className="space-y-2" aria-busy={busy}>
+      <SecondaryButton type="submit" disabled={busy}>
+        {assigning === "DRAFT" ? (
+          <span className="inline-flex items-center gap-2">
+            <AssigningSpinner />
+            Saving…
+          </span>
+        ) : (
+          "Save draft"
+        )}
+      </SecondaryButton>
+      <PrimaryButton type="button" onClick={onInvite} disabled={busy}>
+        {inviteBusy ? (
+          <span className="inline-flex items-center gap-2">
+            <AssigningSpinner />
+            {assigning === "FOLLOW_UP" ? "Sending…" : "Sending invite…"}
+          </span>
+        ) : (
+          inviteLabel
+        )}
       </PrimaryButton>
       <div className="space-y-2">
         <button
           type="button"
+          disabled={busy}
           onClick={() => onSave("DIRECT")}
-          className="flex min-h-12 w-full items-center justify-center font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4"
+          className="flex min-h-12 w-full items-center justify-center gap-2 font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4 disabled:opacity-50"
         >
-          Assign directly and notify
+          {assigning === "DIRECT" ? (
+            <>
+              <AssigningSpinner />
+              Assigning…
+            </>
+          ) : (
+            "Assign directly and notify"
+          )}
         </button>
         {directAssignNote ? <p className="text-sm text-ink/70">{directAssignNote}</p> : null}
       </div>

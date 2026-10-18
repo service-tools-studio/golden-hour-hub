@@ -15,8 +15,10 @@ import {
   validateCustomerInput,
 } from "./customers.ts";
 import {
+  assignmentBlocksCleaningDeletion,
   calculateBlockedRange,
   calculateConfirmedHeadcount,
+  jobHasCleanerBlockingDeletion,
   calculateInvitedHeadcount,
   cleaningCoverage,
   calculateRemainingHeadcount,
@@ -32,6 +34,7 @@ import {
 } from "./scheduling.ts";
 import {
   addDays,
+  editableAvailabilityHorizonEnd,
   editableAvailabilityWeeks,
   nextAvailabilityWeek,
   normalizeAvailabilityWeekStart,
@@ -230,6 +233,26 @@ describe("blocked time and effective availability", () => {
   });
 });
 
+describe("cleaning deletion", () => {
+  it("blocks delete while a cleaner is confirmed or direct-assigned", () => {
+    assert.equal(assignmentBlocksCleaningDeletion("CONFIRMED"), true);
+    assert.equal(assignmentBlocksCleaningDeletion("PENDING_AVAILABILITY"), true);
+    assert.equal(assignmentBlocksCleaningDeletion("NEEDS_ATTENTION"), true);
+    assert.equal(assignmentBlocksCleaningDeletion("INVITED"), false);
+    assert.equal(
+      jobHasCleanerBlockingDeletion(
+        [
+          { jobId: "job-1", status: "INVITED" },
+          { jobId: "job-1", status: "PENDING_AVAILABILITY" },
+        ],
+        "job-1",
+      ),
+      true,
+    );
+    assert.equal(jobHasCleanerBlockingDeletion([{ jobId: "job-1", status: "INVITED" }], "job-1"), false);
+  });
+});
+
 describe("headcount and helper approval", () => {
   it("counts confirmed people, not assignment records", () => {
     const assignments = [
@@ -239,9 +262,9 @@ describe("headcount and helper approval", () => {
       { status: "PENDING_AVAILABILITY" as const, pendingCrewSize: 2, proposedCrewSize: 2 },
       { status: "DECLINED" as const, confirmedCrewSize: 1, proposedCrewSize: 1 },
     ];
-    assert.equal(calculateConfirmedHeadcount(assignments), 3);
+    assert.equal(calculateConfirmedHeadcount(assignments), 5);
     assert.equal(calculateInvitedHeadcount(assignments), 4);
-    assert.equal(calculateRemainingHeadcount(3, assignments), 0);
+    assert.equal(calculateRemainingHeadcount(5, assignments), 0);
   });
 
   it("derives helper approval and crew sizes from helper counts", () => {
@@ -353,6 +376,7 @@ describe("weekly submission", () => {
       { weekStart: "2026-10-12", weekEnd: "2026-10-18" },
       { weekStart: "2026-10-19", weekEnd: "2026-10-25" },
     ]);
+    assert.equal(editableAvailabilityHorizonEnd("2026-10-13"), "2026-10-25");
     assert.equal(normalizeAvailabilityWeekStart("2026-10-13", "2026-10-19"), "2026-10-19");
     assert.equal(normalizeAvailabilityWeekStart("2026-10-13", "2026-11-02"), "2026-10-12");
   });

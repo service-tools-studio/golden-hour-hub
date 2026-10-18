@@ -28,6 +28,8 @@ import {
   availabilityCoversBlockedRange,
   calculateBlockedRange,
   calculateConfirmedHeadcount,
+  CLEANING_DELETE_BLOCKED_MESSAGE,
+  jobHasCleanerBlockingDeletion,
   applyScheduleConflictWarning,
   detectConfirmedAssignmentConflict,
   isConfirmedScheduleConflictReason,
@@ -188,6 +190,13 @@ type HubContextValue = HubState & {
   /** Extend recurring job occurrences through the current horizon (safe to call often). */
   refreshRecurringHorizon: () => void;
   applyCleanerSmsConsent: (input: { smsSchedulingOptIn: boolean; smsOptInRecordedAt: string }) => void;
+  undoDeleteJob: () => ActionResult;
+};
+
+type DeletedJobSnapshot = {
+  job: Job;
+  assignments: JobAssignment[];
+  seriesSkippedDatesBefore?: { seriesId: string; skippedDates: string[] };
 };
 
 const HubContext = createContext<HubContextValue | null>(null);
@@ -291,6 +300,8 @@ export function HubProvider({
   });
   const [toast, setToast] = useState<string | null>(null);
   const [manualCleanerText, setManualCleanerText] = useState<ManualCleanerTextOffer | null>(null);
+  const [deletedJobUndo, setDeletedJobUndo] = useState<DeletedJobSnapshot | null>(null);
+  const deletedJobUndoTimerRef = useRef<number | null>(null);
   const [previewAuth, setPreviewAuth] = useState(initialPreviewAuth && previewAuthAllowed());
   const [ready, setReady] = useState(false);
   const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
@@ -1676,9 +1687,60 @@ export function HubProvider({
     return { ok: true };
   }
 
+  function clearDeletedJobUndo() {
+    if (deletedJobUndoTimerRef.current !== null) {
+      window.clearTimeout(deletedJobUndoTimerRef.current);
+      deletedJobUndoTimerRef.current = null;
+    }
+    setDeletedJobUndo(null);
+  }
+
+  function scheduleDeletedJobUndo(snapshot: DeletedJobSnapshot) {
+    clearDeletedJobUndo();
+    setDeletedJobUndo(snapshot);
+    deletedJobUndoTimerRef.current = window.setTimeout(() => clearDeletedJobUndo(), 8000);
+  }
+
+  function undoDeleteJob(): ActionResult {
+    if (!deletedJobUndo) return { ok: false, message: "That cleaning could not be restored." };
+    const { job, assignments, seriesSkippedDatesBefore } = deletedJobUndo;
+    clearDeletedJobUndo();
+    setState({
+      ...data,
+      jobs: [...data.jobs, job].sort(
+        (a, b) => a.date.localeCompare(b.date) || a.jobId.localeCompare(b.jobId),
+      ),
+      assignments: [...data.assignments, ...assignments],
+      series: seriesSkippedDatesBefore
+        ? data.series.map((item) =>
+            item.seriesId === seriesSkippedDatesBefore.seriesId
+              ? { ...item, skippedDates: seriesSkippedDatesBefore.skippedDates }
+              : item,
+          )
+        : data.series,
+    });
+    return { ok: true, message: "Cleaning restored." };
+  }
+
   function deleteJob(jobId: string): ActionResult {
     const job = data.jobs.find((item) => item.jobId === jobId);
     if (!job) return { ok: false, message: "That cleaning could not be deleted." };
+    if (jobHasCleanerBlockingDeletion(data.assignments, jobId)) {
+      return { ok: false, message: CLEANING_DELETE_BLOCKED_MESSAGE };
+    }
+    const snapshot: DeletedJobSnapshot = {
+      job,
+      assignments: data.assignments.filter((item) => item.jobId === jobId),
+    };
+    if (job.seriesId) {
+      const series = data.series.find((item) => item.seriesId === job.seriesId);
+      if (series) {
+        snapshot.seriesSkippedDatesBefore = {
+          seriesId: series.seriesId,
+          skippedDates: [...(series.skippedDates ?? [])],
+        };
+      }
+    }
     const now = new Date().toISOString();
     setState({
       ...data,
@@ -1697,6 +1759,7 @@ export function HubProvider({
       jobs: data.jobs.filter((item) => item.jobId !== job.jobId),
       assignments: data.assignments.filter((item) => item.jobId !== job.jobId),
     });
+    scheduleDeletedJobUndo(snapshot);
     return { ok: true, message: "Cleaning deleted." };
   }
 
@@ -1822,15 +1885,33 @@ export function HubProvider({
     deleteSeries,
     refreshRecurringHorizon,
     applyCleanerSmsConsent,
+    undoDeleteJob,
   };
 
   return (
     <HubContext.Provider value={value}>
       <PreviewModeBanner />
       {children}
-      {toast || manualCleanerText ? (
+      {toast || deletedJobUndo || manualCleanerText ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex flex-col items-center gap-2 px-5">
-          {toast ? (
+          {deletedJobUndo ? (
+            <div
+              role="status"
+              className="pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 rounded-full bg-mint px-4 py-2.5 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(51,51,51,0.12)]"
+            >
+              <span>{toast ?? "Cleaning deleted."}</span>
+              <button
+                type="button"
+                className="shrink-0 font-semibold text-ink underline decoration-ink/40 underline-offset-2"
+                onClick={() => {
+                  const result = undoDeleteJob();
+                  if (result.message) setToast(result.message);
+                }}
+              >
+                Undo
+              </button>
+            </div>
+          ) : toast ? (
             <p
               role="status"
               className="rounded-full bg-mint px-4 py-2 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(51,51,51,0.12)]"

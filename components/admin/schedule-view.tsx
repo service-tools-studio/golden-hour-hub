@@ -924,7 +924,7 @@ function buildDayEvents(input: {
         href: `/admin/jobs/${job.jobId}?from=schedule`,
         title: job.snapshot.customerDisplayName,
         subtitle: pending
-          ? `${who}${pendingLabel(assignment, cleaner.firstName)}`
+          ? `${who}${pendingLabel(assignment)}`
           : `${who}${serviceLabel(job.serviceType)}`,
         location: job.snapshot.streetAddress,
         time: rangeLabel(span.startMin, span.endMin),
@@ -984,9 +984,9 @@ const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
   "NEEDS_ATTENTION",
 ]);
 
-function pendingLabel(assignment: JobAssignment, firstName: string): string {
+function pendingLabel(assignment: JobAssignment): string {
   if (assignment.attentionReason) return assignment.attentionReason;
-  if (assignment.status === "PENDING_AVAILABILITY") return `Waiting on ${firstName}`;
+  if (assignment.status === "PENDING_AVAILABILITY") return "Confirmed, but availability not submitted";
   if (assignment.status === "NEEDS_ATTENTION") return "Needs attention";
   return "Invitation pending";
 }

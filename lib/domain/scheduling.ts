@@ -101,21 +101,43 @@ export function calculateInvitedHeadcount(
   }, 0);
 }
 
-export function calculateConfirmedHeadcount(
-  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize">>,
+/** Headcount that counts toward staffing the job (confirmed + direct-assigned awaiting availability). */
+export function staffedCrewSize(
+  assignment: Pick<JobAssignment, "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">,
 ): number {
-  return assignments.reduce((sum, assignment) => {
-    if (assignment.status !== "CONFIRMED") return sum;
-    return sum + (assignment.confirmedCrewSize ?? 0);
-  }, 0);
+  if (assignment.status === "CONFIRMED") return assignment.confirmedCrewSize ?? 0;
+  if (assignment.status === "PENDING_AVAILABILITY") {
+    return assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 0;
+  }
+  return 0;
+}
+
+export function calculateConfirmedHeadcount(
+  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">>,
+): number {
+  return assignments.reduce((sum, assignment) => sum + staffedCrewSize(assignment), 0);
 }
 
 export function calculateRemainingHeadcount(
   headcountNeeded: number,
-  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize">>,
+  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">>,
 ): number {
   return headcountNeeded - calculateConfirmedHeadcount(assignments);
 }
+
+export function assignmentBlocksCleaningDeletion(status: JobAssignment["status"]): boolean {
+  return status === "CONFIRMED" || status === "PENDING_AVAILABILITY" || status === "NEEDS_ATTENTION";
+}
+
+export function jobHasCleanerBlockingDeletion(
+  assignments: Array<Pick<JobAssignment, "jobId" | "status">>,
+  jobId: string,
+): boolean {
+  return assignments.some((item) => item.jobId === jobId && assignmentBlocksCleaningDeletion(item.status));
+}
+
+export const CLEANING_DELETE_BLOCKED_MESSAGE =
+  "Remove confirmed cleaners from this cleaning before deleting it.";
 
 export function isCleanerAllowedCrewSize(maxHelperCount: number, crewSize: number): boolean {
   if (!Number.isInteger(crewSize) || crewSize < 1) return false;

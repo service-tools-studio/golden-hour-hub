@@ -2,6 +2,7 @@ import { confirmedCompensationCents } from "./compensation.ts";
 import {
   availabilityCoversBlockedRange,
   calculateBlockedRange,
+  calculateConfirmedHeadcount,
   calculateRemainingHeadcount,
   detectConfirmedAssignmentConflict,
   toAssignmentSchedule,
@@ -146,11 +147,7 @@ export function expireRemainingInvitationsWhenFilled(
   headcountNeeded: number,
   nowIso: string,
 ): JobAssignment[] {
-  const confirmed = assignments.reduce((sum, assignment) => {
-    if (assignment.status !== "CONFIRMED") return sum;
-    return sum + (assignment.confirmedCrewSize ?? 0);
-  }, 0);
-  if (confirmed < headcountNeeded) return assignments;
+  if (calculateConfirmedHeadcount(assignments) < headcountNeeded) return assignments;
   return assignments.map((assignment) =>
     assignment.status === "INVITED" || assignment.status === "PENDING_AVAILABILITY"
       ? { ...assignment, status: "EXPIRED_JOB_FILLED", pendingCrewSize: undefined, updatedAt: nowIso }
