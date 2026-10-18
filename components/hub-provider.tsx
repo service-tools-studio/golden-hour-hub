@@ -64,7 +64,7 @@ import type {
 const STORAGE_KEY = "ghh-preview-v2";
 const SESSION_KEY = "ghh-session-v2";
 /** Background refresh while the tab is visible (admin ↔ cleaner, multiple tabs). */
-const REMOTE_SYNC_INTERVAL_MS = 45_000;
+const REMOTE_SYNC_INTERVAL_MS = 20_000;
 
 type HubState = HubData & {
   role: AppRole | null;
@@ -311,18 +311,24 @@ function withCurrentHorizon(data: HubData): HubData {
   return { ...data, today, series: generated.series, jobs: generated.jobs, assignments: generated.assignments };
 }
 
-function hubEntitySnapshot(state: HubState): string {
+function sortedHubSnapshot(hub: HubData): string {
+  const by = <T,>(items: T[], key: keyof T) =>
+    [...items].sort((left, right) => String(left[key]).localeCompare(String(right[key])));
   return JSON.stringify({
-    today: state.today,
-    cleaners: state.cleaners,
-    customers: state.customers,
-    properties: state.properties,
-    series: state.series,
-    jobs: state.jobs,
-    assignments: state.assignments,
-    availability: state.availability,
-    submissions: state.submissions,
+    today: hub.today,
+    cleaners: by(hub.cleaners, "cleanerId"),
+    customers: by(hub.customers, "customerId"),
+    properties: by(hub.properties, "propertyId"),
+    series: by(hub.series, "seriesId"),
+    jobs: by(hub.jobs, "jobId"),
+    assignments: by(hub.assignments, "assignmentId"),
+    availability: by(hub.availability, "date"),
+    submissions: by(hub.submissions, "weekStart"),
   });
+}
+
+function hubEntitySnapshot(state: HubState): string {
+  return sortedHubSnapshot(state);
 }
 
 type InitialAuth = { role: AppRole; cleanerId: string | null };
@@ -351,6 +357,7 @@ export function HubProvider({
   const deletedJobUndoTimerRef = useRef<number | null>(null);
   const [previewAuth, setPreviewAuth] = useState(initialPreviewAuth && previewAuthAllowed());
   const [ready, setReady] = useState(false);
+  const [hubDataSource, setHubDataSource] = useState<"preview" | "dynamodb" | null>(null);
   const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
   const bootstrappedRef = useRef(false);
   /** Full hub from Dynamo when using preview auth (role picker without Cognito session). */
@@ -359,6 +366,7 @@ export function HubProvider({
   const persistRunningRef = useRef(false);
   const syncBlockersRef = useRef(new Set<() => boolean>());
   const syncInFlightRef = useRef(false);
+  const hubRevisionRef = useRef<number | null>(null);
   const skipPersistForRemoteSyncRef = useRef(false);
   const actionLoadingRef = useRef(0);
   const previewAuthRef = useRef(previewAuth);
@@ -384,12 +392,32 @@ export function HubProvider({
   }
 
   const syncFromServer = useCallback(async () => {
-    if (!bootstrappedRef.current || sourceRef.current !== "dynamodb") return;
+    if (!bootstrappedRef.current || hubDataSource !== "dynamodb") return;
     if (remoteSyncBlocked()) return;
     syncInFlightRef.current = true;
     try {
-      const remote = await bootstrapHub();
+      const versionResponse = await fetch("/api/hub/version", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!versionResponse.ok) return;
+      const versionBody = (await versionResponse.json()) as
+        | { ok: false; message: string }
+        | { source: "preview" }
+        | { revision: number };
+      if ("ok" in versionBody || "source" in versionBody) return;
+      const serverRevision = versionBody.revision;
+      if (hubRevisionRef.current !== null && hubRevisionRef.current === serverRevision) return;
+      if (remoteSyncBlocked()) return;
+
+      const response = await fetch("/api/hub/sync", { cache: "no-store", credentials: "same-origin" });
+      if (!response.ok) return;
+      const remote = (await response.json()) as
+        | { ok: false; message: string }
+        | { source: "preview" }
+        | { source: "dynamodb"; data: HubData; revision: number };
       if ("ok" in remote || remote.source !== "dynamodb") return;
+      hubRevisionRef.current = remote.revision;
       if (remoteSyncBlocked()) return;
       const prev = stateRef.current;
       if (!prev?.role) return;
@@ -399,8 +427,8 @@ export function HubProvider({
       if (previewPick && prev.role === "CLEANER" && prev.cleanerId) {
         hubPayload = hubDataForCleaner(remote.data, prev.cleanerId);
       }
+      if (sortedHubSnapshot(prev) === sortedHubSnapshot(hubPayload)) return;
       const next = { ...withCurrentHorizon(hubPayload), role: prev.role, cleanerId: prev.cleanerId };
-      if (hubEntitySnapshot(prev) === hubEntitySnapshot(next)) return;
       skipPersistForRemoteSyncRef.current = true;
       setState(next);
       setToast("Updated from server");
@@ -409,7 +437,7 @@ export function HubProvider({
     } finally {
       syncInFlightRef.current = false;
     }
-  }, []);
+  }, [hubDataSource]);
 
   async function drainPersistQueue() {
     if (persistRunningRef.current) return;
@@ -421,6 +449,8 @@ export function HubProvider({
         const result = await persistAdminHub(payload);
         if (!result.ok) {
           setToast(result.message);
+        } else {
+          hubRevisionRef.current = result.revision;
         }
       }
     } finally {
@@ -481,6 +511,7 @@ export function HubProvider({
         const today = todayInBusinessZone();
         sourceRef.current = null;
         bootstrappedRef.current = false;
+        setHubDataSource(null);
         setState({ ...emptyHub(today), role: null, cleanerId: null });
         setReady(true);
         const path = window.location.pathname;
@@ -497,12 +528,14 @@ export function HubProvider({
           const today = todayInBusinessZone();
           sourceRef.current = null;
           bootstrappedRef.current = false;
+          setHubDataSource(null);
           setState({ ...emptyHub(today), role: null, cleanerId: null });
           setReady(true);
           return;
         }
         if (remote.source === "dynamodb") {
           sourceRef.current = "dynamodb";
+          setHubDataSource("dynamodb");
           const previewPick = auth.preview || (initialPreviewAuth && previewAuthAllowed());
           if (previewPick) {
             previewDynamoHubRef.current = remote.data;
@@ -515,6 +548,7 @@ export function HubProvider({
           if (previewPick && role === "CLEANER" && cleanerId) {
             hubPayload = hubDataForCleaner(remote.data, cleanerId);
           }
+          hubRevisionRef.current = remote.revision;
           bootstrappedRef.current = true;
           setState({
             ...withCurrentHorizon(hubPayload),
@@ -525,6 +559,7 @@ export function HubProvider({
           return;
         }
         sourceRef.current = "preview";
+        setHubDataSource("preview");
         bootstrappedRef.current = true;
         const preview = readPreview();
         setState({
@@ -554,34 +589,52 @@ export function HubProvider({
   }, [initialAuth?.role, initialAuth?.cleanerId, initialPreviewAuth]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || hubDataSource !== "dynamodb") return;
     let visibilityTimer: number | undefined;
+    let interval: number | undefined;
     function scheduleSync() {
       window.clearTimeout(visibilityTimer);
       visibilityTimer = window.setTimeout(() => {
         void syncFromServer();
       }, 300);
     }
+    function startPolling() {
+      if (interval !== undefined) return;
+      interval = window.setInterval(() => {
+        void syncFromServer();
+      }, REMOTE_SYNC_INTERVAL_MS);
+    }
+    function stopPolling() {
+      if (interval === undefined) return;
+      window.clearInterval(interval);
+      interval = undefined;
+    }
     function onVisibilityChange() {
-      if (document.visibilityState !== "visible") return;
-      scheduleSync();
+      if (document.visibilityState === "visible") {
+        scheduleSync();
+        startPolling();
+        return;
+      }
+      window.clearTimeout(visibilityTimer);
+      stopPolling();
     }
     function onWindowFocus() {
+      if (document.visibilityState !== "visible") return;
       scheduleSync();
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("focus", onWindowFocus);
-    scheduleSync();
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") void syncFromServer();
-    }, REMOTE_SYNC_INTERVAL_MS);
+    if (document.visibilityState === "visible") {
+      scheduleSync();
+      startPolling();
+    }
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", onWindowFocus);
       window.clearTimeout(visibilityTimer);
-      window.clearInterval(interval);
+      stopPolling();
     };
-  }, [ready, syncFromServer]);
+  }, [ready, hubDataSource, syncFromServer]);
 
   useEffect(() => {
     if (!state || !sourceRef.current || !bootstrappedRef.current) return;
@@ -591,7 +644,6 @@ export function HubProvider({
         skipPersistForRemoteSyncRef.current = false;
         return;
       }
-      if (previewAuth) return;
       if (state.role === "ADMIN") {
         persistQueueRef.current = {
           today: state.today,

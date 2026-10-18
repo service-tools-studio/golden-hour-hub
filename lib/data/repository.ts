@@ -1,11 +1,51 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { BatchWriteCommand, DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { BatchWriteCommand, DynamoDBDocumentClient, GetCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mergeRecurringHorizon } from "../domain/recurrence.ts";
 import { todayInBusinessZone } from "../domain/time.ts";
 import { emptyHub, type HubData } from "../mock/seed.ts";
 import { hubToItems, itemsToHub, type DynamoItem } from "./items.ts";
 
 const BATCH_SIZE = 25;
+const HUB_META_PK = "HUB";
+const HUB_META_SK = "META";
+
+export function isHubMetaItem(item: { pk: string; sk: string; entity?: string }): boolean {
+  return item.pk === HUB_META_PK && item.sk === HUB_META_SK;
+}
+
+/** Monotonic counter bumped on every hub write; cheap to read for background sync. */
+export async function readHubRevision(): Promise<number> {
+  const doc = client();
+  const result = await doc.send(
+    new GetCommand({
+      TableName: tableName(),
+      Key: { pk: HUB_META_PK, sk: HUB_META_SK },
+    }),
+  );
+  const revision = result.Item?.revision;
+  return typeof revision === "number" && Number.isInteger(revision) && revision >= 0 ? revision : 0;
+}
+
+async function bumpHubRevision(): Promise<number> {
+  const doc = client();
+  const now = new Date().toISOString();
+  const result = await doc.send(
+    new UpdateCommand({
+      TableName: tableName(),
+      Key: { pk: HUB_META_PK, sk: HUB_META_SK },
+      UpdateExpression: "ADD #revision :one SET entity = :entity, updatedAt = :updatedAt",
+      ExpressionAttributeNames: { "#revision": "revision" },
+      ExpressionAttributeValues: {
+        ":one": 1,
+        ":entity": "hub_meta",
+        ":updatedAt": now,
+      },
+      ReturnValues: "UPDATED_NEW",
+    }),
+  );
+  const revision = result.Attributes?.revision;
+  return typeof revision === "number" ? revision : 1;
+}
 
 export function dynamoConfigured(): boolean {
   return Boolean(process.env.DYNAMODB_TABLE_NAME);
@@ -53,15 +93,18 @@ export async function clearTable(): Promise<number> {
   return existing.length;
 }
 
-export async function saveHub(data: HubData): Promise<void> {
+export async function saveHub(data: HubData): Promise<number> {
   const next = hubToItems(data);
   const existing = await scanAll();
   const nextKeys = new Set(next.map(itemKey));
-  const stale = existing.filter((item) => item.entity && !nextKeys.has(itemKey(item)));
+  const stale = existing.filter(
+    (item) => item.entity && !isHubMetaItem(item) && !nextKeys.has(itemKey(item)),
+  );
   await writeBatches([
     ...stale.map((item) => ({ DeleteRequest: { Key: { pk: item.pk, sk: item.sk } } })),
     ...next.map((item) => ({ PutRequest: { Item: item } })),
   ]);
+  return bumpHubRevision();
 }
 
 async function scanAll(): Promise<DynamoItem[]> {
