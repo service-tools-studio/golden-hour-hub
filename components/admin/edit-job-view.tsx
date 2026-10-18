@@ -271,6 +271,8 @@ export function EditJobView({
         assignment.status === "PENDING_AVAILABILITY"),
   );
   const showAssignmentActions = assignment ? assignmentDirty || !assignmentSettled : false;
+  const showDirectAssignForInvite =
+    Boolean(assignment?.status === "INVITED" && assignmentSettled && !assignmentDirty);
   useUnsavedNavigation(Boolean(job && assignment && cleaner && assignmentId), () => assignmentDirty, setLeaveHref);
   useHubSyncBlocker(() => assignmentDirty);
   const maxCrew = cleaner ? 1 + cleaner.maxHelperCount : 1;
@@ -462,9 +464,10 @@ export function EditJobView({
             setMessage(null);
           }}
         />
-        {showAssignmentActions ? (
+        {showAssignmentActions || showDirectAssignForInvite ? (
           <AssignmentSaveChoices
             assigning={assigning}
+            showDraftAndInvite={showAssignmentActions}
             directAssignNote={
               weekSubmitted
                 ? null
@@ -927,12 +930,14 @@ function AssigningSpinner() {
 
 function AssignmentSaveChoices({
   assigning = null,
+  showDraftAndInvite = true,
   directAssignNote,
   inviteLabel = "Save and send invite",
   onInvite,
   onSave,
 }: {
   assigning?: AssigningMode | null;
+  showDraftAndInvite?: boolean;
   directAssignNote: string | null;
   inviteLabel?: string;
   onInvite: () => void;
@@ -942,26 +947,30 @@ function AssignmentSaveChoices({
   const inviteBusy = assigning === "INVITE" || assigning === "FOLLOW_UP";
   return (
     <div className="space-y-2" aria-busy={busy}>
-      <SecondaryButton type="submit" disabled={busy}>
-        {assigning === "DRAFT" ? (
-          <span className="inline-flex items-center gap-2">
-            <AssigningSpinner />
-            Saving…
-          </span>
-        ) : (
-          "Save draft"
-        )}
-      </SecondaryButton>
-      <PrimaryButton type="button" onClick={onInvite} disabled={busy}>
-        {inviteBusy ? (
-          <span className="inline-flex items-center gap-2">
-            <AssigningSpinner />
-            {assigning === "FOLLOW_UP" ? "Sending…" : "Sending invite…"}
-          </span>
-        ) : (
-          inviteLabel
-        )}
-      </PrimaryButton>
+      {showDraftAndInvite ? (
+        <>
+          <SecondaryButton type="submit" disabled={busy}>
+            {assigning === "DRAFT" ? (
+              <span className="inline-flex items-center gap-2">
+                <AssigningSpinner />
+                Saving…
+              </span>
+            ) : (
+              "Save draft"
+            )}
+          </SecondaryButton>
+          <PrimaryButton type="button" onClick={onInvite} disabled={busy}>
+            {inviteBusy ? (
+              <span className="inline-flex items-center gap-2">
+                <AssigningSpinner />
+                {assigning === "FOLLOW_UP" ? "Sending…" : "Sending invite…"}
+              </span>
+            ) : (
+              inviteLabel
+            )}
+          </PrimaryButton>
+        </>
+      ) : null}
       <div className="space-y-2">
         <button
           type="button"
