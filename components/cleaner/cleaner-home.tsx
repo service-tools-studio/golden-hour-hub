@@ -28,10 +28,10 @@ function waitingOnAvailabilityCopy(today: string, serviceDate: string): string {
   const week = availabilityWeekBounds(mondayOf(serviceDate));
   const range = formatWeekRange(week.weekStart, week.weekEnd);
   if (isAvailabilityWeekEditable(today, serviceDate)) {
-    return `You're confirmed for this job. Submit the week of ${range} in Availability below. You're fully confirmed once your availability hours include this cleaning.`;
+    return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submit the week of ${range} in Availability below.`;
   }
   const opens = availabilityWeekOpensForEditing(serviceDate);
-  return `You're confirmed for this job. Submitting availability for the week of ${range} isn't open in the app yet — you can submit it starting ${formatLongDate(opens)}. You're fully confirmed once your availability hours include this cleaning.`;
+  return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submitting availability for the week of ${range} isn't open in the app yet — you can submit it starting ${formatLongDate(opens)}.`;
 }
 
 function inProgress(assignment: JobAssignment, now: number): boolean {
