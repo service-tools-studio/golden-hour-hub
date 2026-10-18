@@ -385,7 +385,6 @@ export function HubProvider({
     for (const check of syncBlockersRef.current) {
       if (check()) return true;
     }
-    if (syncInFlightRef.current) return true;
     if (persistRunningRef.current) return true;
     if (actionLoadingRef.current > 0) return true;
     return false;
@@ -393,7 +392,7 @@ export function HubProvider({
 
   const syncFromServer = useCallback(async () => {
     if (!bootstrappedRef.current || hubDataSource !== "dynamodb") return;
-    if (remoteSyncBlocked()) return;
+    if (syncInFlightRef.current || remoteSyncBlocked()) return;
     syncInFlightRef.current = true;
     try {
       const versionResponse = await fetch("/api/hub/version", {
@@ -417,7 +416,6 @@ export function HubProvider({
         | { source: "preview" }
         | { source: "dynamodb"; data: HubData; revision: number };
       if ("ok" in remote || remote.source !== "dynamodb") return;
-      hubRevisionRef.current = remote.revision;
       if (remoteSyncBlocked()) return;
       const prev = stateRef.current;
       if (!prev?.role) return;
@@ -427,11 +425,11 @@ export function HubProvider({
       if (previewPick && prev.role === "CLEANER" && prev.cleanerId) {
         hubPayload = hubDataForCleaner(remote.data, prev.cleanerId);
       }
+      hubRevisionRef.current = remote.revision;
       if (sortedHubSnapshot(prev) === sortedHubSnapshot(hubPayload)) return;
       const next = { ...withCurrentHorizon(hubPayload), role: prev.role, cleanerId: prev.cleanerId };
       skipPersistForRemoteSyncRef.current = true;
       setState(next);
-      setToast("Updated from server");
     } catch (error) {
       console.error("Remote hub sync failed.", error);
     } finally {
