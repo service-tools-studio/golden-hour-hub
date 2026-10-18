@@ -65,6 +65,24 @@ export function normalizeSearchText(value: string): string {
     .trim();
 }
 
+/** Split a typed display name into first / last (last token is last name). */
+export function parseTypedCustomerName(query: string): { firstName: string; lastName: string } {
+  const parts = query.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1] };
+}
+
+/** Append firstName and lastName query params to a new-customer URL (returnTo preserved on base). */
+export function newCustomerHrefWithName(baseHref: string, query: string): string | null {
+  const { firstName, lastName } = parseTypedCustomerName(query);
+  if (!firstName) return null;
+  const url = new URL(baseHref, "https://local.invalid");
+  url.searchParams.set("firstName", firstName);
+  if (lastName) url.searchParams.set("lastName", lastName);
+  return `${url.pathname}${url.search}`;
+}
+
 /** Active customer with the same first and last name (case- and spacing-insensitive). */
 export function findCustomerByExactName(
   customers: Customer[],

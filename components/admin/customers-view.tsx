@@ -120,7 +120,15 @@ export function CustomersView() {
   );
 }
 
-export function NewCustomerView({ returnTo }: { returnTo?: string }) {
+export function NewCustomerView({
+  returnTo,
+  firstName,
+  lastName,
+}: {
+  returnTo?: string;
+  firstName?: string;
+  lastName?: string;
+}) {
   const hub = useHub();
   const router = useRouter();
   const formRef = useRef<CustomerFormHandle>(null);
@@ -154,6 +162,8 @@ export function NewCustomerView({ returnTo }: { returnTo?: string }) {
       <div className="px-5 pt-4">
         <CustomerForm
           ref={formRef}
+          initialFirstName={firstName}
+          initialLastName={lastName}
           onSaved={
             back
               ? (customerId) => {

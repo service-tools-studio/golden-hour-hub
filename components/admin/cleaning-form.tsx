@@ -9,6 +9,7 @@ import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved
 import { Field, Notice, PrimaryButton, fieldClass } from "@/components/ui";
 import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availability";
 import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "@/lib/domain/scheduling";
+import { CustomerCombobox } from "@/components/admin/customer-combobox";
 import { searchCustomers } from "@/lib/domain/customers";
 import { recurrenceSummary } from "@/lib/domain/recurrence";
 import { addDays, dayOfWeek, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
@@ -366,49 +367,14 @@ export function CleaningForm({
             </div>
           </Group>
         ) : (
-          <div className="space-y-3">
-            <div className="rounded-3xl bg-white p-4 shadow-[0_8px_30px_rgba(51,51,51,0.06)]">
-              <p className="text-base font-semibold">Search existing customer</p>
-              <p className="mt-1 text-sm text-ink/60">Find a household already in the list.</p>
-              <input
-                className={`${fieldClass} mt-3`}
-                placeholder="Name, phone, or address"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                aria-label="Search existing customers"
-              />
-              {query.trim() ? (
-                <div className="mt-3 space-y-2">
-                  {matches.length === 0 ? <p className="text-sm text-ink/60">No matching customers.</p> : null}
-                  {matches.map((item) => {
-                    const itemHomes = hub.properties.filter((home) => home.customerId === item.customerId && home.status === "ACTIVE");
-                    return (
-                      <button
-                        key={item.customerId}
-                        type="button"
-                        onClick={() => chooseCustomer(item.customerId)}
-                        className="block w-full rounded-2xl bg-cream px-3 py-3 text-left"
-                      >
-                        <span className="block font-semibold">
-                          {item.firstName} {item.lastName}
-                        </span>
-                        {itemHomes.map((home) => (
-                          <span key={home.propertyId} className="block text-sm text-ink/70">
-                            {propertyLine(home)}
-                          </span>
-                        ))}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-            <p className="text-center text-xs font-semibold uppercase tracking-[0.14em] text-ink/40">or</p>
-            <Link href={newCustomerHref} className="block rounded-3xl bg-white p-4 shadow-[0_8px_30px_rgba(51,51,51,0.06)]">
-              <span className="block text-base font-semibold">Create new customer</span>
-              <span className="mt-1 block text-sm text-ink/60">Add a household that is not in the list yet.</span>
-            </Link>
-          </div>
+          <CustomerCombobox
+            query={query}
+            onQueryChange={setQuery}
+            matches={matches}
+            propertyLine={propertyLine}
+            newCustomerHref={newCustomerHref}
+            onChoose={chooseCustomer}
+          />
         )}
 
         {customer ? (

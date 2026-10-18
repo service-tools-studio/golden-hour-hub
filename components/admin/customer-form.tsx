@@ -171,6 +171,8 @@ export type CustomerFormHandle = {
 
 export function CustomerForm({
   customer,
+  initialFirstName,
+  initialLastName,
   scrollToPropertyId,
   onCancel,
   onSaved,
@@ -178,6 +180,8 @@ export function CustomerForm({
   ref,
 }: {
   customer?: Customer;
+  initialFirstName?: string;
+  initialLastName?: string;
   scrollToPropertyId?: string | null;
   onCancel?: () => void;
   onSaved?: (customerId: string) => void;
@@ -188,8 +192,8 @@ export function CustomerForm({
   const router = useRouter();
   const [error, setError] = useState<{ field: string; message: string; at: number } | null>(null);
   const [form, setForm] = useState({
-    firstName: customer?.firstName ?? "",
-    lastName: customer?.lastName ?? "",
+    firstName: customer?.firstName ?? initialFirstName ?? "",
+    lastName: customer?.lastName ?? initialLastName ?? "",
     phone: customer ? formatPhoneInput(customer.phone) : "",
     email: customer?.email ?? "",
     notes: customer?.notes ?? "",
