@@ -35,8 +35,12 @@ export function InvitationCard({
   const weekSubmitted = hub.submissions.some(
     (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === mondayOf(job.date),
   );
-  const ceiling = Math.min(maxCrewSize(cleaner.maxHelperCount), Math.max(remaining, 0));
-  const initialCrew = bringsHelpers ? Math.min(assignment.proposedCrewSize, Math.max(ceiling, 1)) : 1;
+  const maxAttendance = Math.min(
+    assignment.proposedCrewSize,
+    maxCrewSize(cleaner.maxHelperCount),
+    Math.max(remaining, 1),
+  );
+  const initialCrew = bringsHelpers ? Math.min(assignment.proposedCrewSize, maxAttendance) : 1;
   const [crew, setCrew] = useState(initialCrew);
   const [message, setMessage] = useState<string | null>(null);
   const attending = bringsHelpers ? crew : 1;
@@ -45,6 +49,7 @@ export function InvitationCard({
     payPerPersonCents: assignment.payPerPersonCents,
     confirmedCrewSize: attending,
   });
+  const hourlySuffix = assignment.payType === "HOURLY" ? "/hour" : "";
 
   async function accept() {
     const result = await hub.acceptInvitation(assignment.assignmentId, attending);
@@ -60,7 +65,7 @@ export function InvitationCard({
     <Card>
       <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">New job available</p>
       <h3 className="mt-1 text-xl font-semibold">
-        {customerFirstNameForCleaner(job.snapshot)} {cleanerServiceLabel(job.serviceType)}
+        {customerFirstNameForCleaner(job.snapshot)} - {cleanerServiceLabel(job.serviceType)}
       </h3>
       <p className="mt-1 text-base text-ink/70">{formatLongDate(job.date)}</p>
       <div className="mt-3 flex items-start gap-2 text-base">
@@ -76,11 +81,11 @@ export function InvitationCard({
       ) : null}
       <dl className="mt-4 space-y-2 text-base">
         <div className="flex justify-between gap-3">
-          <dt className="text-ink/60">Arrival</dt>
+          <dt className="text-ink/60">Arrival window</dt>
           <dd>{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-ink/60">Estimated time on site</dt>
+          <dt className="text-ink/60">Estimated cleaning time</dt>
           <dd>{formatDuration(assignment.expectedDurationMinutes)}</dd>
         </div>
       </dl>
@@ -101,32 +106,32 @@ export function InvitationCard({
             <button
               type="button"
               className="min-h-12 min-w-12 rounded-xl bg-white text-2xl"
-              onClick={() => setCrew((value) => Math.min(Math.max(ceiling, 1), value + 1))}
+              onClick={() => setCrew((value) => Math.min(maxAttendance, value + 1))}
               aria-label="More people"
-              disabled={ceiling < 1}
+              disabled={maxAttendance < 1}
             >
               +
             </button>
           </div>
-          <p className="mt-2 text-sm text-ink/60">This number includes you. The most you can bring is {maxCrewSize(cleaner.maxHelperCount)}.</p>
+          <p className="mt-2 text-sm text-ink/60">
+            This number includes you. The most for this invite is {maxAttendance} {maxAttendance === 1 ? "person" : "people"}.
+          </p>
           <p className="mt-3 text-base">
-            Rate: {formatMoney(assignment.payPerPersonCents)} per person
+            {assignment.payType === "FLAT" ? "Flat rate" : "Rate"}: {formatMoney(pay)}
+            {assignment.payType === "HOURLY" ? hourlySuffix : ""} total
             <br />
-            {crew} {crew === 1 ? "person" : "people"} → {formatMoney(pay)}
-            {assignment.payType === "HOURLY" ? "/hour" : " total"}
+            {crew} {crew === 1 ? "person" : "people"} → {formatMoney(assignment.payPerPersonCents)} per person
+            {assignment.payType === "HOURLY" ? hourlySuffix : ""}
           </p>
         </div>
       ) : (
         <div className="mt-4 space-y-2">
-          <p className="text-base">You will be attending this job.</p>
-          <p className="text-base font-medium">Your pay: {formatMoney(pay)}{assignment.payType === "HOURLY" ? "/hour" : ""}</p>
+          <p className="text-base font-medium">
+            {assignment.payType === "FLAT" ? "Flat rate" : "Your pay"}: {formatMoney(pay)}
+            {assignment.payType === "HOURLY" ? "/hour" : ""}
+          </p>
         </div>
       )}
-      {!weekSubmitted ? (
-        <p className="mt-3 text-sm text-ink/70">
-          Availability for this week is not in yet. Accepting confirms this cleaning on your schedule.
-        </p>
-      ) : null}
       {message ? (
         <div className="mt-3">
           <Notice>{message}</Notice>

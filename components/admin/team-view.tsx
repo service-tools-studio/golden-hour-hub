@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendAvailabilityReminders } from "@/app/actions/reminders";
 import { useHub } from "@/components/hub-provider";
+import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Card, Notice, PageHeader, Screen } from "@/components/ui";
 import { listSubmissionStatus } from "@/lib/domain/availability";
@@ -184,6 +185,7 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   if (cleaner && cleanerBaseline.current === null) cleanerBaseline.current = cleanerSnapshot;
   const cleanerDirty = cleanerBaseline.current !== null && cleanerBaseline.current !== cleanerSnapshot;
   useUnsavedNavigation(Boolean(cleaner), () => cleanerDirty, setLeaveHref);
+  useHubSyncBlocker(() => cleanerDirty);
   if (!cleaner) {
     return (
       <Screen>

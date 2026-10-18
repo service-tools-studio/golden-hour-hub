@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
+import { useHubSyncBlocker } from "@/components/hub-sync";
 import { Card, Notice, PageHeader, Screen } from "@/components/ui";
 import {
   OPEN_DAY_END,
@@ -300,6 +301,7 @@ export function AvailabilityEditor() {
   const savedWeekSignature = useMemo(() => windowSignature(savedWeekWindows), [savedWeekWindows]);
   const dirty = windowSignature(draft) !== savedWeekSignature;
   useUnsavedNavigation(Boolean(cleaner), () => dirty, setLeaveHref);
+  useHubSyncBlocker(() => dirty);
 
   useEffect(() => {
     if (!cleaner) return;

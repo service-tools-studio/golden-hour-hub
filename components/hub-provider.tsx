@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { HubRemoteSyncBlockerProvider } from "@/components/hub-sync";
 import { usePathname } from "next/navigation";
 import {
   acceptInvitationAction,
@@ -62,6 +63,8 @@ import type {
 
 const STORAGE_KEY = "ghh-preview-v2";
 const SESSION_KEY = "ghh-session-v2";
+/** Background refresh while the tab is visible (admin ↔ cleaner, multiple tabs). */
+const REMOTE_SYNC_INTERVAL_MS = 45_000;
 
 type HubState = HubData & {
   role: AppRole | null;
@@ -308,6 +311,20 @@ function withCurrentHorizon(data: HubData): HubData {
   return { ...data, today, series: generated.series, jobs: generated.jobs, assignments: generated.assignments };
 }
 
+function hubEntitySnapshot(state: HubState): string {
+  return JSON.stringify({
+    today: state.today,
+    cleaners: state.cleaners,
+    customers: state.customers,
+    properties: state.properties,
+    series: state.series,
+    jobs: state.jobs,
+    assignments: state.assignments,
+    availability: state.availability,
+    submissions: state.submissions,
+  });
+}
+
 type InitialAuth = { role: AppRole; cleanerId: string | null };
 
 export function HubProvider({
@@ -340,6 +357,59 @@ export function HubProvider({
   const previewDynamoHubRef = useRef<HubData | null>(null);
   const persistQueueRef = useRef<HubData | null>(null);
   const persistRunningRef = useRef(false);
+  const syncBlockersRef = useRef(new Set<() => boolean>());
+  const syncInFlightRef = useRef(false);
+  const skipPersistForRemoteSyncRef = useRef(false);
+  const actionLoadingRef = useRef(0);
+  const previewAuthRef = useRef(previewAuth);
+  const stateRef = useRef<HubState | null>(null);
+  previewAuthRef.current = previewAuth;
+  actionLoadingRef.current = actionLoading;
+
+  const registerRemoteSyncBlocker = useCallback((check: () => boolean) => {
+    syncBlockersRef.current.add(check);
+    return () => {
+      syncBlockersRef.current.delete(check);
+    };
+  }, []);
+
+  function remoteSyncBlocked(): boolean {
+    for (const check of syncBlockersRef.current) {
+      if (check()) return true;
+    }
+    if (syncInFlightRef.current) return true;
+    if (persistRunningRef.current) return true;
+    if (actionLoadingRef.current > 0) return true;
+    return false;
+  }
+
+  const syncFromServer = useCallback(async () => {
+    if (!bootstrappedRef.current || sourceRef.current !== "dynamodb") return;
+    if (remoteSyncBlocked()) return;
+    syncInFlightRef.current = true;
+    try {
+      const remote = await bootstrapHub();
+      if ("ok" in remote || remote.source !== "dynamodb") return;
+      if (remoteSyncBlocked()) return;
+      const prev = stateRef.current;
+      if (!prev?.role) return;
+      const previewPick = previewAuthRef.current;
+      if (previewPick) previewDynamoHubRef.current = remote.data;
+      let hubPayload = remote.data;
+      if (previewPick && prev.role === "CLEANER" && prev.cleanerId) {
+        hubPayload = hubDataForCleaner(remote.data, prev.cleanerId);
+      }
+      const next = { ...withCurrentHorizon(hubPayload), role: prev.role, cleanerId: prev.cleanerId };
+      if (hubEntitySnapshot(prev) === hubEntitySnapshot(next)) return;
+      skipPersistForRemoteSyncRef.current = true;
+      setState(next);
+      setToast("Updated from server");
+    } catch (error) {
+      console.error("Remote hub sync failed.", error);
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  }, []);
 
   async function drainPersistQueue() {
     if (persistRunningRef.current) return;
@@ -484,9 +554,43 @@ export function HubProvider({
   }, [initialAuth?.role, initialAuth?.cleanerId, initialPreviewAuth]);
 
   useEffect(() => {
+    if (!ready) return;
+    let visibilityTimer: number | undefined;
+    function scheduleSync() {
+      window.clearTimeout(visibilityTimer);
+      visibilityTimer = window.setTimeout(() => {
+        void syncFromServer();
+      }, 300);
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      scheduleSync();
+    }
+    function onWindowFocus() {
+      scheduleSync();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onWindowFocus);
+    scheduleSync();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void syncFromServer();
+    }, REMOTE_SYNC_INTERVAL_MS);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onWindowFocus);
+      window.clearTimeout(visibilityTimer);
+      window.clearInterval(interval);
+    };
+  }, [ready, syncFromServer]);
+
+  useEffect(() => {
     if (!state || !sourceRef.current || !bootstrappedRef.current) return;
     if (sourceRef.current === "dynamodb") {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, cleanerId: state.cleanerId }));
+      if (skipPersistForRemoteSyncRef.current) {
+        skipPersistForRemoteSyncRef.current = false;
+        return;
+      }
       if (previewAuth) return;
       if (state.role === "ADMIN") {
         persistQueueRef.current = {
@@ -515,6 +619,7 @@ export function HubProvider({
     );
   }
 
+  stateRef.current = state;
   const data = state;
 
   async function acceptInvitation(assignmentId: string, crewSize: number): AsyncActionResult {
@@ -1954,9 +2059,10 @@ export function HubProvider({
 
   return (
     <HubContext.Provider value={value}>
-      <PreviewModeBanner />
-      {children}
-      {notificationPending > 0 || actionLoading > 0 || toast || deletedJobUndo || manualCleanerText ? (
+      <HubRemoteSyncBlockerProvider register={registerRemoteSyncBlocker}>
+        <PreviewModeBanner />
+        {children}
+        {notificationPending > 0 || actionLoading > 0 || toast || deletedJobUndo || manualCleanerText ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex flex-col items-center gap-2 px-5">
           {actionLoading > 0 && !toast && !deletedJobUndo && notificationPending === 0 ? (
             <p
@@ -2027,7 +2133,8 @@ export function HubProvider({
             </div>
           ) : null}
         </div>
-      ) : null}
+        ) : null}
+      </HubRemoteSyncBlockerProvider>
     </HubContext.Provider>
   );
 }

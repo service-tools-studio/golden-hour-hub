@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
 import { useHub } from "@/components/hub-provider";
+import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
 import { searchCustomers } from "@/lib/domain/customers";
@@ -96,6 +97,7 @@ export function NewCustomerView({ returnTo }: { returnTo?: string }) {
       ? returnTo
       : null;
   useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
+  useHubSyncBlocker(() => Boolean(formRef.current?.isDirty()));
 
   function saveAndLeave() {
     const href = leaveHref;
@@ -176,6 +178,9 @@ export function CustomerDetail({
     Boolean(customer) && editingRecord,
     () => Boolean((editingSeriesId ? seriesFormRef.current : formRef.current)?.isDirty()),
     (href) => setLeaveTarget({ href }),
+  );
+  useHubSyncBlocker(
+    () => editingRecord && Boolean((editingSeriesId ? seriesFormRef.current : formRef.current)?.isDirty()),
   );
 
   function activeForm() {

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
+import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PrimaryButton, fieldClass } from "@/components/ui";
 import { availabilityAgainstSpan, cleaningTimeSpan } from "@/lib/domain/availability";
@@ -211,6 +212,7 @@ export function CleaningForm({
   if (baseline.current === null && settled) baseline.current = formSnapshot;
   const dirty = Boolean(customer) && baseline.current !== null && baseline.current !== formSnapshot;
   useUnsavedNavigation(settled, () => dirty, setLeaveHref);
+  useHubSyncBlocker(() => dirty);
 
   const roster = leadCleanerId
     ? [

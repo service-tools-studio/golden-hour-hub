@@ -142,6 +142,10 @@ export function withAssignmentDeclined(
   );
 }
 
+/**
+ * When headcount is met, clear outstanding invites only.
+ * Committed cleaners (confirmed, direct-assigned pending availability, needs attention) stay on the job.
+ */
 export function expireRemainingInvitationsWhenFilled(
   assignments: JobAssignment[],
   headcountNeeded: number,
@@ -149,7 +153,7 @@ export function expireRemainingInvitationsWhenFilled(
 ): JobAssignment[] {
   if (calculateConfirmedHeadcount(assignments) < headcountNeeded) return assignments;
   return assignments.map((assignment) =>
-    assignment.status === "INVITED" || assignment.status === "PENDING_AVAILABILITY"
+    assignment.status === "INVITED"
       ? { ...assignment, status: "EXPIRED_JOB_FILLED", pendingCrewSize: undefined, updatedAt: nowIso }
       : assignment,
   );

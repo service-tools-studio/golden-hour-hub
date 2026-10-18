@@ -274,7 +274,7 @@ describe("invitation acceptance", () => {
     assert.equal(settled[0].pendingCrewSize, undefined);
   });
 
-  it("expires the other invitations once the job is full", () => {
+  it("expires outstanding invites once headcount is met", () => {
     const now = "2026-10-01T00:00:00.000Z";
     const filled = expireRemainingInvitationsWhenFilled(
       [
@@ -287,6 +287,25 @@ describe("invitation acceptance", () => {
     );
     assert.equal(filled.find((item) => item.assignmentId === "maria")?.status, "EXPIRED_JOB_FILLED");
     assert.equal(filled.find((item) => item.assignmentId === "jessica")?.status, "DECLINED");
+  });
+
+  it("keeps direct-assigned pending availability when headcount is met", () => {
+    const now = "2026-10-01T00:00:00.000Z";
+    const filled = expireRemainingInvitationsWhenFilled(
+      [
+        invite({ assignmentId: "claudia", status: "CONFIRMED", confirmedCrewSize: 2 }),
+        invite({
+          assignmentId: "maria",
+          cleanerId: "maria",
+          status: "PENDING_AVAILABILITY",
+          pendingCrewSize: 1,
+          proposedCrewSize: 1,
+        }),
+      ],
+      2,
+      now,
+    );
+    assert.equal(filled.find((item) => item.assignmentId === "maria")?.status, "PENDING_AVAILABILITY");
   });
 
   it("confirms only the selected occurrence", () => {

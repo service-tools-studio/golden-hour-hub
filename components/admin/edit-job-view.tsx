@@ -10,9 +10,11 @@ import {
 } from "@/lib/cleaner/deliver-scheduling-sms";
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
+import { useHubSyncBlocker } from "@/components/hub-sync";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
+import { calculateFlatPayPerPerson, formatMoney } from "@/lib/domain/compensation";
 import { personName, typicalCrewSize } from "@/lib/domain/cleaners";
 import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
 import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
@@ -131,12 +133,31 @@ function centsToInput(cents: number): string {
   return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
 }
 
-function defaultPayForCleaner(cleaner: CleanerProfile | undefined): string {
-  const cents =
-    cleaner && Number.isInteger(cleaner.typicalHourlyRateCents) && cleaner.typicalHourlyRateCents >= 0
-      ? cleaner.typicalHourlyRateCents
-      : FALLBACK_HOURLY_RATE_CENTS;
-  return centsToInput(cents);
+function defaultPerPersonCentsForCleaner(cleaner: CleanerProfile | undefined): number {
+  if (cleaner && Number.isInteger(cleaner.typicalHourlyRateCents) && cleaner.typicalHourlyRateCents >= 0) {
+    return cleaner.typicalHourlyRateCents;
+  }
+  return FALLBACK_HOURLY_RATE_CENTS;
+}
+
+function crewPayInputFromPerPersonCents(perPersonCents: number, crewSize: number): string {
+  return centsToInput(perPersonCents * crewSize);
+}
+
+function perPersonCentsFromCrewPayInput(pay: string, crewSize: number): number | null {
+  const crewTotalCents = dollarsToCents(pay);
+  if (crewTotalCents === null || crewSize < 1) return null;
+  try {
+    return calculateFlatPayPerPerson(crewTotalCents, crewSize);
+  } catch {
+    return null;
+  }
+}
+
+function preservePerPersonCrewPay(pay: string, fromCrew: number, toCrew: number): string | null {
+  const perPerson = perPersonCentsFromCrewPayInput(pay, fromCrew);
+  if (perPerson === null) return null;
+  return crewPayInputFromPerPersonCents(perPerson, toCrew);
 }
 
 function arrivalChoicesFor(
@@ -227,10 +248,13 @@ export function EditJobView({
   const [duration, setDuration] = useState(
     assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
   );
-  const [crew, setCrew] = useState(assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1);
+  const initialCrew = assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1;
+  const [crew, setCrew] = useState(initialCrew);
   const [payType, setPayType] = useState<PayType>(assignment?.payType ?? DEFAULT_PAY_TYPE);
   const [pay, setPay] = useState(
-    assignment ? centsToInput(assignment.payPerPersonCents) : defaultPayForCleaner(cleaner),
+    assignment
+      ? crewPayInputFromPerPersonCents(assignment.payPerPersonCents, initialCrew)
+      : crewPayInputFromPerPersonCents(defaultPerPersonCentsForCleaner(cleaner), initialCrew),
   );
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
@@ -239,8 +263,16 @@ export function EditJobView({
   const assignmentBaseline = useRef<string | null>(null);
   if (assignment && assignmentBaseline.current === null) assignmentBaseline.current = assignmentSnapshot;
   const assignmentDirty = assignmentBaseline.current !== null && assignmentBaseline.current !== assignmentSnapshot;
-  const hideAssignmentActions = assignment?.status === "CONFIRMED" && !assignmentDirty;
+  const assignmentSettled = Boolean(
+    assignment &&
+      (assignment.status === "INVITED" ||
+        assignment.status === "DECLINED" ||
+        assignment.status === "CONFIRMED" ||
+        assignment.status === "PENDING_AVAILABILITY"),
+  );
+  const showAssignmentActions = assignment ? assignmentDirty || !assignmentSettled : false;
   useUnsavedNavigation(Boolean(job && assignment && cleaner && assignmentId), () => assignmentDirty, setLeaveHref);
+  useHubSyncBlocker(() => assignmentDirty);
   const maxCrew = cleaner ? 1 + cleaner.maxHelperCount : 1;
 
   const statusLabel = assignmentFormStatus(assignment?.status ?? "DRAFT");
@@ -267,7 +299,7 @@ export function EditJobView({
       job &&
       hub.submissions.some((submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === mondayOf(job.date)),
   );
-  const payPerPersonCentsPreview = dollarsToCents(pay);
+  const payPerPersonCentsPreview = perPersonCentsFromCrewPayInput(pay, crew);
   const followUpReady = Boolean(
     assignment &&
       assignment.status === "INVITED" &&
@@ -292,9 +324,9 @@ export function EditJobView({
 
   async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
     if (!job || !cleaner || assigning) return false;
-    const payPerPersonCents = dollarsToCents(pay);
+    const payPerPersonCents = perPersonCentsFromCrewPayInput(pay, crew);
     if (payPerPersonCents === null) {
-      setMessage("Enter the pay per person, like 50 or 50.00.");
+      setMessage("Enter the crew pay, like 350 or 350.00.");
       return false;
     }
     if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
@@ -413,39 +445,24 @@ export function EditJobView({
             min={1}
             max={job.headcountNeeded > 0 ? Math.min(maxCrew, job.headcountNeeded) : maxCrew}
             onChange={(next) => {
+              const nextPay = preservePerPersonCrewPay(pay, crew, next);
               setCrew(next);
+              if (nextPay !== null) setPay(nextPay);
               setMessage(null);
             }}
           />
         ) : null}
-        <Group label={payType === "HOURLY" ? "Pay per person per hour" : "Pay per person"}>
-          <div className="flex gap-2">
-            <div className="flex rounded-full bg-white p-1">
-              {(["FLAT", "HOURLY"] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  aria-pressed={payType === item}
-                  onClick={() => setPayType(item)}
-                  className={`min-h-10 rounded-full px-4 text-sm font-semibold ${payType === item ? "bg-ink text-cream" : "text-ink/70"}`}
-                >
-                  {item === "FLAT" ? "Flat" : "Hourly"}
-                </button>
-              ))}
-            </div>
-            <input
-              inputMode="decimal"
-              className={fieldClass}
-              aria-label="Pay amount"
-              value={pay}
-              onChange={(event) => {
-                setPay(event.target.value);
-                setMessage(null);
-              }}
-            />
-          </div>
-        </Group>
-        {hideAssignmentActions ? null : (
+        <AssignmentPayPerCrewGroup
+          payType={payType}
+          pay={pay}
+          crew={crew}
+          onPayTypeChange={setPayType}
+          onPayChange={(value) => {
+            setPay(value);
+            setMessage(null);
+          }}
+        />
+        {showAssignmentActions ? (
           <AssignmentSaveChoices
             assigning={assigning}
             directAssignNote={
@@ -457,7 +474,7 @@ export function EditJobView({
             onInvite={() => (followUpReady ? sendInviteFollowUp() : submit("INVITE"))}
             onSave={submit}
           />
-        )}
+        ) : null}
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}
@@ -638,10 +655,13 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const [duration, setDuration] = useState(
     savedDetail?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
   );
-  const [crew, setCrew] = useState(savedDetail?.proposedCrewSize ?? usualCrew);
+  const initialDraftCrew = savedDetail?.proposedCrewSize ?? usualCrew;
+  const [crew, setCrew] = useState(initialDraftCrew);
   const [payType, setPayType] = useState<PayType>(savedDetail?.payType ?? DEFAULT_PAY_TYPE);
   const [pay, setPay] = useState(
-    savedDetail ? centsToInput(savedDetail.payPerPersonCents) : defaultPayForCleaner(cleaner),
+    savedDetail
+      ? crewPayInputFromPerPersonCents(savedDetail.payPerPersonCents, initialDraftCrew)
+      : crewPayInputFromPerPersonCents(defaultPerPersonCentsForCleaner(cleaner), initialDraftCrew),
   );
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
@@ -652,6 +672,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   if (job && cleaner && draftBaseline.current === null) draftBaseline.current = draftSnapshot;
   const draftDirty = draftBaseline.current !== null && draftBaseline.current !== draftSnapshot;
   useUnsavedNavigation(Boolean(job && cleaner), () => draftDirty, setLeaveHref);
+  useHubSyncBlocker(() => draftDirty);
   const maxCrew = cleaner ? 1 + cleaner.maxHelperCount : 1;
   const dayAvailability = hub.availability
     .filter((window) => window.cleanerId === cleanerId && window.date === job?.date)
@@ -665,9 +686,9 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
 
   async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
     if (!job || !cleaner || assigning) return false;
-    const payPerPersonCents = dollarsToCents(pay);
+    const payPerPersonCents = perPersonCentsFromCrewPayInput(pay, crew);
     if (payPerPersonCents === null) {
-      setMessage("Enter the pay per person, like 50 or 50.00.");
+      setMessage("Enter the crew pay, like 350 or 350.00.");
       return false;
     }
     if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
@@ -779,38 +800,23 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
             min={1}
             max={job.headcountNeeded > 0 ? Math.min(maxCrew, job.headcountNeeded) : maxCrew}
             onChange={(next) => {
+              const nextPay = preservePerPersonCrewPay(pay, crew, next);
               setCrew(next);
+              if (nextPay !== null) setPay(nextPay);
               setMessage(null);
             }}
           />
         ) : null}
-        <Group label={payType === "HOURLY" ? "Pay per person per hour" : "Pay per person"}>
-          <div className="flex gap-2">
-            <div className="flex rounded-full bg-white p-1">
-              {(["FLAT", "HOURLY"] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  aria-pressed={payType === item}
-                  onClick={() => setPayType(item)}
-                  className={`min-h-10 rounded-full px-4 text-sm font-semibold ${payType === item ? "bg-ink text-cream" : "text-ink/70"}`}
-                >
-                  {item === "FLAT" ? "Flat" : "Hourly"}
-                </button>
-              ))}
-            </div>
-            <input
-              inputMode="decimal"
-              className={fieldClass}
-              aria-label="Pay amount"
-              value={pay}
-              onChange={(event) => {
-                setPay(event.target.value);
-                setMessage(null);
-              }}
-            />
-          </div>
-        </Group>
+        <AssignmentPayPerCrewGroup
+          payType={payType}
+          pay={pay}
+          crew={crew}
+          onPayTypeChange={setPayType}
+          onPayChange={(value) => {
+            setPay(value);
+            setMessage(null);
+          }}
+        />
         <AssignmentSaveChoices
           assigning={assigning}
           directAssignNote={
@@ -975,6 +981,54 @@ function AssignmentSaveChoices({
         {directAssignNote ? <p className="text-sm text-ink/70">{directAssignNote}</p> : null}
       </div>
     </div>
+  );
+}
+
+function AssignmentPayPerCrewGroup({
+  payType,
+  pay,
+  crew,
+  onPayTypeChange,
+  onPayChange,
+}: {
+  payType: PayType;
+  pay: string;
+  crew: number;
+  onPayTypeChange: (value: PayType) => void;
+  onPayChange: (value: string) => void;
+}) {
+  const perPersonCents = perPersonCentsFromCrewPayInput(pay, crew);
+  const hourly = payType === "HOURLY";
+  return (
+    <Group label={hourly ? "Pay per crew per hour" : "Pay per crew"}>
+      <div className="flex gap-2">
+        <div className="flex rounded-full bg-white p-1">
+          {(["FLAT", "HOURLY"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={payType === item}
+              onClick={() => onPayTypeChange(item)}
+              className={`min-h-10 rounded-full px-4 text-sm font-semibold ${payType === item ? "bg-ink text-cream" : "text-ink/70"}`}
+            >
+              {item === "FLAT" ? "Flat" : "Hourly"}
+            </button>
+          ))}
+        </div>
+        <input
+          inputMode="decimal"
+          className={fieldClass}
+          aria-label={hourly ? "Crew pay per hour" : "Crew pay"}
+          value={pay}
+          onChange={(event) => onPayChange(event.target.value)}
+        />
+      </div>
+      {perPersonCents !== null ? (
+        <p className="mt-1.5 text-sm text-ink/70">
+          {formatMoney(perPersonCents)} per person{hourly ? " per hour" : ""}, {crew} person crew
+        </p>
+      ) : null}
+    </Group>
   );
 }
 
