@@ -212,12 +212,18 @@ type HubContextValue = HubState & {
   refreshRecurringHorizon: () => void;
   applyCleanerSmsConsent: (input: { smsSchedulingOptIn: boolean; smsOptInRecordedAt: string }) => void;
   undoDeleteJob: () => ActionResult;
+  undoDeleteCustomer: () => ActionResult;
 };
 
 type DeletedJobSnapshot = {
   job: Job;
   assignments: JobAssignment[];
   seriesSkippedDatesBefore?: { seriesId: string; skippedDates: string[] };
+};
+
+type DeletedCustomerSnapshot = {
+  customer: Customer;
+  properties: Property[];
 };
 
 const HubContext = createContext<HubContextValue | null>(null);
@@ -385,6 +391,8 @@ export function HubProvider({
   const [manualCleanerText, setManualCleanerText] = useState<ManualCleanerTextOffer | null>(null);
   const [deletedJobUndo, setDeletedJobUndo] = useState<DeletedJobSnapshot | null>(null);
   const deletedJobUndoTimerRef = useRef<number | null>(null);
+  const [deletedCustomerUndo, setDeletedCustomerUndo] = useState<DeletedCustomerSnapshot | null>(null);
+  const deletedCustomerUndoTimerRef = useRef<number | null>(null);
   const [previewAuth, setPreviewAuth] = useState(initialPreviewAuth && previewAuthAllowed());
   const [ready, setReady] = useState(false);
   const [hubDataSource, setHubDataSource] = useState<"preview" | "dynamodb" | null>(null);
@@ -944,6 +952,35 @@ export function HubProvider({
     return { ok: true, customerId: id };
   }
 
+  function clearDeletedCustomerUndo() {
+    if (deletedCustomerUndoTimerRef.current !== null) {
+      window.clearTimeout(deletedCustomerUndoTimerRef.current);
+      deletedCustomerUndoTimerRef.current = null;
+    }
+    setDeletedCustomerUndo(null);
+  }
+
+  function scheduleDeletedCustomerUndo(snapshot: DeletedCustomerSnapshot) {
+    clearDeletedJobUndo();
+    clearDeletedCustomerUndo();
+    setDeletedCustomerUndo(snapshot);
+    deletedCustomerUndoTimerRef.current = window.setTimeout(() => clearDeletedCustomerUndo(), 8000);
+  }
+
+  function undoDeleteCustomer(): ActionResult {
+    if (!deletedCustomerUndo) return { ok: false, message: "That customer could not be restored." };
+    const { customer, properties } = deletedCustomerUndo;
+    clearDeletedCustomerUndo();
+    setState({
+      ...data,
+      customers: [...data.customers, customer].sort(
+        (a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName),
+      ),
+      properties: [...data.properties, ...properties],
+    });
+    return { ok: true, message: "Customer restored." };
+  }
+
   function deleteCustomer(customerId: string): ActionResult {
     const customer = data.customers.find((item) => item.customerId === customerId);
     if (!customer) return { ok: false, message: "That customer could not be found." };
@@ -953,11 +990,16 @@ export function HubProvider({
     if (data.series.some((series) => series.customerId === customerId)) {
       return { ok: false, message: "Delete this customer's recurring schedules before deleting them." };
     }
+    const snapshot: DeletedCustomerSnapshot = {
+      customer,
+      properties: data.properties.filter((item) => item.customerId === customerId),
+    };
     setState({
       ...data,
       customers: data.customers.filter((item) => item.customerId !== customerId),
       properties: data.properties.filter((item) => item.customerId !== customerId),
     });
+    scheduleDeletedCustomerUndo(snapshot);
     return { ok: true, message: "Customer deleted." };
   }
 
@@ -1952,6 +1994,7 @@ export function HubProvider({
   }
 
   function scheduleDeletedJobUndo(snapshot: DeletedJobSnapshot) {
+    clearDeletedCustomerUndo();
     clearDeletedJobUndo();
     setDeletedJobUndo(snapshot);
     deletedJobUndoTimerRef.current = window.setTimeout(() => clearDeletedJobUndo(), 8000);
@@ -2164,6 +2207,7 @@ export function HubProvider({
     refreshRecurringHorizon,
     applyCleanerSmsConsent,
     undoDeleteJob,
+    undoDeleteCustomer,
   };
 
   return (
@@ -2171,9 +2215,9 @@ export function HubProvider({
       <HubRemoteSyncBlockerProvider register={registerRemoteSyncBlocker}>
         <PreviewModeBanner />
         {children}
-        {notificationPending > 0 || actionLoading > 0 || toast || deletedJobUndo || manualCleanerText ? (
+        {notificationPending > 0 || actionLoading > 0 || toast || deletedJobUndo || deletedCustomerUndo || manualCleanerText ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex flex-col items-center gap-2 px-5">
-          {actionLoading > 0 && !toast && !deletedJobUndo && notificationPending === 0 ? (
+          {actionLoading > 0 && !toast && !deletedJobUndo && !deletedCustomerUndo && notificationPending === 0 ? (
             <p
               role="status"
               aria-live="polite"
@@ -2186,7 +2230,7 @@ export function HubProvider({
               <span className="sr-only">Loading…</span>
             </p>
           ) : null}
-          {notificationPending > 0 && !toast && !deletedJobUndo && actionLoading === 0 ? (
+          {notificationPending > 0 && !toast && !deletedJobUndo && !deletedCustomerUndo && actionLoading === 0 ? (
             <p
               role="status"
               aria-live="polite"
@@ -2210,6 +2254,23 @@ export function HubProvider({
                 className="shrink-0 font-semibold text-ink underline decoration-ink/40 underline-offset-2"
                 onClick={() => {
                   const result = undoDeleteJob();
+                  if (result.message) setToast(result.message);
+                }}
+              >
+                Undo
+              </button>
+            </div>
+          ) : deletedCustomerUndo ? (
+            <div
+              role="status"
+              className="pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 rounded-full bg-mint px-4 py-2.5 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(51,51,51,0.12)]"
+            >
+              <span>{toast ?? "Customer deleted."}</span>
+              <button
+                type="button"
+                className="shrink-0 font-semibold text-ink underline decoration-ink/40 underline-offset-2"
+                onClick={() => {
+                  const result = undoDeleteCustomer();
                   if (result.message) setToast(result.message);
                 }}
               >

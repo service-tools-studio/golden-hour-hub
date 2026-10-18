@@ -546,7 +546,7 @@ export function CustomerForm({
           onClick={() => {
             if (
               !window.confirm(
-                `Delete ${customer.firstName} ${customer.lastName}? This removes their profile and properties. It cannot be undone.`,
+                `Delete ${customer.firstName} ${customer.lastName}? This removes their profile and properties. You can undo for a few seconds after.`,
               )
             ) {
               return;
