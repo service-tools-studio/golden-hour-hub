@@ -1,20 +1,32 @@
 "use server";
 
 import { AuthError, requireCleaner } from "@/lib/auth/guards";
+import { cleanerWithMobilePhone } from "@/lib/cleaner/sms-consent";
+import { SMS_SCHEDULING_DISCLOSURE_VERSION } from "@/lib/cleaner/sms-disclosure";
 import { normalizePhone } from "@/lib/domain/customers";
 import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
+
+export type SmsOnboardingSuccess = {
+  smsSchedulingOptIn: boolean;
+  smsOptInRecordedAt: string;
+  mobilePhone: string;
+  smsConsentPhone?: string;
+  smsConsentRecordedAt?: string;
+  smsConsentDisclosureVersion?: string;
+};
 
 export async function recordSmsOnboardingChoice(
   optIn: boolean,
   mobilePhoneInput: string,
-): Promise<
-  | { ok: true; smsSchedulingOptIn: boolean; smsOptInRecordedAt: string; mobilePhone: string }
-  | { ok: false; message: string }
-> {
+  disclosureVersion: string,
+): Promise<({ ok: true } & SmsOnboardingSuccess) | { ok: false; message: string }> {
   try {
     const session = await requireCleaner();
     if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
     if (!dynamoConfigured()) return { ok: false, message: "Hub database is not configured." };
+    if (disclosureVersion !== SMS_SCHEDULING_DISCLOSURE_VERSION) {
+      return { ok: false, message: "This consent form is out of date. Refresh the page and try again." };
+    }
     const hub = await loadHub();
     const cleaner = hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
     if (!cleaner) return { ok: false, message: "Your cleaner profile could not be found." };
@@ -23,14 +35,30 @@ export async function recordSmsOnboardingChoice(
       return { ok: false, message: "Enter a 10-digit mobile number." };
     }
     const now = new Date().toISOString();
-    const next = {
-      ...cleaner,
+    let next = cleanerWithMobilePhone(cleaner, mobilePhone);
+    next = {
+      ...next,
       mobilePhone,
       smsSchedulingOptIn: optIn,
-      smsOptInRecordedAt: cleaner.smsOptInRecordedAt ?? now,
+      smsOptInRecordedAt: now,
       updatedAt: now,
       updatedBy: session.email,
     };
+    if (optIn) {
+      next = {
+        ...next,
+        smsConsentPhone: mobilePhone,
+        smsConsentRecordedAt: now,
+        smsConsentDisclosureVersion: SMS_SCHEDULING_DISCLOSURE_VERSION,
+      };
+    } else {
+      next = {
+        ...next,
+        smsConsentPhone: undefined,
+        smsConsentRecordedAt: undefined,
+        smsConsentDisclosureVersion: undefined,
+      };
+    }
     await saveHub({
       ...hub,
       cleaners: hub.cleaners.map((item) => (item.cleanerId === session.cleanerId ? next : item)),
@@ -38,8 +66,11 @@ export async function recordSmsOnboardingChoice(
     return {
       ok: true,
       smsSchedulingOptIn: optIn,
-      smsOptInRecordedAt: next.smsOptInRecordedAt ?? now,
+      smsOptInRecordedAt: now,
       mobilePhone,
+      smsConsentPhone: next.smsConsentPhone,
+      smsConsentRecordedAt: next.smsConsentRecordedAt,
+      smsConsentDisclosureVersion: next.smsConsentDisclosureVersion,
     };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };

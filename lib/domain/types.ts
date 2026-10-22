@@ -53,8 +53,14 @@ export type CleanerProfile = {
   typicalHourlyRateCents: number;
   /** True when the cleaner opted in to automated scheduling SMS; false when they declined. */
   smsSchedulingOptIn?: boolean;
-  /** When opt-in or decline was recorded (ISO). Absent until SMS onboarding is completed. */
+  /** When the cleaner last completed SMS enrollment (opt-in or decline), ISO. */
   smsOptInRecordedAt?: string;
+  /** Normalized 10-digit mobile number the cleaner consented to receive scheduling SMS on. */
+  smsConsentPhone?: string;
+  /** When scheduling SMS opt-in consent was recorded, ISO. */
+  smsConsentRecordedAt?: string;
+  /** Version id of the disclosure copy shown at {@link smsConsentRecordedAt}. */
+  smsConsentDisclosureVersion?: string;
   createdAt: string;
   createdBy: string;
   updatedAt: string;

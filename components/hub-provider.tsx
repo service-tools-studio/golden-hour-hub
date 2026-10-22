@@ -211,7 +211,14 @@ type HubContextValue = HubState & {
   deleteSeries: (seriesId: string) => ActionResult;
   /** Extend recurring job occurrences through the current horizon (safe to call often). */
   refreshRecurringHorizon: () => void;
-  applyCleanerSmsConsent: (input: { smsSchedulingOptIn: boolean; smsOptInRecordedAt: string; mobilePhone?: string }) => void;
+  applyCleanerSmsConsent: (input: {
+    smsSchedulingOptIn: boolean;
+    smsOptInRecordedAt: string;
+    mobilePhone?: string;
+    smsConsentPhone?: string;
+    smsConsentRecordedAt?: string;
+    smsConsentDisclosureVersion?: string;
+  }) => void;
   undoDeleteJob: () => ActionResult;
   undoDeleteCustomer: () => ActionResult;
 };
@@ -2134,6 +2141,9 @@ export function HubProvider({
     smsSchedulingOptIn: boolean;
     smsOptInRecordedAt: string;
     mobilePhone?: string;
+    smsConsentPhone?: string;
+    smsConsentRecordedAt?: string;
+    smsConsentDisclosureVersion?: string;
   }): void {
     if (!data.cleanerId) return;
     setState({
@@ -2145,6 +2155,9 @@ export function HubProvider({
               ...(input.mobilePhone ? { mobilePhone: input.mobilePhone } : {}),
               smsSchedulingOptIn: input.smsSchedulingOptIn,
               smsOptInRecordedAt: input.smsOptInRecordedAt,
+              smsConsentPhone: input.smsConsentPhone,
+              smsConsentRecordedAt: input.smsConsentRecordedAt,
+              smsConsentDisclosureVersion: input.smsConsentDisclosureVersion,
               updatedAt: input.smsOptInRecordedAt,
             }
           : cleaner,

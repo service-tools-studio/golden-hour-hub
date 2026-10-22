@@ -85,7 +85,7 @@ export function SmsOptInFormCard({ prepopulatePhone = "", onSubmit }: SmsOptInFo
         />
         <span className="text-sm leading-5 text-ink/80">
           I agree to receive recurring automated SMS messages from Golden Hour Cleaning Co. about job invitations,
-          scheduling updates, confirmations, and availability reminders at the mobile number associated with my account.
+          scheduling updates, confirmations, and availability reminders at the mobile number entered above.
         </span>
       </label>
       <p className="mt-4 text-xs leading-5 text-ink/55">

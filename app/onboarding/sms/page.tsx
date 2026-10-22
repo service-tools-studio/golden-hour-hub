@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SmsOnboardingForm } from "@/components/cleaner/sms-onboarding-form";
-import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
+import { cleanerSmsEnrollmentUpToDate } from "@/lib/cleaner/sms-consent";
 import { cognitoConfigured } from "@/lib/auth/config";
 import { dynamoConfigured, loadHub } from "@/lib/data/repository";
 import { getServerSession } from "@/lib/auth/session";
@@ -21,7 +21,7 @@ export default async function SmsOnboardingPage() {
       const cleaner = hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
       if (cleaner) {
         initialMobilePhone = cleaner.mobilePhone;
-        if (cleanerAllowsSchedulingSms(cleaner)) {
+        if (cleanerSmsEnrollmentUpToDate(cleaner)) {
           redirect("/cleaner");
         }
       }
