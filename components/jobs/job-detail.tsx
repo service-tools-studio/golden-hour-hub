@@ -173,11 +173,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               </div>
               {sizeLine ? <p className="mt-1 text-sm text-ink/60">{sizeLine}</p> : null}
             </div>
-            {visit.preferences ? (
-              <p className="mt-3 whitespace-pre-line text-sm">Preferences: {visit.preferences}</p>
-            ) : null}
+            {visit.preferences ? <JobNoteBlock label="Preferences" text={visit.preferences} /> : null}
             {job.specialInstructions ? (
-              <p className="mt-2 whitespace-pre-line text-sm">Instructions: {job.specialInstructions}</p>
+              <JobNoteBlock label="Instructions" text={job.specialInstructions} className="mt-2" />
             ) : null}
             {job.arrivalWindowStart ? (
               <p className="mt-3 text-sm">Scheduled for {formatTimeLabel(job.arrivalWindowStart)}</p>
@@ -470,6 +468,15 @@ function WarningIcon() {
   );
 }
 
+function JobNoteBlock({ label, text, className = "mt-3" }: { label: string; text: string; className?: string }) {
+  return (
+    <div className={`${className} text-sm`}>
+      <p className="font-semibold text-ink/70">{label}</p>
+      <p className="mt-1 whitespace-pre-line pl-4">{text}</p>
+    </div>
+  );
+}
+
 function editPath(jobId: string, from: CleaningOrigin | undefined, params: Record<string, string> = {}) {
   return withOrigin(`/admin/jobs/${jobId}/edit`, from, params);
 }
@@ -751,12 +758,10 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
             </AddressLink>
           </div>
           {snapshotSizeLine ? <p className="mt-3 text-sm">{snapshotSizeLine}</p> : null}
-          {job.snapshot.preferences ? (
-            <p className="mt-3 whitespace-pre-line text-sm">Preferences: {job.snapshot.preferences}</p>
-          ) : null}
+          {job.snapshot.preferences ? <JobNoteBlock label="Preferences" text={job.snapshot.preferences} /> : null}
           {job.specialInstructions ? (
-              <p className="mt-2 whitespace-pre-line text-sm">Instructions: {job.specialInstructions}</p>
-            ) : null}
+            <JobNoteBlock label="Instructions" text={job.specialInstructions} className="mt-2" />
+          ) : null}
           {pendingAvailability ? null : (
             <div className="mt-4">
               <AddToCalendarButton job={job} assignment={assignment} />
