@@ -44,6 +44,7 @@ import {
   applyScheduleConflictWarning,
   detectConfirmedAssignmentConflict,
   isConfirmedScheduleConflictReason,
+  reconcileScheduleConflictWarnings,
   toAssignmentSchedule,
   validateAvailabilityEdit,
 } from "@/lib/domain/scheduling";
@@ -292,6 +293,13 @@ function syncJobAssignmentsToCleaningArrival(
   });
 }
 
+function withReconciledScheduleConflicts(state: HubState): HubState {
+  return {
+    ...state,
+    assignments: reconcileScheduleConflictWarnings(state.assignments, state.cleaners),
+  };
+}
+
 function assignmentSavedMessage(
   cleaner: CleanerProfile,
   assignment: Pick<JobAssignment, "status" | "attentionReason">,
@@ -388,11 +396,18 @@ export function HubProvider({
   /** Server-known preview mode (no AUTH_SESSION_SECRET, non-production). */
   initialPreviewAuth?: boolean;
 }) {
-  const [state, setState] = useState<HubState | null>(() => {
+  const [state, setStateInner] = useState<HubState | null>(() => {
     if (!initialAuth?.role) return null;
     const today = todayInBusinessZone();
     return { ...emptyHub(today), role: initialAuth.role, cleanerId: initialAuth.cleanerId };
   });
+  const setState = useCallback((update: HubState | null | ((prev: HubState | null) => HubState | null)) => {
+    setStateInner((prev) => {
+      const resolved = typeof update === "function" ? update(prev) : update;
+      if (!resolved) return resolved;
+      return withReconciledScheduleConflicts(resolved);
+    });
+  }, []);
   const [toast, setToast] = useState<string | null>(null);
   const [notificationPending, setNotificationPending] = useState(0);
   const [actionLoading, setActionLoading] = useState(0);
@@ -1517,6 +1532,7 @@ export function HubProvider({
       createdAt: existing?.createdAt ?? planned.createdAt,
       lastNotified: notice,
       notifiedServiceDate: job.date,
+      needsDateReinvite: undefined,
     };
     let nextAssignments = existing
       ? data.assignments.map((item) => (item.assignmentId === existing.assignmentId ? savedAssignment : item))

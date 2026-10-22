@@ -34,6 +34,8 @@ import {
   invitationAttendanceBounds,
   claimHeadcount,
   detectConfirmedAssignmentConflict,
+  confirmedScheduleConflictReason,
+  reconcileScheduleConflictWarnings,
   findCompatibleCleaners,
   isCleanerAllowedCrewSize,
   subtractConfirmedBookingsFromAvailability,
@@ -53,7 +55,7 @@ import {
   zonedParts,
   zonedToUtc,
 } from "./time.ts";
-import type { AvailabilityWindow, Customer } from "./types.ts";
+import type { AvailabilityWindow, Customer, JobAssignment } from "./types.ts";
 
 function schedule(overrides: Partial<AssignmentSchedule> = {}): AssignmentSchedule {
   return {
@@ -386,6 +388,43 @@ describe("headcount and helper approval", () => {
       1,
     );
     assert.equal(assignmentCrewStepperMax(1, 2), 2);
+  });
+
+  it("clears a stale schedule-conflict flag when the overlapping job is no longer confirmed", () => {
+    const cleaners = [{ cleanerId: "shariese", firstName: "Shariese", lastName: "Test" }];
+    const base = {
+      assignmentId: "a-stale",
+      jobId: "job-b",
+      cleanerId: "shariese",
+      serviceDate: "2026-11-10",
+      arrivalWindowStart: "09:00",
+      arrivalWindowEnd: "10:00",
+      expectedDurationMinutes: 180,
+      proposedCrewSize: 1,
+      payType: "FLAT" as const,
+      payPerPersonCents: 10000,
+      proposedTotalPayCents: 10000,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "test",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      updatedBy: "test",
+    };
+    const blocking: JobAssignment = {
+      ...base,
+      assignmentId: "a-blocker",
+      jobId: "job-a",
+      status: "CANCELED",
+      attentionReason: undefined,
+    };
+    const flagged: JobAssignment = {
+      ...base,
+      status: "NEEDS_ATTENTION",
+      attentionReason: confirmedScheduleConflictReason("Shariese"),
+    };
+    const reconciled = reconcileScheduleConflictWarnings([blocking, flagged], cleaners);
+    const updated = reconciled.find((item) => item.assignmentId === "a-stale");
+    assert.equal(updated?.status, "CONFIRMED");
+    assert.equal(updated?.attentionReason, undefined);
   });
 
   it("keeps the final headcount slot safe when two confirmations read the same count", () => {

@@ -338,11 +338,9 @@ export function CleaningForm({
   function runSubmit(nextHref?: string) {
     if (saving) return false;
     setSaving(true);
-    try {
-      return submit(nextHref);
-    } finally {
-      setSaving(false);
-    }
+    const ok = submit(nextHref);
+    if (!ok) setSaving(false);
+    return ok;
   }
 
   function saveAndLeave() {

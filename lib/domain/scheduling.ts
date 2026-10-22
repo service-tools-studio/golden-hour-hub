@@ -510,6 +510,42 @@ export function applyScheduleConflictWarning(
   return assignment;
 }
 
+/** Recompute schedule-conflict flags after other assignments change (clears stale NEEDS_ATTENTION). */
+export function reconcileScheduleConflictWarnings(
+  assignments: JobAssignment[],
+  cleaners: Pick<CleanerProfile, "cleanerId" | "firstName">[],
+): JobAssignment[] {
+  const cleanerById = new Map(cleaners.map((cleaner) => [cleaner.cleanerId, cleaner]));
+  let current = assignments;
+  const maxPasses = Math.max(1, current.length);
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    let changed = false;
+    const next = current.map((assignment) => assignment);
+    for (let index = 0; index < next.length; index += 1) {
+      const assignment = next[index];
+      const cleaner = cleanerById.get(assignment.cleanerId);
+      if (!cleaner) continue;
+      const shouldReconcile =
+        assignment.status === "CONFIRMED" ||
+        (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason));
+      if (!shouldReconcile) continue;
+      const updated = applyScheduleConflictWarning(assignment, cleaner, next);
+      if (
+        updated.status !== assignment.status ||
+        updated.attentionReason !== assignment.attentionReason ||
+        updated.confirmedCrewSize !== assignment.confirmedCrewSize ||
+        updated.confirmedTotalPayCents !== assignment.confirmedTotalPayCents
+      ) {
+        next[index] = updated;
+        changed = true;
+      }
+    }
+    current = next;
+    if (!changed) break;
+  }
+  return current;
+}
+
 export function windowsForCleaner(
   windows: AvailabilityWindow[],
   cleanerId: string,

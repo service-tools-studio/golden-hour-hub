@@ -21,10 +21,13 @@ import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context"
 import { kelseyContactLinks } from "@/lib/contact";
 import { isAvailabilityWeekEditable, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
+import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
 import {
   CLEANING_DELETE_BLOCKED_MESSAGE,
   calculateConfirmedHeadcount,
+  isConfirmedScheduleConflictReason,
   jobHasCleanerBlockingDeletion,
+  windowsForCleaner,
 } from "@/lib/domain/scheduling";
 import { seriesSummary } from "@/lib/mock/seed";
 import {
@@ -149,12 +152,6 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const sizeLine = propertySizeLabel(visit.bedrooms, visit.bathrooms, visit.squareFeet);
   if (navigatingAway) return null;
 
-  const reinviteFlag = reinviteFlagText(
-    assignments
-      .filter((assignment) => dateReinviteNeeded(assignment, job.date))
-      .map((assignment) => hub.cleaners.find((cleaner) => cleaner.cleanerId === assignment.cleanerId)?.firstName)
-      .filter((name): name is string => Boolean(name)),
-  );
   return (
     <div className="space-y-3">
         <Card>
@@ -219,7 +216,6 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             </div>
           ) : null}
           <Link href={editPath(job.jobId, from)} className="block">
-            {reinviteFlag ? <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlag}</p> : null}
             <div className="mt-3 flex items-start justify-between gap-3">
               <div className="text-sm font-semibold">
                 <p>Confirmed headcount: {confirmed} / {needed}</p>
@@ -279,6 +275,18 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                 : null;
               const noticeKey = assignmentNoticeDismissKey(assignment);
               const showNotice = Boolean(gap) && !dismissedNotices.has(noticeKey);
+              const attentionMessage =
+                liveAvailabilityAttentionMessage({
+                  assignment,
+                  cleaner,
+                  serviceDate: assignment.serviceDate,
+                  windows: windowsForCleaner(hub.availability, cleaner.cleanerId),
+                  confirmedAssignments: hub.assignments,
+                  arrivalWindowStart: assignment.arrivalWindowStart,
+                  arrivalWindowEnd: assignment.arrivalWindowEnd,
+                  expectedDurationMinutes: assignment.expectedDurationMinutes,
+                }) ??
+                (isConfirmedScheduleConflictReason(assignment.attentionReason) ? null : assignment.attentionReason);
               return (
                 <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
                   <div className="min-w-0 flex-1">
@@ -293,8 +301,8 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                       {dateReinviteNeeded(assignment, job.date) ? (
                         <p className="mt-1 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
                       ) : null}
-                      {assignment.attentionReason ? (
-                        <p className="mt-1 text-sm font-semibold text-red-700">{assignment.attentionReason}</p>
+                      {attentionMessage ? (
+                        <p className="mt-1 text-sm font-semibold text-red-700">{attentionMessage}</p>
                       ) : null}
                       <ScheduleFacts
                         muted={declined}

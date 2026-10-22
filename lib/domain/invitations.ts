@@ -5,6 +5,7 @@ import {
   calculateConfirmedHeadcount,
   calculateRemainingHeadcount,
   detectConfirmedAssignmentConflict,
+  isConfirmedScheduleConflictReason,
   toAssignmentSchedule,
   validateRequestedCrewSize,
   type ScheduleWindow,
@@ -193,6 +194,22 @@ export function liveAvailabilityAttentionMessage(input: {
 }): string | null {
   const stored = input.assignment.attentionReason;
   if (!stored) return null;
+  if (isConfirmedScheduleConflictReason(stored)) {
+    const conflict = detectConfirmedAssignmentConflict({
+      cleanerId: input.cleaner.cleanerId,
+      candidate: {
+        serviceDate: input.serviceDate,
+        arrivalWindowStart: input.arrivalWindowStart,
+        arrivalWindowEnd: input.arrivalWindowEnd,
+        expectedDurationMinutes: input.expectedDurationMinutes,
+      },
+      confirmedAssignments: input.confirmedAssignments
+        .filter((item) => item.status === "CONFIRMED")
+        .map(toAssignmentSchedule),
+      ignoreAssignmentId: input.assignment.assignmentId,
+    });
+    return conflict ? stored : null;
+  }
   if (!isAvailabilityAttentionReason(input.assignment)) return stored;
 
   const blocked = calculateBlockedRange({

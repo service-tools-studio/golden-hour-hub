@@ -27,6 +27,7 @@ import {
 import { calculateFlatPayPerPerson } from "@/lib/domain/compensation";
 import { helpersApproved, personName, typicalCrewSize } from "@/lib/domain/cleaners";
 import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
+import { isConfirmedScheduleConflictReason } from "@/lib/domain/scheduling";
 import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
 import { CLEANING_DELETE_BLOCKED_MESSAGE, jobHasCleanerBlockingDeletion, windowsForCleaner } from "@/lib/domain/scheduling";
@@ -328,6 +329,22 @@ export function EditJobView({
           expectedDurationMinutes: duration,
         })
       : null;
+  const dateReinviteWarning =
+    assignment && cleaner && job && dateReinviteNeeded(assignment, job.date)
+      ? reinviteFlagText([cleaner.firstName])
+      : null;
+  const showSettledScheduleConflictActions = Boolean(
+    assignment &&
+      cleaner &&
+      !assignmentDirty &&
+      assignmentSettled &&
+      scheduleWarning &&
+      isConfirmedScheduleConflictReason(scheduleWarning),
+  );
+  const showSettledReinviteActions = Boolean(
+    assignment && cleaner && !assignmentDirty && assignmentSettled && dateReinviteWarning,
+  );
+  const showSettledNotificationActions = showSettledScheduleConflictActions || showSettledReinviteActions;
   const weekSubmitted = Boolean(
     cleaner &&
       job &&
@@ -451,7 +468,12 @@ export function EditJobView({
         }}
       >
         {message ? <Notice>{message}</Notice> : null}
-        <AssignmentStatus label={statusLabel} flag={flag} scheduleWarning={scheduleWarning} />
+        <AssignmentStatus
+          label={statusLabel}
+          flag={flag}
+          scheduleWarning={scheduleWarning}
+          reinviteWarning={dateReinviteWarning}
+        />
         <Field label="Arrival window">
           <ArrivalWindowPicker
             start={arrivalStart}
@@ -502,17 +524,25 @@ export function EditJobView({
             setMessage(null);
           }}
         />
-        {showAssignmentActions || showDirectAssignForInvite ? (
+        {showAssignmentActions || showDirectAssignForInvite || showSettledNotificationActions ? (
           <AssignmentSaveChoices
             assigning={assigning}
-            showDraftAndInvite={showAssignmentActions}
+            showDraftAndInvite={showAssignmentActions || showSettledNotificationActions}
             directAssignNote={
               weekSubmitted
                 ? null
                 : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
             }
-            inviteLabel={followUpReady ? "Send follow up" : "Save and send invite"}
-            onInvite={() => (followUpReady ? sendInviteFollowUp() : submit("INVITE"))}
+            inviteLabel={
+              showSettledNotificationActions
+                ? "Resend invite"
+                : followUpReady
+                  ? "Send follow up"
+                  : "Save and send invite"
+            }
+            onInvite={() =>
+              followUpReady && !showSettledNotificationActions ? sendInviteFollowUp() : submit("INVITE")
+            }
             onSave={submit}
           />
         ) : null}
@@ -958,10 +988,12 @@ function AssignmentStatus({
   label,
   flag,
   scheduleWarning,
+  reinviteWarning,
 }: {
   label: string;
   flag: string | null;
   scheduleWarning?: string | null;
+  reinviteWarning?: string | null;
 }) {
   return (
     <div>
@@ -970,6 +1002,11 @@ function AssignmentStatus({
       {scheduleWarning ? (
         <div className="mt-3">
           <Notice>{scheduleWarning}</Notice>
+        </div>
+      ) : null}
+      {reinviteWarning ? (
+        <div className="mt-3">
+          <Notice>{reinviteWarning}</Notice>
         </div>
       ) : null}
       {flag ? <div className="mt-3"><Notice>{flag}</Notice></div> : null}
