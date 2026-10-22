@@ -372,17 +372,6 @@ export function CustomerForm({
       <Field id="customer-phone" label="Phone" error={fieldMessage("phone")}>
         <input className={inputClass(Boolean(fieldMessage("phone")))} type="tel" inputMode="tel" value={form.phone} onChange={(event) => set("phone", formatPhoneInput(event.target.value, form.phone))} aria-invalid={Boolean(fieldMessage("phone"))} />
       </Field>
-      <Field id="customer-email" label="Email" error={fieldMessage("email")}>
-        <input className={inputClass(Boolean(fieldMessage("email")))} type="email" value={form.email} onChange={(event) => set("email", event.target.value)} aria-invalid={Boolean(fieldMessage("email"))} />
-      </Field>
-      <Field id="customer-notes" label="Notes">
-        <textarea
-          ref={notesRef}
-          className={`${inputClass(false)} min-h-24 py-3`}
-          value={form.notes}
-          onChange={(event) => set("notes", event.target.value)}
-        />
-      </Field>
       <div className="space-y-3 pt-2">
         <h2 className="text-lg font-semibold">Properties</h2>
         {properties.map((property, index) => {
@@ -522,7 +511,7 @@ export function CustomerForm({
             }}
             className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink"
           >
-            Add property
+            Add another property
           </button>
           {fieldMessage("properties") ? (
             <span role="alert" className="mt-1.5 block text-sm font-semibold text-red-700">
@@ -531,6 +520,17 @@ export function CustomerForm({
           ) : null}
         </div>
       </div>
+      <Field id="customer-email" label="Email" error={fieldMessage("email")}>
+        <input className={inputClass(Boolean(fieldMessage("email")))} type="email" value={form.email} onChange={(event) => set("email", event.target.value)} aria-invalid={Boolean(fieldMessage("email"))} />
+      </Field>
+      <Field id="customer-notes" label="Notes">
+        <textarea
+          ref={notesRef}
+          className={`${inputClass(false)} min-h-24 py-3`}
+          value={form.notes}
+          onChange={(event) => set("notes", event.target.value)}
+        />
+      </Field>
       {fieldMessage("form") ? (
         <p id="customer-form" role="alert" className="text-sm font-semibold text-red-700">
           {fieldMessage("form")}
