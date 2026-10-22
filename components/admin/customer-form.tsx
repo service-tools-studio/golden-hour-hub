@@ -322,15 +322,14 @@ export function CustomerForm({
         event.preventDefault();
         if (saving) return;
         setSaving(true);
-        try {
-          const customerId = persist();
-          if (!customerId) return;
-          hub.flash("changes saved");
-          if (onSaved) onSaved(customerId);
-          else router.push(`/admin/customers/${customerId}`);
-        } finally {
+        const customerId = persist();
+        if (!customerId) {
           setSaving(false);
+          return;
         }
+        hub.flash("changes saved");
+        if (onSaved) onSaved(customerId);
+        else router.push(`/admin/customers/${customerId}`);
       }}
     >
       <div className="grid grid-cols-2 gap-3">

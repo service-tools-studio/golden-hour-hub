@@ -176,7 +176,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             {visit.preferences ? (
               <p className="mt-3 whitespace-pre-line text-sm">Preferences: {visit.preferences}</p>
             ) : null}
-            {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
+            {job.specialInstructions ? (
+              <p className="mt-2 whitespace-pre-line text-sm">Instructions: {job.specialInstructions}</p>
+            ) : null}
             {job.arrivalWindowStart ? (
               <p className="mt-3 text-sm">Scheduled for {formatTimeLabel(job.arrivalWindowStart)}</p>
             ) : null}
@@ -752,7 +754,9 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           {job.snapshot.preferences ? (
             <p className="mt-3 whitespace-pre-line text-sm">Preferences: {job.snapshot.preferences}</p>
           ) : null}
-          {job.specialInstructions ? <p className="mt-2 text-sm">Instructions: {job.specialInstructions}</p> : null}
+          {job.specialInstructions ? (
+              <p className="mt-2 whitespace-pre-line text-sm">Instructions: {job.specialInstructions}</p>
+            ) : null}
           {pendingAvailability ? null : (
             <div className="mt-4">
               <AddToCalendarButton job={job} assignment={assignment} />

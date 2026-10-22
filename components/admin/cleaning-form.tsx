@@ -360,8 +360,6 @@ export function CleaningForm({
           runSubmit();
         }}
       >
-        {message ? <Notice>{message}</Notice> : null}
-
         {customer ? (
           <Group label="Customer">
             <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 ring-1 ring-ink/15">
@@ -611,6 +609,7 @@ export function CleaningForm({
               />
             </Field>
 
+            {message ? <Notice>{message}</Notice> : null}
             <PrimaryButton type="submit" loading={saving} loadingLabel="Saving…">
               Save cleaning
             </PrimaryButton>

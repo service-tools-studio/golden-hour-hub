@@ -44,8 +44,10 @@ export function routeMatchesPendingNavigation(pathname: string, href: string): b
   return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
 }
 
-function pendingNavigationLabel(href: string): string {
+export function pendingNavigationLabel(href: string): string {
   const path = href.split("?")[0];
+  if (path.startsWith("/admin/jobs/new")) return "Opening new cleaning…";
+  if (/^\/admin\/jobs\/[^/]+\/edit$/.test(path)) return "Opening cleaning…";
   const labels: Record<string, string> = {
     "/admin": "Dashboard",
     "/admin/schedule": "Schedule",
@@ -57,6 +59,36 @@ function pendingNavigationLabel(href: string): string {
   };
   const name = labels[path];
   return name ? `Opening ${name}…` : "Loading…";
+}
+
+/** Full-screen “Saved” + navigation spinner after a successful save that routes away. */
+export function PendingNavigationOverlay({
+  href,
+  onComplete,
+}: {
+  href: string;
+  onComplete?: () => void;
+}) {
+  const pathname = usePathname();
+  useEffect(() => {
+    if (!routeMatchesPendingNavigation(pathname, href)) return;
+    onComplete?.();
+  }, [pathname, href, onComplete]);
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28">
+      <div
+        role="status"
+        aria-live="polite"
+        className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
+      >
+        <h2 className="text-lg font-semibold">Saved</h2>
+        <p className="mt-4 flex min-h-12 items-center justify-center">
+          <ButtonLoadingLabel label={pendingNavigationLabel(href)} />
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export function UnsavedChangesDialog({

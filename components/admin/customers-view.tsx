@@ -7,7 +7,11 @@ import { CustomerForm, type CustomerFormHandle } from "@/components/admin/custom
 import { SeriesForm } from "@/components/admin/series-form";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
-import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
+import {
+  PendingNavigationOverlay,
+  UnsavedChangesDialog,
+  useUnsavedNavigation,
+} from "@/components/unsaved-changes";
 import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
 import { searchCustomers } from "@/lib/domain/customers";
 import { formatMoney } from "@/lib/domain/compensation";
@@ -196,6 +200,16 @@ function localAdminPath(value: string): string | undefined {
   return value;
 }
 
+function cleaningReturnLabel(returnTo: string): string {
+  if (returnTo.includes("/edit")) return "Cleaning";
+  if (returnTo.includes("/jobs/new")) return "New cleaning";
+  return "Back";
+}
+
+function isCleaningReturnTo(value: string): boolean {
+  return value.startsWith("/admin/jobs/new") || /^\/admin\/jobs\/[^/]+\/edit(?:\?|$)/.test(value);
+}
+
 export function CustomerDetail({
   customerId,
   initialSeriesId = "",
@@ -214,9 +228,11 @@ export function CustomerDetail({
   const customer = hub.customers.find((item) => item.customerId === customerId);
   const [editing, setEditing] = useState(initialEdit);
   const [editingSeriesId, setEditingSeriesId] = useState<string | null>(initialSeriesId || null);
-  const backTo = localAdminPath(returnTo);
+  const backTo =
+    returnTo && !returnTo.startsWith("//") && isCleaningReturnTo(returnTo) ? localAdminPath(returnTo) : undefined;
   const [focusPropertyId, setFocusPropertyId] = useState<string | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<{ href?: string } | null>(null);
+  const [savedReturnHref, setSavedReturnHref] = useState<string | null>(null);
   const series = hub.series.filter((item) => item.customerId === customerId);
   const editingSeries = editingSeriesId ? series.find((item) => item.seriesId === editingSeriesId) : undefined;
   const editingRecord = editing || Boolean(editingSeries);
@@ -282,10 +298,12 @@ export function CustomerDetail({
         subtitle={editing ? name : editingSeries ? "Recurring service" : undefined}
         crumbs={
           editingRecord
-            ? [
-                { label: "Customers", onClick: () => requestLeave("/admin/customers") },
-                { label: name, onClick: () => requestLeave() },
-              ]
+            ? backTo
+              ? [{ href: backTo, label: cleaningReturnLabel(backTo) }]
+              : [
+                  { label: "Customers", onClick: () => requestLeave("/admin/customers") },
+                  { label: name, onClick: () => requestLeave() },
+                ]
             : [{ href: "/admin/customers", label: "Customers" }]
         }
         action={
@@ -306,8 +324,15 @@ export function CustomerDetail({
             ref={formRef}
             customer={customer}
             scrollToPropertyId={focusPropertyId}
-            onCancel={() => requestLeave()}
-            onSaved={() => setEditing(false)}
+            onCancel={() => (backTo ? requestLeave(backTo) : requestLeave())}
+            onSaved={() => {
+              if (backTo) {
+                setSavedReturnHref(backTo);
+                router.push(backTo);
+                return;
+              }
+              setEditing(false);
+            }}
             onDeleted={() => router.push("/admin/customers")}
           />
         ) : editingSeries ? (
@@ -447,6 +472,9 @@ export function CustomerDetail({
         onDiscard={() => finishLeave(leaveTarget?.href)}
         onDismiss={() => setLeaveTarget(null)}
       />
+      {savedReturnHref ? (
+        <PendingNavigationOverlay href={savedReturnHref} onComplete={() => setSavedReturnHref(null)} />
+      ) : null}
     </Screen>
   );
 }
