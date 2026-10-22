@@ -89,9 +89,7 @@ export function DashboardView() {
     const people = calculateConfirmedHeadcount(hub.assignments.filter((item) => item.jobId === job.jobId));
     return people < job.headcountNeeded;
   });
-  const needsAttention = unstaffed
-    .filter((job) => job.date <= staffingHorizon)
-    .filter((job) => !dismissedJobIds.has(job.jobId));
+  const needsAttention = unstaffed.filter((job) => job.date <= staffingHorizon);
   const missingPhone = hub.customers
     .filter((customer) => customer.phone.replace(/\D/g, "") === "")
     .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
@@ -119,7 +117,7 @@ export function DashboardView() {
           <section className="space-y-3">
             <h2 className={heading}>Happening Now</h2>
             {happening.map((job) => (
-              <JobStaffingCard key={job.jobId} jobId={job.jobId} onDismiss={dismissFromDashboard} />
+              <JobStaffingCard key={job.jobId} jobId={job.jobId} />
             ))}
           </section>
         ) : null}
@@ -154,7 +152,7 @@ export function DashboardView() {
             </Card>
           ) : (
             needsAttention.map((job) => (
-              <JobStaffingCard key={job.jobId} jobId={job.jobId} onDismiss={dismissFromDashboard} />
+              <JobStaffingCard key={job.jobId} jobId={job.jobId} />
             ))
           )}
         </section>
@@ -163,7 +161,7 @@ export function DashboardView() {
           <section className="space-y-3">
             <h2 className={heading}>Fully staffed</h2>
             {staffed.map((job) => (
-              <JobStaffingCard key={job.jobId} jobId={job.jobId} onDismiss={dismissFromDashboard} />
+              <JobStaffingCard key={job.jobId} jobId={job.jobId} dismissable onDismiss={dismissFromDashboard} />
             ))}
           </section>
         ) : null}
@@ -174,10 +172,12 @@ export function DashboardView() {
 
 function JobStaffingCard({
   jobId,
+  dismissable = false,
   onDismiss,
 }: {
   jobId: string;
-  onDismiss: (jobId: string) => void;
+  dismissable?: boolean;
+  onDismiss?: (jobId: string) => void;
 }) {
   const hub = useHub();
   const now = useNow();
@@ -195,7 +195,7 @@ function JobStaffingCard({
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   const availabilityFollowUp = assignments.some((item) => item.availabilityConflictWeekStart);
-  const showDismiss = jobCleaningHasEnded(job, hub.assignments, hub.today, now);
+  const showDismiss = dismissable && jobCleaningHasEnded(job, hub.assignments, hub.today, now);
   return (
     <Card
       className={`relative ${showDismiss ? "pb-10" : ""} ${full ? "ring-2 ring-mint" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}`}
@@ -203,7 +203,7 @@ function JobStaffingCard({
       {showDismiss ? (
         <button
           type="button"
-          onClick={() => onDismiss(job.jobId)}
+          onClick={() => onDismiss?.(job.jobId)}
           className="absolute bottom-3 right-4 z-10 text-xs font-semibold text-ink/50 underline decoration-ink/25 underline-offset-2"
         >
           Dismiss
