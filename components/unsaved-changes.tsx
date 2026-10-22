@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ButtonLoadingLabel } from "@/components/ui";
 
@@ -36,74 +37,139 @@ export function useUnsavedNavigation(active: boolean, blocked: () => boolean, on
   }, []);
 }
 
+export function routeMatchesPendingNavigation(pathname: string, href: string): boolean {
+  const targetPath = href.split("?")[0];
+  const currentPath = pathname.split("?")[0];
+  if (targetPath === "/admin" || targetPath === "/cleaner") return currentPath === targetPath;
+  return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
+}
+
+function pendingNavigationLabel(href: string): string {
+  const path = href.split("?")[0];
+  const labels: Record<string, string> = {
+    "/admin": "Dashboard",
+    "/admin/schedule": "Schedule",
+    "/admin/customers": "Customers",
+    "/admin/team": "Team",
+    "/cleaner": "Home",
+    "/cleaner/schedule": "My Schedule",
+    "/cleaner/availability": "Availability",
+  };
+  const name = labels[path];
+  return name ? `Opening ${name}…` : "Loading…";
+}
+
 export function UnsavedChangesDialog({
   open,
+  pendingHref,
   onSave,
   onDiscard,
   onDismiss,
+  onNavigationComplete,
 }: {
   open: boolean;
+  pendingHref?: string | null;
   onSave: () => void | boolean | Promise<void | boolean>;
   onDiscard: () => void;
   onDismiss: () => void;
+  onNavigationComplete?: () => void;
 }) {
-  const [saving, setSaving] = useState(false);
+  const pathname = usePathname();
+  const [phase, setPhase] = useState<"idle" | "saving" | "navigating">("idle");
 
   useEffect(() => {
-    if (!open) setSaving(false);
+    if (!open) setPhase("idle");
   }, [open]);
 
+  useEffect(() => {
+    if (phase !== "navigating" || !pendingHref) return;
+    if (routeMatchesPendingNavigation(pathname, pendingHref)) {
+      setPhase("idle");
+      onNavigationComplete?.();
+    }
+  }, [pathname, phase, pendingHref, onNavigationComplete]);
+
   async function handleSave() {
-    if (saving) return;
-    setSaving(true);
+    if (phase !== "idle") return;
+    setPhase("saving");
     try {
-      await Promise.resolve(onSave());
-    } finally {
-      setSaving(false);
+      const result = await Promise.resolve(onSave());
+      if (result === false) {
+        setPhase("idle");
+        return;
+      }
+      if (pendingHref) {
+        setPhase("navigating");
+        return;
+      }
+      onDismiss();
+      setPhase("idle");
+    } catch {
+      setPhase("idle");
     }
   }
 
   if (!open) return null;
+
+  const busy = phase !== "idle";
+  const navigating = phase === "navigating";
+  const saving = phase === "saving";
+
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28" onClick={onDismiss}>
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28"
+      onClick={busy ? undefined : onDismiss}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="unsaved-title"
+        aria-busy={busy}
         className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="unsaved-title" className="text-lg font-semibold">
-          Unsaved changes
-        </h2>
-        <p className="mt-1 text-sm leading-5 text-ink/70">Save before leaving, or discard the edits.</p>
-        <div className="mt-4 space-y-2">
-          <button
-            type="button"
-            disabled={saving}
-            aria-busy={saving}
-            onClick={() => void handleSave()}
-            className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-70"
-          >
-            {saving ? <ButtonLoadingLabel label="Saving…" /> : "Save"}
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onDiscard}
-            className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink disabled:opacity-70"
-          >
-            Discard changes
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onDismiss}
-            className="min-h-12 w-full text-base font-semibold text-ink/70 disabled:opacity-70"
-          >
-            Keep editing
-          </button>
-        </div>
+        {navigating ? (
+          <>
+            <h2 id="unsaved-title" className="text-lg font-semibold">Saved</h2>
+            <p className="mt-4 flex min-h-12 items-center justify-center">
+              <ButtonLoadingLabel label={pendingHref ? pendingNavigationLabel(pendingHref) : "Loading…"} />
+            </p>
+          </>
+        ) : (
+          <>
+            <h2 id="unsaved-title" className="text-lg font-semibold">
+              Unsaved changes
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-ink/70">Save before leaving, or discard the edits.</p>
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                disabled={busy}
+                aria-busy={saving}
+                onClick={() => void handleSave()}
+                className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-70"
+              >
+                {saving ? <ButtonLoadingLabel label="Saving…" /> : "Save"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onDiscard}
+                className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink disabled:opacity-70"
+              >
+                Discard changes
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onDismiss}
+                className="min-h-12 w-full text-base font-semibold text-ink/70 disabled:opacity-70"
+              >
+                Keep editing
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -414,6 +414,7 @@ export function EditJobView({
   async function saveAndLeave() {
     const saved = await submit("DRAFT", leaveHref ?? undefined);
     if (!saved) setLeaveHref(null);
+    return saved;
   }
 
   if (cleanerId && !assignment) {
@@ -518,7 +519,9 @@ export function EditJobView({
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}
+        pendingHref={leaveHref}
         onSave={saveAndLeave}
+        onNavigationComplete={() => setLeaveHref(null)}
         onDiscard={() => {
           const href = leaveHref;
           setLeaveHref(null);
@@ -827,6 +830,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   async function saveAndLeave() {
     const saved = await submit("DRAFT", leaveHref ?? undefined);
     if (!saved) setLeaveHref(null);
+    return saved;
   }
 
   if (navigatingAway) return null;
@@ -918,7 +922,9 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}
+        pendingHref={leaveHref}
         onSave={saveAndLeave}
+        onNavigationComplete={() => setLeaveHref(null)}
         onDiscard={() => {
           const href = leaveHref;
           setLeaveHref(null);

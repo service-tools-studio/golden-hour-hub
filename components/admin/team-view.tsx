@@ -260,10 +260,8 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
         setLeaveHref(null);
         return false;
       }
-      setLeaveHref(null);
       return true;
     }
-    setLeaveHref(null);
     if (href) router.push(href);
     return true;
   }
@@ -392,7 +390,9 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
       </div>
       <UnsavedChangesDialog
         open={leaveHref !== null}
+        pendingHref={leaveHref}
         onSave={saveAndLeave}
+        onNavigationComplete={() => setLeaveHref(null)}
         onDiscard={() => {
           const href = leaveHref;
           setLeaveHref(null);

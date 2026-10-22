@@ -622,7 +622,9 @@ export function CleaningForm({
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}
+        pendingHref={leaveHref}
         onSave={saveAndLeave}
+        onNavigationComplete={() => setLeaveHref(null)}
         onDiscard={() => {
           const href = leaveHref;
           setLeaveHref(null);

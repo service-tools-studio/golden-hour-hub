@@ -146,11 +146,11 @@ export function NewCustomerView({
     const href = leaveHref;
     if (!formRef.current?.save()) {
       setLeaveHref(null);
-      return;
+      return false;
     }
     hub.flash("changes saved");
-    setLeaveHref(null);
     if (href) router.push(href);
+    return true;
   }
 
   return (
@@ -177,7 +177,9 @@ export function NewCustomerView({
       </div>
       <UnsavedChangesDialog
         open={leaveHref !== null}
+        pendingHref={leaveHref}
         onSave={saveAndLeave}
+        onNavigationComplete={() => setLeaveHref(null)}
         onDiscard={() => {
           const href = leaveHref;
           setLeaveHref(null);
@@ -251,10 +253,11 @@ export function CustomerDetail({
     const href = leaveTarget?.href;
     if (!activeForm()?.save()) {
       setLeaveTarget(null);
-      return;
+      return false;
     }
     hub.flash("changes saved");
-    finishLeave(href);
+    if (href) router.push(href);
+    return true;
   }
   if (!customer) {
     return (
@@ -434,7 +437,13 @@ export function CustomerDetail({
       </div>
       <UnsavedChangesDialog
         open={leaveTarget !== null}
+        pendingHref={leaveTarget?.href ?? null}
         onSave={saveAndLeave}
+        onNavigationComplete={() => {
+          setLeaveTarget(null);
+          setEditing(false);
+          setEditingSeriesId(null);
+        }}
         onDiscard={() => finishLeave(leaveTarget?.href)}
         onDismiss={() => setLeaveTarget(null)}
       />

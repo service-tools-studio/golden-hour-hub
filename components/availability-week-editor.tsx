@@ -3,6 +3,7 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
+import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { Card, Notice, PrimaryButton } from "@/components/ui";
@@ -298,6 +299,7 @@ export function AvailabilityWeekEditor({
   ref?: React.Ref<AvailabilityWeekEditorHandle>;
 }) {
   const hub = useHub();
+  const router = useRouter();
   const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
   const editableWeeks = editableAvailabilityWeeks(hub.today);
   const weekStart = normalizeAvailabilityWeekStart(hub.today, weekStartProp);
@@ -552,8 +554,7 @@ export function AvailabilityWeekEditor({
         setLeaveHref(null);
         return false;
       }
-      setLeaveHref(null);
-      if (href) window.location.assign(href);
+      if (href) router.push(href);
       return true;
     });
   }
@@ -681,11 +682,13 @@ export function AvailabilityWeekEditor({
       {!embedded ? (
       <UnsavedChangesDialog
         open={leaveHref !== null}
+        pendingHref={leaveHref}
         onSave={submitAndLeave}
+        onNavigationComplete={() => setLeaveHref(null)}
         onDiscard={() => {
           const href = leaveHref;
           setLeaveHref(null);
-          if (href) window.location.assign(href);
+          if (href) router.push(href);
         }}
         onDismiss={() => setLeaveHref(null)}
       />

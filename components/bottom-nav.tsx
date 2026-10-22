@@ -1,25 +1,61 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { ButtonSpinner } from "@/components/ui";
 
 type Item = { href: string; label: string; icon: "home" | "calendar" | "people" | "team" | "clock" };
 
+function tabActive(pathname: string, href: string): boolean {
+  return href === "/admin" || href === "/cleaner" ? pathname === href : pathname.startsWith(href);
+}
+
 export function BottomNav({ items }: { items: Item[] }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNavigatingTo(null);
+  }, [pathname]);
+
+  function onNavigate(href: string, event: React.MouseEvent<HTMLAnchorElement>) {
+    if (tabActive(pathname, href)) {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    setNavigatingTo(href);
+    startTransition(() => {
+      router.push(href);
+    });
+  }
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-md border-t border-ink/10 bg-[#fffdf6] pb-[env(safe-area-inset-bottom)]">
       {items.map((item) => {
-        const active = item.href === "/admin" || item.href === "/cleaner" ? pathname === item.href : pathname.startsWith(item.href);
+        const active = tabActive(pathname, item.href);
+        const loading = isPending && navigatingTo === item.href;
         return (
           <Link
             key={item.href}
             href={item.href}
+            prefetch={true}
+            onClick={(event) => onNavigate(item.href, event)}
+            aria-busy={loading}
             className={`flex min-h-16 flex-1 flex-col items-center justify-center gap-1 text-xs font-medium ${
               active ? "text-ink" : "text-ink/45"
-            }`}
+            } ${loading ? "pointer-events-none" : ""}`}
           >
-            <NavIcon name={item.icon} active={active} />
+            {loading ? (
+              <span className="flex h-[22px] w-[22px] items-center justify-center" aria-hidden="true">
+                <ButtonSpinner tone={active ? "onDark" : "onLight"} />
+              </span>
+            ) : (
+              <NavIcon name={item.icon} active={active} />
+            )}
             {item.label}
           </Link>
         );
