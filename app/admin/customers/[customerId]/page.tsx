@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { CustomerDetail } from "@/components/admin/customers-view";
 
 export default async function CustomerPage({
@@ -13,6 +14,14 @@ export default async function CustomerPage({
   const returnTo = typeof query.returnTo === "string" ? query.returnTo : "";
   const initialEdit = query.edit === "1";
   return (
-    <CustomerDetail customerId={customerId} initialSeriesId={seriesId} returnTo={returnTo} initialEdit={initialEdit} />
+    <Suspense fallback={<div className="min-h-dvh bg-cream" />}>
+      <CustomerDetail
+        key={`${customerId}:${returnTo}:${initialEdit ? "1" : "0"}`}
+        customerId={customerId}
+        initialSeriesId={seriesId}
+        returnTo={returnTo}
+        initialEdit={initialEdit}
+      />
+    </Suspense>
   );
 }

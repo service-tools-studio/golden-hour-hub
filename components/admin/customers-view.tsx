@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
@@ -16,7 +16,19 @@ import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/com
 import { searchCustomers } from "@/lib/domain/customers";
 import { formatMoney } from "@/lib/domain/compensation";
 import { seriesSummary } from "@/lib/mock/seed";
+import {
+  cleaningOrigin,
+  cleaningReturnLabel,
+  normalizeCleaningReturnTo,
+} from "@/components/jobs/origin";
 import { formatLongDate, formatPhone, propertySizeLabel, serviceLabel } from "@/lib/format";
+
+function useCleaningReturnTo(serverReturnTo: string): string | undefined {
+  const searchParams = useSearchParams();
+  const raw = searchParams.get("returnTo") ?? serverReturnTo ?? "";
+  const from = cleaningOrigin(searchParams.get("from"));
+  return normalizeCleaningReturnTo(raw, from);
+}
 
 function ClearSearchIcon() {
   return (
@@ -137,12 +149,7 @@ export function NewCustomerView({
   const router = useRouter();
   const formRef = useRef<CustomerFormHandle>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const back =
-    returnTo &&
-    !returnTo.startsWith("//") &&
-    (returnTo.startsWith("/admin/jobs/new") || /^\/admin\/jobs\/[^/]+\/edit(?:\?|$)/.test(returnTo))
-      ? returnTo
-      : null;
+  const back = useCleaningReturnTo(returnTo ?? "") ?? null;
   useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
   useHubSyncBlocker(() => Boolean(formRef.current?.isDirty()));
 
@@ -161,7 +168,7 @@ export function NewCustomerView({
     <Screen>
       <PageHeader
         title="New customer"
-        crumb={back ? { href: back, label: back.includes("/edit") ? "Cleaning" : "New cleaning" } : undefined}
+        crumb={back ? { href: back, label: cleaningReturnLabel(back) } : undefined}
       />
       <div className="px-5 pt-4">
         <CustomerForm
@@ -172,7 +179,7 @@ export function NewCustomerView({
             back
               ? (customerId) => {
                   const url = new URL(back, "http://local");
-                  url.searchParams.set("customerId", customerId);
+                  if (url.pathname === "/admin/jobs/new") url.searchParams.set("customerId", customerId);
                   router.push(`${url.pathname}${url.search}`);
                 }
               : undefined
@@ -195,21 +202,6 @@ export function NewCustomerView({
   );
 }
 
-function localAdminPath(value: string): string | undefined {
-  if (!value.startsWith("/admin/") || value.startsWith("//")) return undefined;
-  return value;
-}
-
-function cleaningReturnLabel(returnTo: string): string {
-  if (returnTo.includes("/edit")) return "Cleaning";
-  if (returnTo.includes("/jobs/new")) return "New cleaning";
-  return "Back";
-}
-
-function isCleaningReturnTo(value: string): boolean {
-  return value.startsWith("/admin/jobs/new") || /^\/admin\/jobs\/[^/]+\/edit(?:\?|$)/.test(value);
-}
-
 export function CustomerDetail({
   customerId,
   initialSeriesId = "",
@@ -228,8 +220,7 @@ export function CustomerDetail({
   const customer = hub.customers.find((item) => item.customerId === customerId);
   const [editing, setEditing] = useState(initialEdit);
   const [editingSeriesId, setEditingSeriesId] = useState<string | null>(initialSeriesId || null);
-  const backTo =
-    returnTo && !returnTo.startsWith("//") && isCleaningReturnTo(returnTo) ? localAdminPath(returnTo) : undefined;
+  const backTo = useCleaningReturnTo(returnTo);
   const [focusPropertyId, setFocusPropertyId] = useState<string | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<{ href?: string } | null>(null);
   const [savedReturnHref, setSavedReturnHref] = useState<string | null>(null);

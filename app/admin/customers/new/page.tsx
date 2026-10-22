@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { NewCustomerView } from "@/components/admin/customers-view";
 
 function param(value: string | string[] | undefined): string | undefined {
@@ -11,10 +12,12 @@ export default async function NewCustomerPage({
 }) {
   const params = await searchParams;
   return (
-    <NewCustomerView
-      returnTo={param(params.returnTo)}
-      firstName={param(params.firstName)}
-      lastName={param(params.lastName)}
-    />
+    <Suspense fallback={<div className="min-h-dvh bg-cream" />}>
+      <NewCustomerView
+        returnTo={param(params.returnTo)}
+        firstName={param(params.firstName)}
+        lastName={param(params.lastName)}
+      />
+    </Suspense>
   );
 }
