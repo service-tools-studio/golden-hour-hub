@@ -14,12 +14,16 @@ export default async function SmsOnboardingPage() {
   if (!session || session.role !== "CLEANER" || !session.cleanerId) {
     redirect("/login");
   }
+  let initialMobilePhone = "";
   if (dynamoConfigured()) {
     try {
       const hub = await loadHub();
       const cleaner = hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
-      if (cleaner && cleanerAllowsSchedulingSms(cleaner)) {
-        redirect("/cleaner");
+      if (cleaner) {
+        initialMobilePhone = cleaner.mobilePhone;
+        if (cleanerAllowsSchedulingSms(cleaner)) {
+          redirect("/cleaner");
+        }
       }
     } catch {
       /* show form; save may fail with message */
@@ -30,7 +34,7 @@ export default async function SmsOnboardingPage() {
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-12">
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-ink/50">Golden Hour Cleaning Co.</p>
       <p className="mt-2 text-sm text-ink/60">Step 2 of 2 — SMS notifications</p>
-      <SmsOnboardingForm />
+      <SmsOnboardingForm initialMobilePhone={initialMobilePhone} />
       <footer className="mt-auto pt-10 text-center text-sm text-ink/55">
         <Link href="/privacy" className="font-medium text-ink/70 underline decoration-gold decoration-2 underline-offset-4">
           Privacy policy
