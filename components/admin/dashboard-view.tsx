@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
+import { dismissDashboardJob, readDashboardDismissedJobIds } from "@/lib/admin/dashboard-dismissals";
 import {
   calculateBlockedRange,
   calculateConfirmedHeadcount,
@@ -15,6 +17,32 @@ import type { Job, JobAssignment } from "@/lib/domain/types";
 import { crewLine, formatLongDate, relativeDay, serviceLabel } from "@/lib/format";
 
 const heading = "text-sm font-semibold uppercase tracking-[0.14em] text-ink/50";
+
+function jobCleaningEndMs(job: Job, assignments: JobAssignment[]): number {
+  const coverage = cleaningCoverage(
+    assignments.filter(
+      (item) =>
+        item.jobId === job.jobId && (item.status === "INVITED" || item.status === "CONFIRMED"),
+    ),
+  );
+  if (coverage) return coverage.endUtc.getTime();
+  if (!job.arrivalWindowStart || !job.arrivalWindowEnd || job.expectedDurationMinutes === undefined) {
+    return Number.NaN;
+  }
+  return calculateBlockedRange({
+    date: job.date,
+    arrivalWindowStart: job.arrivalWindowStart,
+    arrivalWindowEnd: job.arrivalWindowEnd,
+    expectedDurationMinutes: job.expectedDurationMinutes,
+  }).endUtc.getTime();
+}
+
+function jobCleaningHasEnded(job: Job, assignments: JobAssignment[], today: string, now: number): boolean {
+  if (job.date !== today || job.status !== "SCHEDULED") return false;
+  if (jobInProgress(job, assignments, now)) return false;
+  const endMs = jobCleaningEndMs(job, assignments);
+  return Number.isFinite(endMs) && now >= endMs;
+}
 
 function jobInProgress(job: Job, assignments: JobAssignment[], now: number): boolean {
   if (job.status !== "SCHEDULED") return false;
@@ -35,6 +63,16 @@ function jobInProgress(job: Job, assignments: JobAssignment[], now: number): boo
 export function DashboardView() {
   const hub = useHub();
   const now = useNow();
+  const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    setDismissedJobIds(readDashboardDismissedJobIds(hub.today));
+  }, [hub.today]);
+
+  function dismissFromDashboard(jobId: string) {
+    dismissDashboardJob(hub.today, jobId);
+    setDismissedJobIds((current) => new Set([...current, jobId]));
+  }
 
   const happening = hub.jobs
     .filter((job) => jobInProgress(job, hub.assignments, now))
@@ -51,11 +89,15 @@ export function DashboardView() {
     const people = calculateConfirmedHeadcount(hub.assignments.filter((item) => item.jobId === job.jobId));
     return people < job.headcountNeeded;
   });
-  const needsAttention = unstaffed.filter((job) => job.date <= staffingHorizon);
+  const needsAttention = unstaffed
+    .filter((job) => job.date <= staffingHorizon)
+    .filter((job) => !dismissedJobIds.has(job.jobId));
   const missingPhone = hub.customers
     .filter((customer) => customer.phone.replace(/\D/g, "") === "")
     .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
-  const staffed = upcoming.filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon);
+  const staffed = upcoming
+    .filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon)
+    .filter((job) => !dismissedJobIds.has(job.jobId));
 
   return (
     <Screen>
@@ -77,7 +119,7 @@ export function DashboardView() {
           <section className="space-y-3">
             <h2 className={heading}>Happening Now</h2>
             {happening.map((job) => (
-              <JobStaffingCard key={job.jobId} jobId={job.jobId} />
+              <JobStaffingCard key={job.jobId} jobId={job.jobId} onDismiss={dismissFromDashboard} />
             ))}
           </section>
         ) : null}
@@ -111,7 +153,9 @@ export function DashboardView() {
               </p>
             </Card>
           ) : (
-            needsAttention.map((job) => <JobStaffingCard key={job.jobId} jobId={job.jobId} />)
+            needsAttention.map((job) => (
+              <JobStaffingCard key={job.jobId} jobId={job.jobId} onDismiss={dismissFromDashboard} />
+            ))
           )}
         </section>
 
@@ -119,7 +163,7 @@ export function DashboardView() {
           <section className="space-y-3">
             <h2 className={heading}>Fully staffed</h2>
             {staffed.map((job) => (
-              <JobStaffingCard key={job.jobId} jobId={job.jobId} />
+              <JobStaffingCard key={job.jobId} jobId={job.jobId} onDismiss={dismissFromDashboard} />
             ))}
           </section>
         ) : null}
@@ -128,8 +172,15 @@ export function DashboardView() {
   );
 }
 
-function JobStaffingCard({ jobId }: { jobId: string }) {
+function JobStaffingCard({
+  jobId,
+  onDismiss,
+}: {
+  jobId: string;
+  onDismiss: (jobId: string) => void;
+}) {
   const hub = useHub();
+  const now = useNow();
   const job = hub.jobs.find((item) => item.jobId === jobId);
   if (!job) return null;
   const assignments = hub.assignments.filter(
@@ -144,9 +195,21 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   const availabilityFollowUp = assignments.some((item) => item.availabilityConflictWeekStart);
+  const showDismiss = jobCleaningHasEnded(job, hub.assignments, hub.today, now);
   return (
-    <Link href={`/admin/jobs/${job.jobId}?from=dashboard`} className="block">
-      <Card className={full ? "ring-2 ring-mint" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}>
+    <Card
+      className={`relative ${showDismiss ? "pb-10" : ""} ${full ? "ring-2 ring-mint" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}`}
+    >
+      {showDismiss ? (
+        <button
+          type="button"
+          onClick={() => onDismiss(job.jobId)}
+          className="absolute bottom-3 right-4 z-10 text-xs font-semibold text-ink/50 underline decoration-ink/25 underline-offset-2"
+        >
+          Dismiss
+        </button>
+      ) : null}
+      <Link href={`/admin/jobs/${job.jobId}?from=dashboard`} className="block">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
@@ -193,7 +256,7 @@ function JobStaffingCard({ jobId }: { jobId: string }) {
             );
           })}
         </ul>
-      </Card>
-    </Link>
+      </Link>
+    </Card>
   );
 }

@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
+import {
+  AvailabilityWeekEditor,
+  type AvailabilityWeekEditorHandle,
+} from "@/components/availability-week-editor";
 import { useRouter } from "next/navigation";
 import { sendAvailabilityReminders } from "@/app/actions/reminders";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
-import { Card, Notice, PageHeader, Screen } from "@/components/ui";
+import { ButtonLoadingLabel, Card, Notice, PageHeader, PrimaryButton, Screen } from "@/components/ui";
 import { listSubmissionStatus } from "@/lib/domain/availability";
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
-import { formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
+import { editableAvailabilityWeeks, formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { cleanerCrewSummary, formatPhone } from "@/lib/format";
 import type { CleanerProfile, CleanerStatus } from "@/lib/domain/types";
@@ -114,13 +118,14 @@ function WeekSubmissions() {
   const submittedCount = submissions.filter((item) => item.submitted).length;
   const missing = submissions.filter((item) => !item.submitted);
   const [notice, setNotice] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const [reminding, setReminding] = useState<"all" | string | null>(null);
 
   async function remind(ids: string[]) {
-    setSending(true);
+    const key = ids.length === 1 ? ids[0]! : "all";
+    setReminding(key);
     const result = await sendAvailabilityReminders(ids);
     setNotice(result.message);
-    setSending(false);
+    setReminding(null);
   }
 
   return (
@@ -139,11 +144,16 @@ function WeekSubmissions() {
               {item.submitted ? null : (
                 <button
                   type="button"
-                  disabled={sending}
+                  disabled={reminding !== null}
+                  aria-busy={reminding === item.cleanerId}
                   onClick={() => remind([item.cleanerId])}
-                  className="min-h-10 shrink-0 rounded-full bg-mint px-3 text-sm font-semibold text-ink"
+                  className="flex min-h-10 shrink-0 items-center justify-center rounded-full bg-mint px-3 text-sm font-semibold text-ink disabled:opacity-70"
                 >
-                  Send Reminder
+                  {reminding === item.cleanerId ? (
+                    <ButtonLoadingLabel label="Sending…" tone="onLight" />
+                  ) : (
+                    "Send Reminder"
+                  )}
                 </button>
               )}
             </li>
@@ -153,14 +163,17 @@ function WeekSubmissions() {
           {submittedCount} of {submissions.length} cleaners submitted
         </p>
         {missing.length > 0 ? (
-          <button
-            type="button"
-            disabled={sending}
-            onClick={() => remind(missing.map((item) => item.cleanerId))}
-            className="mt-3 min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream"
-          >
-            Send All Reminders
-          </button>
+          <div className="mt-3">
+            <PrimaryButton
+              type="button"
+              disabled={reminding !== null}
+              loading={reminding === "all"}
+              loadingLabel="Sending…"
+              onClick={() => remind(missing.map((item) => item.cleanerId))}
+            >
+              Send All Reminders
+            </PrimaryButton>
+          </div>
         ) : null}
       </Card>
     </>
@@ -179,13 +192,20 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
     cleaner ? formatCentsToDollarsInput(cleaner.typicalHourlyRateCents) : "50",
   );
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [availabilityDirty, setAvailabilityDirty] = useState(false);
+  const [availabilityWeekStart, setAvailabilityWeekStart] = useState(
+    () => editableAvailabilityWeeks(hub.today)[0]?.weekStart ?? hub.today,
+  );
+  const availabilityRef = useRef<AvailabilityWeekEditorHandle>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const cleanerSnapshot = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status, hourlyRate });
   const cleanerBaseline = useRef<string | null>(null);
   if (cleaner && cleanerBaseline.current === null) cleanerBaseline.current = cleanerSnapshot;
   const cleanerDirty = cleanerBaseline.current !== null && cleanerBaseline.current !== cleanerSnapshot;
-  useUnsavedNavigation(Boolean(cleaner), () => cleanerDirty, setLeaveHref);
-  useHubSyncBlocker(() => cleanerDirty);
+  const hasUnsaved = cleanerDirty || availabilityDirty;
+  useUnsavedNavigation(Boolean(cleaner), () => hasUnsaved, setLeaveHref);
+  useHubSyncBlocker(() => hasUnsaved);
   if (!cleaner) {
     return (
       <Screen>
@@ -226,8 +246,36 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
     return true;
   }
 
-  function saveAndLeave() {
-    if (!save(leaveHref ?? undefined)) setLeaveHref(null);
+  async function saveAndLeave() {
+    const href = leaveHref ?? undefined;
+    if (availabilityRef.current?.isDirty()) {
+      const saved = await availabilityRef.current.save();
+      if (!saved) {
+        setLeaveHref(null);
+        return false;
+      }
+    }
+    if (cleanerDirty) {
+      if (!runSave(href)) {
+        setLeaveHref(null);
+        return false;
+      }
+      setLeaveHref(null);
+      return true;
+    }
+    setLeaveHref(null);
+    if (href) router.push(href);
+    return true;
+  }
+
+  function runSave(nextHref?: string) {
+    if (saving) return false;
+    setSaving(true);
+    try {
+      return save(nextHref);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -320,12 +368,27 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
           <p className="mt-1 text-base">Maximum approved crew size: {approvedCrew}</p>
           <p className="mt-1 text-sm text-ink/60">Crew size is the cleaner plus their helpers. Only admins can change these limits.</p>
         </Card>
+        <Card>
+          <p className="text-base font-semibold">Availability</p>
+          <p className="mt-1 text-sm text-ink/60">Current and next week. Saves apply the same rules as when the cleaner submits.</p>
+          <div className="mt-4">
+            <AvailabilityWeekEditor
+              ref={availabilityRef}
+              cleanerId={profile.cleanerId}
+              weekStart={availabilityWeekStart}
+              onWeekStartChange={setAvailabilityWeekStart}
+              variant="admin"
+              embedded
+              onDirtyChange={setAvailabilityDirty}
+            />
+          </div>
+        </Card>
         {message ? (
           <Notice tone={message === "Saved." ? "ok" : "error"}>{message}</Notice>
         ) : null}
-        <button type="button" onClick={() => save()} className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
+        <PrimaryButton type="button" loading={saving} loadingLabel="Saving…" onClick={() => runSave()}>
           Save
-        </button>
+        </PrimaryButton>
       </div>
       <UnsavedChangesDialog
         open={leaveHref !== null}

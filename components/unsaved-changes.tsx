@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ButtonLoadingLabel } from "@/components/ui";
 
 export function useUnsavedNavigation(active: boolean, blocked: () => boolean, onBlock: (href: string) => void) {
   const activeRef = useRef(active);
@@ -42,10 +43,26 @@ export function UnsavedChangesDialog({
   onDismiss,
 }: {
   open: boolean;
-  onSave: () => void;
+  onSave: () => void | boolean | Promise<void | boolean>;
   onDiscard: () => void;
   onDismiss: () => void;
 }) {
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) setSaving(false);
+  }, [open]);
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await Promise.resolve(onSave());
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 p-5 pb-28" onClick={onDismiss}>
@@ -61,13 +78,29 @@ export function UnsavedChangesDialog({
         </h2>
         <p className="mt-1 text-sm leading-5 text-ink/70">Save before leaving, or discard the edits.</p>
         <div className="mt-4 space-y-2">
-          <button type="button" onClick={onSave} className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
-            Save
+          <button
+            type="button"
+            disabled={saving}
+            aria-busy={saving}
+            onClick={() => void handleSave()}
+            className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-70"
+          >
+            {saving ? <ButtonLoadingLabel label="Saving…" /> : "Save"}
           </button>
-          <button type="button" onClick={onDiscard} className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onDiscard}
+            className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink disabled:opacity-70"
+          >
             Discard changes
           </button>
-          <button type="button" onClick={onDismiss} className="min-h-12 w-full text-base font-semibold text-ink/70">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onDismiss}
+            className="min-h-12 w-full text-base font-semibold text-ink/70 disabled:opacity-70"
+          >
             Keep editing
           </button>
         </div>

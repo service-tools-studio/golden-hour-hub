@@ -2,7 +2,7 @@
 
 import { useImperativeHandle, useRef, useState } from "react";
 import { useHub } from "@/components/hub-provider";
-import { Field, fieldClass } from "@/components/ui";
+import { Field, PrimaryButton, fieldClass } from "@/components/ui";
 import type { CustomerFormHandle } from "@/components/admin/customer-form";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { validateRecurrenceRule } from "@/lib/domain/recurrence";
@@ -44,6 +44,7 @@ export function SeriesForm({
   const hub = useHub();
   const weekly = series.recurrence.frequency === "WEEK";
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     propertyId: series.propertyId,
     interval: series.recurrence.interval,
@@ -116,9 +117,15 @@ export function SeriesForm({
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!persist()) return;
-        hub.flash("changes saved");
-        onSaved?.();
+        if (saving) return;
+        setSaving(true);
+        try {
+          if (!persist()) return;
+          hub.flash("changes saved");
+          onSaved?.();
+        } finally {
+          setSaving(false);
+        }
       }}
     >
       <Field label="Property">
@@ -234,9 +241,9 @@ export function SeriesForm({
           {message}
         </p>
       ) : null}
-      <button type="submit" className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream">
+      <PrimaryButton type="submit" loading={saving} loadingLabel="Saving…">
         Save recurring service
-      </button>
+      </PrimaryButton>
       {onCancel ? (
         <button type="button" onClick={onCancel} className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink">
           Cancel edit

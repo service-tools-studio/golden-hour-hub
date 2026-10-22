@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { HubSetupMessage } from "@/components/hub-setup-message";
+import { ButtonLoadingLabel } from "@/components/ui";
 import { PasswordInput } from "@/components/password-input";
 import { LivePasswordRequirements, PasswordRequirements } from "@/components/password-requirements";
 import { fetchPasswordRequirements, isPasswordPolicyMessage } from "@/lib/auth/password-requirements-client";
@@ -199,9 +200,10 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={pending}
-          className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-60"
+          aria-busy={pending}
+          className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-60"
         >
-          {pending ? "Saving…" : "Save password"}
+          {pending ? <ButtonLoadingLabel label="Saving…" /> : "Save password"}
         </button>
       </form>
     );
@@ -253,9 +255,10 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={pending}
-        className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-60"
+        aria-busy={pending}
+        className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-60"
       >
-        {pending ? "Signing in…" : "Sign in"}
+        {pending ? <ButtonLoadingLabel label="Signing in…" /> : "Sign in"}
       </button>
     </form>
   );

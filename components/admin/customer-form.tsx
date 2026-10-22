@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
-import { Field, fieldClass } from "@/components/ui";
+import { Field, PrimaryButton, fieldClass } from "@/components/ui";
 import { findCustomerByExactName, validateCustomerInput } from "@/lib/domain/customers";
 import type { Customer, Property } from "@/lib/domain/types";
 import { formatPhoneInput } from "@/lib/format";
@@ -191,6 +191,7 @@ export function CustomerForm({
   const hub = useHub();
   const router = useRouter();
   const [error, setError] = useState<{ field: string; message: string; at: number } | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     firstName: customer?.firstName ?? initialFirstName ?? "",
     lastName: customer?.lastName ?? initialLastName ?? "",
@@ -319,11 +320,17 @@ export function CustomerForm({
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
-        const customerId = persist();
-        if (!customerId) return;
-        hub.flash("changes saved");
-        if (onSaved) onSaved(customerId);
-        else router.push(`/admin/customers/${customerId}`);
+        if (saving) return;
+        setSaving(true);
+        try {
+          const customerId = persist();
+          if (!customerId) return;
+          hub.flash("changes saved");
+          if (onSaved) onSaved(customerId);
+          else router.push(`/admin/customers/${customerId}`);
+        } finally {
+          setSaving(false);
+        }
       }}
     >
       <div className="grid grid-cols-2 gap-3">
@@ -529,12 +536,9 @@ export function CustomerForm({
           {fieldMessage("form")}
         </p>
       ) : null}
-      <button
-        type="submit"
-        className="min-h-12 w-full rounded-2xl bg-ink text-base font-semibold text-cream disabled:cursor-not-allowed"
-      >
+      <PrimaryButton type="submit" loading={saving} loadingLabel="Saving…">
         Save customer
-      </button>
+      </PrimaryButton>
       {onCancel ? (
         <button type="button" onClick={onCancel} className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink">
           Cancel edit

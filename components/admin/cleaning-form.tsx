@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
+import { EstimatedDurationPicker } from "@/components/admin/estimated-duration-picker";
 import { Field, Notice, PrimaryButton, fieldClass } from "@/components/ui";
 import {
   availabilityAgainstSpan,
@@ -30,7 +31,6 @@ import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/com
 import { calculateQuoteEstimate, type CleanType, type QuoteEstimate } from "@/lib/portableQuoteEstimate";
 
 const SERVICES: ServiceType[] = ["DEEP_CLEAN", "RECURRING", "MOVE_OUT", "POST_CONSTRUCTION", "OTHER"];
-const DURATIONS = Array.from({ length: 12 }, (_, index) => (index + 1) * 60);
 
 export type CleanerArrival = {
   cleanerId: string;
@@ -148,6 +148,7 @@ export function CleaningForm({
   const [picker, setPicker] = useState<"date" | "time" | null>(null);
   const [instructions, setInstructions] = useState(initial.specialInstructions);
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [headcount, setHeadcount] = useState(initial.headcountNeeded > 0 ? initial.headcountNeeded : 1);
   const [duration, setDuration] = useState(initial.expectedDurationMinutes);
   const [headcountFor, setHeadcountFor] = useState(estimateOnLoad ? "" : "ready");
@@ -334,9 +335,22 @@ export function CleaningForm({
     return true;
   }
 
+  function runSubmit(nextHref?: string) {
+    if (saving) return false;
+    setSaving(true);
+    try {
+      return submit(nextHref);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function saveAndLeave() {
     const href = leaveHref ?? undefined;
-    if (!submit(href)) setLeaveHref(null);
+    return Promise.resolve(runSubmit(href)).then((ok) => {
+      if (!ok) setLeaveHref(null);
+      return ok;
+    });
   }
 
   return (
@@ -345,7 +359,7 @@ export function CleaningForm({
         className="space-y-4 px-5 pt-4"
         onSubmit={(event) => {
           event.preventDefault();
-          submit();
+          runSubmit();
         }}
       >
         {message ? <Notice>{message}</Notice> : null}
@@ -581,20 +595,13 @@ export function CleaningForm({
             </Field>
 
             <Field label={ESTIMATED_ON_SITE_FIELD_LABEL}>
-              <select
-                className={fieldClass}
+              <EstimatedDurationPicker
                 value={duration}
-                onChange={(event) => {
-                  setDuration(Number(event.target.value));
+                onChange={(minutes) => {
+                  setDuration(minutes);
                   setMessage(null);
                 }}
-              >
-                {(DURATIONS.includes(duration) ? DURATIONS : [duration, ...DURATIONS]).map((minutes) => (
-                  <option key={minutes} value={minutes}>
-                    {minutes % 60 === 0 ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}` : `${minutes} min`}
-                  </option>
-                ))}
-              </select>
+              />
               <p className="mt-1.5 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
             </Field>
 
@@ -606,7 +613,9 @@ export function CleaningForm({
               />
             </Field>
 
-            <PrimaryButton type="submit">Save cleaning</PrimaryButton>
+            <PrimaryButton type="submit" loading={saving} loadingLabel="Saving…">
+              Save cleaning
+            </PrimaryButton>
             {trailing}
           </>
         ) : null}

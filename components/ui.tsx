@@ -140,6 +140,34 @@ export function AlertIcon({ className, label = "Alert" }: { className: string; l
   );
 }
 
+export function ButtonSpinner({ tone = "onDark" }: { tone?: "onDark" | "onLight" }) {
+  const spinClass =
+    tone === "onDark"
+      ? "border-cream/40 border-t-cream"
+      : "border-current border-t-transparent";
+  return (
+    <span
+      className={`inline-block size-4 shrink-0 animate-spin rounded-full border-2 ${spinClass}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function ButtonLoadingLabel({
+  label,
+  tone = "onDark",
+}: {
+  label: string;
+  tone?: "onDark" | "onLight";
+}) {
+  return (
+    <span className="inline-flex items-center justify-center gap-2">
+      <ButtonSpinner tone={tone} />
+      {label}
+    </span>
+  );
+}
+
 export function Notice({ children, tone = "error" }: { children: React.ReactNode; tone?: "error" | "ok" }) {
   const error = tone !== "ok";
   return (
@@ -158,20 +186,26 @@ export function PrimaryButton({
   type = "button",
   onClick,
   disabled,
+  loading = false,
+  loadingLabel = "Saving…",
 }: {
   children: React.ReactNode;
   type?: "button" | "submit";
   onClick?: () => void;
   disabled?: boolean;
+  loading?: boolean;
+  loadingLabel?: string;
 }) {
+  const busy = disabled || loading;
   return (
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled}
+      disabled={busy}
+      aria-busy={loading}
       className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-ink px-4 text-base font-semibold text-cream disabled:opacity-50"
     >
-      {children}
+      {loading ? <ButtonLoadingLabel label={loadingLabel} /> : children}
     </button>
   );
 }
@@ -181,20 +215,26 @@ export function SecondaryButton({
   onClick,
   type = "button",
   disabled,
+  loading = false,
+  loadingLabel = "Saving…",
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";
   disabled?: boolean;
+  loading?: boolean;
+  loadingLabel?: string;
 }) {
+  const busy = disabled || loading;
   return (
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled}
+      disabled={busy}
+      aria-busy={loading}
       className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-white px-4 text-base font-semibold text-ink ring-1 ring-ink/15 disabled:opacity-50"
     >
-      {children}
+      {loading ? <ButtonLoadingLabel label={loadingLabel} tone="onLight" /> : children}
     </button>
   );
 }

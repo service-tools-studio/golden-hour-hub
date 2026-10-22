@@ -126,7 +126,16 @@ export function serviceEmoji(serviceType: ServiceType): string | null {
 
 /** Admin duration controls and schedule summaries that derive on-site end times. */
 export const ESTIMATED_ON_SITE_FIELD_LABEL = "Estimated cleaning time";
-export const ESTIMATED_ON_SITE_FIELD_HINT = "Counted after the arrival window ends.";
+export const ESTIMATED_ON_SITE_FIELD_HINT = "Counted from the start of the arrival window.";
+
+/** 1 hour through 12 hours in 30-minute steps (for admin duration selects). */
+export const ESTIMATED_ON_SITE_DURATION_MINUTES = Array.from({ length: 23 }, (_, index) => 60 + index * 30);
+
+export function formatDurationSelectLabel(minutes: number): string {
+  const hours = minutes / 60;
+  if (hours === 1) return "1 hour";
+  return `${hours} hours`;
+}
 
 export function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);

@@ -70,7 +70,7 @@ function schedule(overrides: Partial<AssignmentSchedule> = {}): AssignmentSchedu
 }
 
 describe("blocked time and effective availability", () => {
-  it("blocks from the arrival window start through the window end plus duration", () => {
+  it("blocks from the arrival window start through start plus duration", () => {
     const blocked = calculateBlockedRange({
       date: "2026-10-06",
       arrivalWindowStart: "09:00",
@@ -79,7 +79,7 @@ describe("blocked time and effective availability", () => {
     });
     assert.equal(blocked.spans.length, 1);
     assert.equal(blocked.spans[0].startMin, 9 * 60);
-    assert.equal(blocked.spans[0].endMin, 14 * 60);
+    assert.equal(blocked.spans[0].endMin, 13 * 60);
   });
 
   it("keeps Portland noon stable across daylight saving", () => {
@@ -113,7 +113,7 @@ describe("blocked time and effective availability", () => {
     assert.equal(start.hour, 9);
     assert.equal(start.minute, 0);
     assert.equal(end.hour, 14);
-    assert.equal(end.minute, 30);
+    assert.equal(end.minute, 0);
     assert.equal(cleaningCoverage([schedule({ status: "DECLINED" })]), null);
   });
 
@@ -133,7 +133,7 @@ describe("blocked time and effective availability", () => {
     );
     assert.deepEqual(remaining, [
       { date: "2026-10-06", start: "08:00", end: "09:00" },
-      { date: "2026-10-06", start: "14:00", end: "17:00" },
+      { date: "2026-10-06", start: "13:00", end: "17:00" },
     ]);
   });
 
@@ -650,12 +650,12 @@ describe("customers", () => {
 });
 
 describe("availability against a cleaning span", () => {
-  it("extends an 8–9 AM arrival by a 4-hour length through 1 PM", () => {
+  it("extends an 8–9 AM arrival by a 4-hour length from window start through noon", () => {
     const span = cleaningTimeSpan("08:00", "09:00", 240);
-    assert.deepEqual(span, { start: "08:00", end: "13:00" });
+    assert.deepEqual(span, { start: "08:00", end: "12:00" });
     assert.deepEqual(availabilityAgainstSpan([{ start: "08:00", end: "23:00" }], span), [
-      { start: "08:00", end: "13:00", fits: true },
-      { start: "13:00", end: "23:00", fits: false },
+      { start: "08:00", end: "12:00", fits: true },
+      { start: "12:00", end: "23:00", fits: false },
     ]);
     assert.deepEqual(availabilityAgainstSpan([{ start: "17:00", end: "21:00" }], span), [
       { start: "17:00", end: "21:00", fits: false },

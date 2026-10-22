@@ -47,12 +47,7 @@ export function calculateBlockedRange(input: {
   expectedDurationMinutes: number;
 }): BlockedRange {
   const startUtc = zonedToUtc(input.date, input.arrivalWindowStart);
-  let endDate = input.date;
-  if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
-    endDate = addDays(input.date, 1);
-  }
-  const windowEnd = zonedToUtc(endDate, input.arrivalWindowEnd);
-  const endUtc = new Date(windowEnd.getTime() + input.expectedDurationMinutes * 60_000);
+  const endUtc = new Date(startUtc.getTime() + input.expectedDurationMinutes * 60_000);
   return {
     startUtc,
     endUtc,
@@ -232,13 +227,9 @@ export type AssignmentTiming = {
   expectedDurationMinutes: number;
 };
 
-/** Active cleaning time: from arrival window end through expected duration (not the arrival window itself). */
+/** Active cleaning time: from arrival window start through expected duration. */
 export function calculateLaborRange(input: AssignmentTiming): { startUtc: Date; endUtc: Date } {
-  let endDate = input.serviceDate;
-  if (minutesFromTime(input.arrivalWindowEnd) <= minutesFromTime(input.arrivalWindowStart)) {
-    endDate = addDays(input.serviceDate, 1);
-  }
-  const startUtc = zonedToUtc(endDate, input.arrivalWindowEnd);
+  const startUtc = zonedToUtc(input.serviceDate, input.arrivalWindowStart);
   const endUtc = new Date(startUtc.getTime() + input.expectedDurationMinutes * 60_000);
   return { startUtc, endUtc };
 }

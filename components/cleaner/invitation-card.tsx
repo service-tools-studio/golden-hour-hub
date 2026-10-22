@@ -19,15 +19,6 @@ import {
 } from "@/lib/format";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
-function InvitationActionSpinner() {
-  return (
-    <span
-      className="inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
-      aria-hidden="true"
-    />
-  );
-}
-
 export function InvitationCard({
   assignment,
   job,
@@ -174,27 +165,21 @@ export function InvitationCard({
         </div>
       ) : null}
       <div className="mt-4 space-y-2" aria-busy={pending !== null}>
-        <PrimaryButton onClick={accept} disabled={pending !== null}>
-          {pending === "accept" ? (
-            <span className="inline-flex items-center gap-2">
-              <InvitationActionSpinner />
-              Accepting…
-            </span>
-          ) : weekSubmitted ? (
-            bringsHelpers ? "Confirm & Accept Job" : "Accept Job"
-          ) : (
-            "I'll take this cleaning"
-          )}
+        <PrimaryButton
+          onClick={accept}
+          disabled={pending !== null}
+          loading={pending === "accept"}
+          loadingLabel="Accepting…"
+        >
+          {weekSubmitted ? (bringsHelpers ? "Confirm & Accept Job" : "Accept Job") : "I'll take this cleaning"}
         </PrimaryButton>
-        <SecondaryButton onClick={decline} disabled={pending !== null}>
-          {pending === "decline" ? (
-            <span className="inline-flex items-center gap-2">
-              <InvitationActionSpinner />
-              Declining…
-            </span>
-          ) : (
-            "Decline"
-          )}
+        <SecondaryButton
+          onClick={decline}
+          disabled={pending !== null}
+          loading={pending === "decline"}
+          loadingLabel="Declining…"
+        >
+          Decline
         </SecondaryButton>
       </div>
     </Card>

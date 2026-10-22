@@ -134,6 +134,7 @@ export type UpdateVisitInput = {
   cleanerIds: string[];
   cleanerArrivals?: { cleanerId: string; arrivalWindowStart: string; arrivalWindowEnd: string }[];
   pricePerVisitCents?: number;
+  recurringSchedule?: { interval: 1 | 2 | 4 };
 };
 
 export type UpdateJobInput = {
@@ -1655,6 +1656,18 @@ export function HubProvider({
     if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
       return { ok: false, message: "Enter how many cleaners are needed." };
     }
+    if (input.recurringSchedule) {
+      if (job.seriesId) {
+        return { ok: false, message: "This cleaning already belongs to a recurring schedule." };
+      }
+      if (input.serviceType !== "RECURRING") {
+        return { ok: false, message: "Recurring schedule applies only to recurring cleans." };
+      }
+      const headcountForSeries = input.headcountNeeded > 0 ? input.headcountNeeded : 1;
+      if (headcountForSeries < 1) {
+        return { ok: false, message: "Choose headcount before creating a recurring schedule." };
+      }
+    }
     const activeAssignments = data.assignments.filter(
       (assignment) =>
         assignment.jobId === job.jobId &&
@@ -1744,49 +1757,104 @@ export function HubProvider({
         .map((item) => item.cleanerId),
     );
     const draftCleanerIds = cleanerIds.filter((id) => !stillOnJob.has(id));
+    const headcountNeeded =
+      input.headcountNeeded > 0 ? input.headcountNeeded : input.recurringSchedule ? 1 : input.headcountNeeded;
+    const updatedJob: Job = {
+      ...job,
+      customerId: customer.customerId,
+      date: input.date,
+      propertyId: property.propertyId,
+      serviceType: input.serviceType,
+      arrivalWindowStart: arrival.start,
+      arrivalWindowEnd: arrival.end,
+      expectedDurationMinutes: input.expectedDurationMinutes,
+      headcountNeeded,
+      draftCleanerIds,
+      draftCleanerDetails: (job.draftCleanerDetails ?? [])
+        .filter((detail) => draftCleanerIds.includes(detail.cleanerId))
+        .map((detail) => {
+          const requested = requestedArrivals.get(detail.cleanerId);
+          return {
+            ...detail,
+            arrivalWindowStart: requested?.arrivalWindowStart ?? detail.arrivalWindowStart,
+            arrivalWindowEnd: requested?.arrivalWindowEnd ?? detail.arrivalWindowEnd,
+            expectedDurationMinutes: input.expectedDurationMinutes,
+          };
+        }),
+      snapshot: snapshotVisit(customer, property),
+      specialInstructions: input.specialInstructions.trim(),
+      pricePerVisitCents: input.pricePerVisitCents,
+      status: input.recurringSchedule && job.status === "DRAFT" ? "SCHEDULED" : job.status,
+      updatedAt: now,
+      updatedBy: "kelsey",
+    };
+    const seriesPatch =
+      dateChanged && job.seriesId
+        ? data.series.map((item) => {
+            if (item.seriesId !== job.seriesId) return item;
+            const skipped = new Set([...(item.skippedDates ?? []), job.date]);
+            skipped.delete(input.date);
+            return { ...item, skippedDates: [...skipped], updatedAt: now, updatedBy: "kelsey" };
+          })
+        : data.series;
+
+    if (input.recurringSchedule && !job.seriesId) {
+      const recurrence: RecurrenceRule = {
+        frequency: "WEEK",
+        interval: input.recurringSchedule.interval,
+        daysOfWeek: [dayOfWeek(input.date)],
+      };
+      const rule = validateRecurrenceRule(recurrence, input.date);
+      if (!rule.ok) return rule;
+      const seriesId = `series-${Date.now()}`;
+      const series: RecurringSeries = {
+        seriesId,
+        customerId: customer.customerId,
+        propertyId: property.propertyId,
+        recurrence,
+        startDate: input.date,
+        endMode: "UNTIL_CANCELED",
+        defaultHeadcountNeeded: headcountNeeded,
+        defaultArrivalWindowStart: input.arrivalWindowStart,
+        defaultArrivalWindowEnd: input.arrivalWindowEnd,
+        defaultExpectedDurationMinutes: input.expectedDurationMinutes,
+        defaultServiceType: "RECURRING",
+        defaultSpecialInstructions: input.specialInstructions.trim() || undefined,
+        defaultPricePerVisitCents: input.pricePerVisitCents,
+        staffingTemplateMode: "BLANK",
+        staffingTemplate: [],
+        status: "ACTIVE",
+        generatedThroughDate: input.date,
+        createdAt: now,
+        createdBy: "kelsey",
+        updatedAt: now,
+        updatedBy: "kelsey",
+      };
+      const linkedJob: Job = { ...updatedJob, seriesId };
+      const base = {
+        ...data,
+        series: [...seriesPatch, series],
+        jobs: data.jobs.map((item) => (item.jobId === job.jobId ? linkedJob : item)),
+        assignments: nextAssignments,
+      };
+      const generated = mergeRecurringHorizon({
+        ...base,
+        today: data.today,
+        nowIso: now,
+      });
+      setState({
+        ...base,
+        series: generated.series,
+        jobs: generated.jobs,
+        assignments: generated.assignments,
+      });
+      return { ok: true, message: "Recurring schedule created." };
+    }
+
     setState({
       ...data,
-      series:
-        dateChanged && job.seriesId
-          ? data.series.map((item) => {
-              if (item.seriesId !== job.seriesId) return item;
-              const skipped = new Set([...(item.skippedDates ?? []), job.date]);
-              skipped.delete(input.date);
-              return { ...item, skippedDates: [...skipped], updatedAt: now, updatedBy: "kelsey" };
-            })
-          : data.series,
-      jobs: data.jobs.map((item) =>
-        item.jobId === job.jobId
-          ? {
-              ...item,
-              customerId: customer.customerId,
-              date: input.date,
-              propertyId: property.propertyId,
-              serviceType: input.serviceType,
-              arrivalWindowStart: arrival.start,
-              arrivalWindowEnd: arrival.end,
-              expectedDurationMinutes: input.expectedDurationMinutes,
-              headcountNeeded: input.headcountNeeded,
-              draftCleanerIds,
-              draftCleanerDetails: (item.draftCleanerDetails ?? [])
-                .filter((detail) => draftCleanerIds.includes(detail.cleanerId))
-                .map((detail) => {
-                  const requested = requestedArrivals.get(detail.cleanerId);
-                  return {
-                    ...detail,
-                    arrivalWindowStart: requested?.arrivalWindowStart ?? detail.arrivalWindowStart,
-                    arrivalWindowEnd: requested?.arrivalWindowEnd ?? detail.arrivalWindowEnd,
-                    expectedDurationMinutes: input.expectedDurationMinutes,
-                  };
-                }),
-              snapshot: snapshotVisit(customer, property),
-              specialInstructions: input.specialInstructions.trim(),
-              pricePerVisitCents: input.pricePerVisitCents,
-              updatedAt: now,
-              updatedBy: "kelsey",
-            }
-          : item,
-      ),
+      series: seriesPatch,
+      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? updatedJob : item)),
       assignments: nextAssignments,
     });
     return { ok: true, message: "Cleaning updated." };

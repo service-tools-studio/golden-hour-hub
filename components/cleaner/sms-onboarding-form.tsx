@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { recordSmsOnboardingChoice } from "@/app/actions/sms-onboarding";
 import { useHub } from "@/components/hub-provider";
+import { ButtonLoadingLabel } from "@/components/ui";
 
 export function SmsOnboardingForm() {
   const hub = useHub();
@@ -67,10 +68,17 @@ export function SmsOnboardingForm() {
       <button
         type="button"
         disabled={pending}
+        aria-busy={pending}
         onClick={continueToHub}
         className="mt-6 flex min-h-14 w-full items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream disabled:opacity-60"
       >
-        {pending ? "Saving…" : optIn ? "Turn on text alerts" : "Continue without text alerts"}
+        {pending ? (
+          <ButtonLoadingLabel label="Saving…" />
+        ) : optIn ? (
+          "Turn on text alerts"
+        ) : (
+          "Continue without text alerts"
+        )}
       </button>
     </div>
   );

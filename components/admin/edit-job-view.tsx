@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrivalWindowPicker } from "@/components/admin/arrival-window-picker";
+import { EstimatedDurationPicker } from "@/components/admin/estimated-duration-picker";
 import { CleanerAvailabilityPreview } from "@/components/admin/cleaner-availability-preview";
 import {
   deliverSchedulingCleanerSms,
@@ -13,7 +14,16 @@ import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
-import { Field, Notice, PageHeader, PrimaryButton, Screen, SecondaryButton, fieldClass } from "@/components/ui";
+import {
+  ButtonLoadingLabel,
+  Field,
+  Notice,
+  PageHeader,
+  PrimaryButton,
+  Screen,
+  SecondaryButton,
+  fieldClass,
+} from "@/components/ui";
 import { calculateFlatPayPerPerson } from "@/lib/domain/compensation";
 import { helpersApproved, personName, typicalCrewSize } from "@/lib/domain/cleaners";
 import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
@@ -43,7 +53,6 @@ import {
 
 const DEFAULT_PAY_TYPE: PayType = "HOURLY";
 const FALLBACK_HOURLY_RATE_CENTS = 3000;
-const ASSIGNMENT_DURATIONS = Array.from({ length: 12 }, (_, index) => (index + 1) * 60);
 
 function cleaningHref(jobId: string, from: CleaningOrigin | undefined) {
   return withOrigin(`/admin/jobs/${jobId}`, from);
@@ -402,8 +411,9 @@ export function EditJobView({
     setAssigning(null);
   }
 
-  function saveAndLeave() {
-    if (!submit("DRAFT", leaveHref ?? undefined)) setLeaveHref(null);
+  async function saveAndLeave() {
+    const saved = await submit("DRAFT", leaveHref ?? undefined);
+    if (!saved) setLeaveHref(null);
   }
 
   if (cleanerId && !assignment) {
@@ -625,6 +635,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
       cleanerIds: values.cleanerIds,
       cleanerArrivals: values.cleanerArrivals,
       pricePerVisitCents: values.pricePerVisitCents,
+      recurringSchedule: values.recurringSchedule,
     });
     if (!result.ok) return { ok: false, message: result.message };
     if (result.message) hub.flash(result.message);
@@ -674,6 +685,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
         }}
         leadCleanerId={leadCleanerId}
         canClearCleaners
+        allowRecurringSchedule={!job.seriesId}
         onDateChange={setPickedDate}
         newCustomerHref={`/admin/customers/new?returnTo=${encodeURIComponent(withOrigin(`/admin/jobs/${job.jobId}/edit`, from))}`}
         customerEditReturnTo={withOrigin(`/admin/jobs/${job.jobId}/edit`, from)}
@@ -812,8 +824,9 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     return true;
   }
 
-  function saveAndLeave() {
-    if (!submit("DRAFT", leaveHref ?? undefined)) setLeaveHref(null);
+  async function saveAndLeave() {
+    const saved = await submit("DRAFT", leaveHref ?? undefined);
+    if (!saved) setLeaveHref(null);
   }
 
   if (navigatingAway) return null;
@@ -967,38 +980,21 @@ function AssignmentDurationField({
   onChange: (minutes: number) => void;
   onDirty: () => void;
 }) {
-  const options = ASSIGNMENT_DURATIONS.includes(duration) ? ASSIGNMENT_DURATIONS : [duration, ...ASSIGNMENT_DURATIONS];
   return (
     <Field label={ESTIMATED_ON_SITE_FIELD_LABEL}>
-      <select
-        className={fieldClass}
+      <EstimatedDurationPicker
         value={duration}
-        onChange={(event) => {
-          onChange(Number(event.target.value));
+        onChange={(minutes) => {
+          onChange(minutes);
           onDirty();
         }}
-      >
-        {options.map((minutes) => (
-          <option key={minutes} value={minutes}>
-            {minutes % 60 === 0 ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}` : `${minutes} min`}
-          </option>
-        ))}
-      </select>
+      />
       <p className="mt-1.5 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
     </Field>
   );
 }
 
 type AssigningMode = "DRAFT" | "INVITE" | "DIRECT" | "FOLLOW_UP";
-
-function AssigningSpinner() {
-  return (
-    <span
-      className="inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
-      aria-hidden="true"
-    />
-  );
-}
 
 function AssignmentSaveChoices({
   assigning = null,
@@ -1021,25 +1017,17 @@ function AssignmentSaveChoices({
     <div className="space-y-2" aria-busy={busy}>
       {showDraftAndInvite ? (
         <>
-          <SecondaryButton type="submit" disabled={busy}>
-            {assigning === "DRAFT" ? (
-              <span className="inline-flex items-center gap-2">
-                <AssigningSpinner />
-                Saving…
-              </span>
-            ) : (
-              "Save draft"
-            )}
+          <SecondaryButton type="submit" disabled={busy} loading={assigning === "DRAFT"} loadingLabel="Saving…">
+            Save draft
           </SecondaryButton>
-          <PrimaryButton type="button" onClick={onInvite} disabled={busy}>
-            {inviteBusy ? (
-              <span className="inline-flex items-center gap-2">
-                <AssigningSpinner />
-                {assigning === "FOLLOW_UP" ? "Sending…" : "Sending invite…"}
-              </span>
-            ) : (
-              inviteLabel
-            )}
+          <PrimaryButton
+            type="button"
+            onClick={onInvite}
+            disabled={busy}
+            loading={inviteBusy}
+            loadingLabel={assigning === "FOLLOW_UP" ? "Sending…" : "Sending invite…"}
+          >
+            {inviteLabel}
           </PrimaryButton>
         </>
       ) : null}
@@ -1051,10 +1039,7 @@ function AssignmentSaveChoices({
           className="flex min-h-12 w-full items-center justify-center gap-2 font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4 disabled:opacity-50"
         >
           {assigning === "DIRECT" ? (
-            <>
-              <AssigningSpinner />
-              Assigning…
-            </>
+            <ButtonLoadingLabel label="Assigning…" tone="onLight" />
           ) : (
             "Assign directly and notify"
           )}
