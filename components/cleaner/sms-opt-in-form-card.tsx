@@ -89,7 +89,7 @@ export function SmsOptInFormCard({ prepopulatePhone = "", onSubmit }: SmsOptInFo
         </span>
       </label>
       <p className="mt-4 text-xs leading-5 text-ink/55">
-        Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for assistance.
+        Message frequency varies. Message and data rates may apply. Reply STOP to opt out, START to opt back in, or HELP for assistance.
         Consent is optional and not required to use Golden Hour Hub.
       </p>
       <p className="mt-3 text-xs leading-5 text-ink/55">

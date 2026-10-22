@@ -33,7 +33,7 @@ Open [http://localhost:3000](http://localhost:3000). With `AUTH_SESSION_SECRET` 
 npm test
 ```
 
-With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER=twilio` and the Twilio variables to send for real (cleaner invite/assign, reminders, and removal notices only — customer texts are always manual from the admin UI). After upgrade, US SMS usually requires an **approved primary compliance profile** in [Twilio Trust Hub](https://console.twilio.com/us1/account/trust-hub) and often **A2P 10DLC** brand/campaign registration before messages deliver. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
+With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER=twilio` and the Twilio variables to send for real (cleaner invite/assign, reminders, and removal notices only — customer texts are always manual from the admin UI). Point your Twilio number’s **incoming message webhook** at `https://<your-host>/api/twilio/sms/inbound` (POST) so replies **START**, **YES**, and **UNSTOP** re-enable scheduling texts and **STOP** / **HELP** stay in sync with Hub. After upgrade, US SMS usually requires an **approved primary compliance profile** in [Twilio Trust Hub](https://console.twilio.com/us1/account/trust-hub) and often **A2P 10DLC** brand/campaign registration before messages deliver. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
 
 ## AWS setup
 
@@ -85,6 +85,7 @@ See [.env.example](.env.example).
 | `TWILIO_ACCOUNT_SID` | Twilio account SID (server only) |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token (server only) |
 | `TWILIO_FROM_NUMBER` | Twilio sender in E.164, e.g. `+15035551234` |
+| `TWILIO_INBOUND_WEBHOOK_URL` | Optional. Full public URL for inbound SMS (e.g. `https://hub.example.com/api/twilio/sms/inbound`). Set this if your app sits behind a proxy so Twilio signature validation uses the same URL configured in the console. |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
 | `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links |
 | `GOOGLE_MAPS_API_KEY` | Server-only key for address typeahead (**Places API (New)**; restrict by API, not HTTP referrer) |

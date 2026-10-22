@@ -1,7 +1,7 @@
 "use server";
 
 import { AuthError, requireCleaner } from "@/lib/auth/guards";
-import { cleanerWithMobilePhone } from "@/lib/cleaner/sms-consent";
+import { applySchedulingSmsEnrollment } from "@/lib/cleaner/sms-consent-record";
 import { SMS_SCHEDULING_DISCLOSURE_VERSION } from "@/lib/cleaner/sms-disclosure";
 import { normalizePhone } from "@/lib/domain/customers";
 import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
@@ -13,6 +13,7 @@ export type SmsOnboardingSuccess = {
   smsConsentPhone?: string;
   smsConsentRecordedAt?: string;
   smsConsentDisclosureVersion?: string;
+  smsConsentMethod?: string;
 };
 
 export async function recordSmsOnboardingChoice(
@@ -35,30 +36,13 @@ export async function recordSmsOnboardingChoice(
       return { ok: false, message: "Enter a 10-digit mobile number." };
     }
     const now = new Date().toISOString();
-    let next = cleanerWithMobilePhone(cleaner, mobilePhone);
-    next = {
-      ...next,
+    const next = applySchedulingSmsEnrollment(cleaner, {
+      optIn,
       mobilePhone,
-      smsSchedulingOptIn: optIn,
-      smsOptInRecordedAt: now,
-      updatedAt: now,
+      recordedAt: now,
       updatedBy: session.email,
-    };
-    if (optIn) {
-      next = {
-        ...next,
-        smsConsentPhone: mobilePhone,
-        smsConsentRecordedAt: now,
-        smsConsentDisclosureVersion: SMS_SCHEDULING_DISCLOSURE_VERSION,
-      };
-    } else {
-      next = {
-        ...next,
-        smsConsentPhone: undefined,
-        smsConsentRecordedAt: undefined,
-        smsConsentDisclosureVersion: undefined,
-      };
-    }
+      consentMethod: "hub_web",
+    });
     await saveHub({
       ...hub,
       cleaners: hub.cleaners.map((item) => (item.cleanerId === session.cleanerId ? next : item)),
@@ -71,6 +55,7 @@ export async function recordSmsOnboardingChoice(
       smsConsentPhone: next.smsConsentPhone,
       smsConsentRecordedAt: next.smsConsentRecordedAt,
       smsConsentDisclosureVersion: next.smsConsentDisclosureVersion,
+      smsConsentMethod: next.smsConsentMethod,
     };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };

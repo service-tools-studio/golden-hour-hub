@@ -39,6 +39,7 @@ export function SmsOnboardingForm({ initialMobilePhone }: SmsOnboardingFormProps
           smsConsentPhone: result.smsConsentPhone,
           smsConsentRecordedAt: result.smsConsentRecordedAt,
           smsConsentDisclosureVersion: result.smsConsentDisclosureVersion,
+          smsConsentMethod: result.smsConsentMethod,
         });
         router.replace("/cleaner");
         return { ok: true };

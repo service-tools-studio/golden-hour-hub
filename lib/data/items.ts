@@ -248,6 +248,7 @@ function readCleaner(item: DynamoItem): CleanerProfile {
     smsConsentPhone: optionalString(item, "smsConsentPhone"),
     smsConsentRecordedAt: optionalString(item, "smsConsentRecordedAt"),
     smsConsentDisclosureVersion: optionalString(item, "smsConsentDisclosureVersion"),
+    smsConsentMethod: optionalString(item, "smsConsentMethod"),
     createdAt: stringField(item, "createdAt"),
     createdBy: stringField(item, "createdBy"),
     updatedAt: stringField(item, "updatedAt"),

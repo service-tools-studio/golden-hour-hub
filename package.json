@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test lib/domain/*.test.ts lib/data/*.test.ts lib/services/*.test.ts lib/sms-notify.test.ts",
+    "test": "node --experimental-strip-types --test lib/domain/*.test.ts lib/data/*.test.ts lib/services/*.test.ts lib/sms-notify.test.ts lib/cleaner/*.test.ts",
     "seed:cleaners": "node --env-file=.env.local --experimental-strip-types scripts/seed-cleaners.ts",
     "dynamo:clear": "node --env-file=.env.local --experimental-strip-types scripts/clear-dynamo-table.ts"
   },

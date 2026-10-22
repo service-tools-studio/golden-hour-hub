@@ -218,6 +218,7 @@ type HubContextValue = HubState & {
     smsConsentPhone?: string;
     smsConsentRecordedAt?: string;
     smsConsentDisclosureVersion?: string;
+    smsConsentMethod?: string;
   }) => void;
   undoDeleteJob: () => ActionResult;
   undoDeleteCustomer: () => ActionResult;
@@ -2144,6 +2145,7 @@ export function HubProvider({
     smsConsentPhone?: string;
     smsConsentRecordedAt?: string;
     smsConsentDisclosureVersion?: string;
+    smsConsentMethod?: string;
   }): void {
     if (!data.cleanerId) return;
     setState({
@@ -2158,6 +2160,7 @@ export function HubProvider({
               smsConsentPhone: input.smsConsentPhone,
               smsConsentRecordedAt: input.smsConsentRecordedAt,
               smsConsentDisclosureVersion: input.smsConsentDisclosureVersion,
+              smsConsentMethod: input.smsConsentMethod,
               updatedAt: input.smsOptInRecordedAt,
             }
           : cleaner,

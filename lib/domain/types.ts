@@ -61,6 +61,8 @@ export type CleanerProfile = {
   smsConsentRecordedAt?: string;
   /** Version id of the disclosure copy shown at {@link smsConsentRecordedAt}. */
   smsConsentDisclosureVersion?: string;
+  /** How opt-in was captured, e.g. hub_web or sms_start. */
+  smsConsentMethod?: string;
   createdAt: string;
   createdBy: string;
   updatedAt: string;
