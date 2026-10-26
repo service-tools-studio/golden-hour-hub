@@ -38,6 +38,7 @@ import {
 import { normalizeArrivalWindow, validateArrivalWindow } from "@/lib/domain/arrival";
 import {
   dateMatchesRule,
+  effectiveWeekRecurrence,
   mergeRecurringHorizon,
   planOccurrenceStaffing,
   removeStaleSeriesOccurrences,
@@ -1057,12 +1058,15 @@ export function HubProvider({
     if (!Number.isInteger(input.defaultHeadcountNeeded) || input.defaultHeadcountNeeded < 1 || input.defaultHeadcountNeeded > 12) {
       return { ok: false, message: "Enter how many cleaners are needed." };
     }
-    const rule = validateRecurrenceRule(input.recurrence);
+    const normalizedRecurrence = effectiveWeekRecurrence(input.recurrence, series.startDate, data.jobs
+      .filter((job) => job.seriesId === seriesId && job.status !== "CANCELED")
+      .map((job) => job.date));
+    const rule = validateRecurrenceRule(normalizedRecurrence);
     if (!rule.ok) return rule;
     let startDate = series.startDate;
     for (let offset = 0; offset < 14; offset += 1) {
       const candidate = addDays(series.startDate, offset);
-      if (dateMatchesRule(input.recurrence, candidate, candidate)) {
+      if (dateMatchesRule(normalizedRecurrence, candidate, candidate)) {
         startDate = candidate;
         break;
       }
@@ -1073,7 +1077,7 @@ export function HubProvider({
         ? {
             ...item,
             propertyId: input.propertyId,
-            recurrence: input.recurrence,
+            recurrence: normalizedRecurrence,
             defaultHeadcountNeeded: input.defaultHeadcountNeeded,
             defaultPricePerVisitCents: input.defaultPricePerVisitCents,
             status: input.status,

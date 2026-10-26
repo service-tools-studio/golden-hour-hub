@@ -655,4 +655,29 @@ describe("rolling eight-week horizon", () => {
     const dates = result.jobs.map((job) => job.date).sort();
     assert.deepEqual(dates, ["2026-10-23", "2026-11-06", "2026-11-20"]);
   });
+
+  it("fills weekly horizon when every week had no weekday chip but a later visit exists", () => {
+    const today = "2026-10-26";
+    const result = mergeRecurringHorizon({
+      today,
+      series: [
+        series({
+          startDate: "2026-06-02",
+          recurrence: { frequency: "WEEK", interval: 1, daysOfWeek: [] },
+        }),
+      ],
+      jobs: [{ ...pastJob(), jobId: "job-last", date: "2026-12-21" }],
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: [],
+      nowIso: "2026-10-26T00:00:00.000Z",
+    });
+    const upcoming = result.jobs.filter((job) => job.date >= today).map((job) => job.date).sort();
+    assert.ok(upcoming.length > 1);
+    assert.ok(upcoming[0] < "2026-12-21");
+    assert.ok(upcoming.includes("2026-12-21"));
+  });
 });

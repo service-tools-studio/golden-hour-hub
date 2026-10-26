@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
 import { useHub } from "@/components/hub-provider";
+import { useNow } from "@/components/use-now";
+import { jobCountsAsUpcoming } from "@/lib/domain/scheduling";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import {
   PendingNavigationOverlay,
@@ -214,6 +216,7 @@ export function CustomerDetail({
   initialEdit?: boolean;
 }) {
   const hub = useHub();
+  const now = useNow();
   const router = useRouter();
   const formRef = useRef<CustomerFormHandle>(null);
   const seriesFormRef = useRef<CustomerFormHandle>(null);
@@ -236,6 +239,11 @@ export function CustomerDetail({
   useHubSyncBlocker(
     () => editingRecord && Boolean((editingSeriesId ? seriesFormRef.current : formRef.current)?.isDirty()),
   );
+
+  useEffect(() => {
+    if (!hub.ready) return;
+    hub.refreshRecurringHorizon();
+  }, [hub.ready, hub.refreshRecurringHorizon]);
 
   function activeForm() {
     return editingSeriesId ? seriesFormRef.current : formRef.current;
@@ -277,8 +285,9 @@ export function CustomerDetail({
   const jobs = hub.jobs
     .filter((job) => job.customerId === customer.customerId)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = jobs.filter((job) => job.date >= hub.today && (job.status === "SCHEDULED" || job.status === "DRAFT"));
-  const history = jobs.filter((job) => job.date < hub.today || job.status === "CANCELED");
+  const upcoming = jobs.filter((job) => jobCountsAsUpcoming(job, hub.assignments, hub.today, now));
+  const upcomingIds = new Set(upcoming.map((job) => job.jobId));
+  const history = jobs.filter((job) => job.status === "CANCELED" || !upcomingIds.has(job.jobId));
   const name = `${customer.firstName} ${customer.lastName}`;
   const homes = hub.properties.filter((property) => property.customerId === customer.customerId);
 

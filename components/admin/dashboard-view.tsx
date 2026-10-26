@@ -7,58 +7,16 @@ import { Card, PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import { dismissDashboardJob, readDashboardDismissedJobIds } from "@/lib/admin/dashboard-dismissals";
 import {
-  calculateBlockedRange,
   calculateConfirmedHeadcount,
-  cleaningCoverage,
-  isWithinRange,
+  jobCleaningHasEnded,
+  jobCleaningInProgress,
+  jobCountsAsUpcoming,
 } from "@/lib/domain/scheduling";
 import { editableAvailabilityHorizonEnd } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { crewLine, formatLongDate, relativeDay, serviceLabel } from "@/lib/format";
 
 const heading = "text-sm font-semibold uppercase tracking-[0.14em] text-ink/50";
-
-function jobCleaningEndMs(job: Job, assignments: JobAssignment[]): number {
-  const coverage = cleaningCoverage(
-    assignments.filter(
-      (item) =>
-        item.jobId === job.jobId && (item.status === "INVITED" || item.status === "CONFIRMED"),
-    ),
-  );
-  if (coverage) return coverage.endUtc.getTime();
-  if (!job.arrivalWindowStart || !job.arrivalWindowEnd || job.expectedDurationMinutes === undefined) {
-    return Number.NaN;
-  }
-  return calculateBlockedRange({
-    date: job.date,
-    arrivalWindowStart: job.arrivalWindowStart,
-    arrivalWindowEnd: job.arrivalWindowEnd,
-    expectedDurationMinutes: job.expectedDurationMinutes,
-  }).endUtc.getTime();
-}
-
-function jobCleaningHasEnded(job: Job, assignments: JobAssignment[], today: string, now: number): boolean {
-  if (job.date !== today || job.status !== "SCHEDULED") return false;
-  if (jobInProgress(job, assignments, now)) return false;
-  const endMs = jobCleaningEndMs(job, assignments);
-  return Number.isFinite(endMs) && now >= endMs;
-}
-
-function jobInProgress(job: Job, assignments: JobAssignment[], now: number): boolean {
-  if (job.status !== "SCHEDULED") return false;
-  const coverage = cleaningCoverage(assignments.filter((item) => item.jobId === job.jobId));
-  if (coverage) return isWithinRange(coverage, now);
-  if (!job.arrivalWindowStart || !job.arrivalWindowEnd || job.expectedDurationMinutes === undefined) return false;
-  return isWithinRange(
-    calculateBlockedRange({
-      date: job.date,
-      arrivalWindowStart: job.arrivalWindowStart,
-      arrivalWindowEnd: job.arrivalWindowEnd,
-      expectedDurationMinutes: job.expectedDurationMinutes,
-    }),
-    now,
-  );
-}
 
 export function DashboardView() {
   const hub = useHub();
@@ -75,12 +33,11 @@ export function DashboardView() {
   }
 
   const happening = hub.jobs
-    .filter((job) => jobInProgress(job, hub.assignments, now))
+    .filter((job) => jobCleaningInProgress(job, hub.assignments, now))
     .sort((a, b) => a.date.localeCompare(b.date));
   const upcoming = hub.jobs
     .filter(
-      (job) =>
-        (job.status === "SCHEDULED" || job.status === "DRAFT") && job.date >= hub.today && !happening.includes(job),
+      (job) => jobCountsAsUpcoming(job, hub.assignments, hub.today, now) && !happening.includes(job),
     )
     .sort((a, b) => a.date.localeCompare(b.date));
   const staffingHorizon = editableAvailabilityHorizonEnd(hub.today);

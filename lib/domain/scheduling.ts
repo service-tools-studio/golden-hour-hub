@@ -59,6 +59,112 @@ export function isWithinRange(range: { startUtc: Date; endUtc: Date }, nowMs: nu
   return range.startUtc.getTime() <= nowMs && nowMs < range.endUtc.getTime();
 }
 
+export type JobCleaningClock = {
+  jobId: string;
+  date: string;
+  status: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
+  expectedDurationMinutes?: number;
+};
+
+export function jobCleaningEndMs(job: JobCleaningClock, assignments: AssignmentSchedule[]): number {
+  const coverage = cleaningCoverage(
+    assignments.filter(
+      (item) =>
+        item.jobId === job.jobId && (item.status === "INVITED" || item.status === "CONFIRMED"),
+    ),
+  );
+  if (coverage) return coverage.endUtc.getTime();
+  if (!job.arrivalWindowStart || !job.arrivalWindowEnd || job.expectedDurationMinutes === undefined) {
+    return Number.NaN;
+  }
+  return calculateBlockedRange({
+    date: job.date,
+    arrivalWindowStart: job.arrivalWindowStart,
+    arrivalWindowEnd: job.arrivalWindowEnd,
+    expectedDurationMinutes: job.expectedDurationMinutes,
+  }).endUtc.getTime();
+}
+
+export function jobCleaningInProgress(job: JobCleaningClock, assignments: AssignmentSchedule[], nowMs: number): boolean {
+  if (job.status !== "SCHEDULED") return false;
+  const coverage = cleaningCoverage(assignments.filter((item) => item.jobId === job.jobId));
+  if (coverage) return isWithinRange(coverage, nowMs);
+  if (!job.arrivalWindowStart || !job.arrivalWindowEnd || job.expectedDurationMinutes === undefined) return false;
+  return isWithinRange(
+    calculateBlockedRange({
+      date: job.date,
+      arrivalWindowStart: job.arrivalWindowStart,
+      arrivalWindowEnd: job.arrivalWindowEnd,
+      expectedDurationMinutes: job.expectedDurationMinutes,
+    }),
+    nowMs,
+  );
+}
+
+/** Calendar upcoming plus today's visit until its scheduled block ends. */
+export function jobCountsAsUpcoming(
+  job: JobCleaningClock,
+  assignments: AssignmentSchedule[],
+  today: string,
+  nowMs: number,
+): boolean {
+  if (job.status !== "SCHEDULED" && job.status !== "DRAFT") return false;
+  if (job.date < today) return false;
+  if (job.date > today) return true;
+  if (jobCleaningInProgress(job, assignments, nowMs)) return true;
+  const endMs = jobCleaningEndMs(job, assignments);
+  if (!Number.isFinite(endMs)) return true;
+  return nowMs < endMs;
+}
+
+export function jobCleaningHasEnded(
+  job: JobCleaningClock,
+  assignments: AssignmentSchedule[],
+  today: string,
+  nowMs: number,
+): boolean {
+  if (job.date !== today || job.status !== "SCHEDULED") return false;
+  if (jobCleaningInProgress(job, assignments, nowMs)) return false;
+  const endMs = jobCleaningEndMs(job, assignments);
+  return Number.isFinite(endMs) && nowMs >= endMs;
+}
+
+export function assignmentCleaningClock(
+  job: Pick<JobCleaningClock, "jobId" | "status">,
+  assignment: Pick<
+    JobAssignment,
+    "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes"
+  >,
+): JobCleaningClock {
+  return {
+    jobId: job.jobId,
+    date: assignment.serviceDate,
+    status: job.status,
+    arrivalWindowStart: assignment.arrivalWindowStart,
+    arrivalWindowEnd: assignment.arrivalWindowEnd,
+    expectedDurationMinutes: assignment.expectedDurationMinutes,
+  };
+}
+
+export function assignmentCountsAsUpcoming(
+  assignment: Pick<JobAssignment, "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes">,
+  job: Pick<JobCleaningClock, "jobId" | "status">,
+  today: string,
+  nowMs: number,
+): boolean {
+  if (assignment.status !== "CONFIRMED") return false;
+  if (job.status !== "SCHEDULED") return false;
+  const clock = assignmentCleaningClock(job, assignment);
+  if (clock.date < today) return false;
+  if (clock.date > today) return true;
+  if (jobCleaningInProgress(clock, [], nowMs)) return true;
+  const endMs = jobCleaningEndMs(clock, []);
+  if (!Number.isFinite(endMs)) return true;
+  return nowMs < endMs;
+}
+
 const COUNTS_TOWARD_JOB_TIME = new Set<AssignmentStatus>(["INVITED", "CONFIRMED"]);
 
 /** Earliest arrival-window start through the latest expected end, across cleaners still on the job. */

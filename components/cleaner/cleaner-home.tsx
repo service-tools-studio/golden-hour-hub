@@ -5,7 +5,12 @@ import { useHub } from "@/components/hub-provider";
 import { InvitationCard } from "@/components/cleaner/invitation-card";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
-import { calculateBlockedRange, calculateRemainingHeadcount, isWithinRange } from "@/lib/domain/scheduling";
+import {
+  assignmentCountsAsUpcoming,
+  calculateBlockedRange,
+  calculateRemainingHeadcount,
+  isWithinRange,
+} from "@/lib/domain/scheduling";
 import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { SmsOptInActionBanner } from "@/components/cleaner/sms-opt-in-action-banner";
@@ -35,13 +40,23 @@ function inProgress(assignment: JobAssignment, now: number): boolean {
   );
 }
 
-function JobCard({ assignment, job }: { assignment: JobAssignment; job: Job }) {
+function JobCard({
+  assignment,
+  job,
+  muted = false,
+}: {
+  assignment: JobAssignment;
+  job: Job;
+  muted?: boolean;
+}) {
   return (
     <Link href={`/cleaner/jobs/${job.jobId}`} className="block">
-      <Card>
-        <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
+      <Card className={muted ? "text-ink/75" : undefined}>
+        <p className={`text-lg font-semibold ${muted ? "text-ink/80" : ""}`}>
+          {customerFirstNameForCleaner(job.snapshot)}
+        </p>
         <p className="text-sm text-ink/70">
-          {cleanerServiceLabel(job.serviceType)} · {formatLongDate(job.date)} ·{" "}
+          {cleanerServiceLabel(job.serviceType)} · {formatLongDate(assignment.serviceDate)} ·{" "}
           {formatTimeLabel(assignment.arrivalWindowStart)}
         </p>
       </Card>
@@ -75,15 +90,27 @@ export function CleanerHome() {
     .filter((assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "CONFIRMED")
     .flatMap((assignment) => {
       const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
-      return job && job.status === "SCHEDULED" ? [{ assignment, job }] : [];
+      return job ? [{ assignment, job }] : [];
     })
     .sort(
       (a, b) =>
         a.assignment.serviceDate.localeCompare(b.assignment.serviceDate) ||
         a.assignment.arrivalWindowStart.localeCompare(b.assignment.arrivalWindowStart),
     );
-  const happening = confirmed.filter((item) => inProgress(item.assignment, now));
-  const upcoming = confirmed.filter((item) => item.job.date >= hub.today && !happening.includes(item));
+  const active = confirmed.filter((item) => item.job.status === "SCHEDULED");
+  const happening = active.filter((item) => inProgress(item.assignment, now));
+  const upcoming = active.filter(
+    (item) => !happening.includes(item) && assignmentCountsAsUpcoming(item.assignment, item.job, hub.today, now),
+  );
+  const upcomingIds = new Set(upcoming.map((item) => item.assignment.assignmentId));
+  const happeningIds = new Set(happening.map((item) => item.assignment.assignmentId));
+  const history = confirmed
+    .filter((item) => !upcomingIds.has(item.assignment.assignmentId) && !happeningIds.has(item.assignment.assignmentId))
+    .sort(
+      (a, b) =>
+        b.assignment.serviceDate.localeCompare(a.assignment.serviceDate) ||
+        b.assignment.arrivalWindowStart.localeCompare(a.assignment.arrivalWindowStart),
+    );
   const showSmsOptInBanner = !cleanerAllowsSchedulingSms(cleaner);
 
   return (
@@ -226,6 +253,19 @@ export function CleanerHome() {
               </Card>
             );
           })}
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Job history</h2>
+          {history.length === 0 ? (
+            <Card>
+              <p className="text-base text-ink/70">No past jobs yet.</p>
+            </Card>
+          ) : (
+            history.map(({ assignment, job }) => (
+              <JobCard key={assignment.assignmentId} assignment={assignment} job={job} muted />
+            ))
+          )}
         </section>
       </div>
     </Screen>

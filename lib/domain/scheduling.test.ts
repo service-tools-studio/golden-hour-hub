@@ -33,6 +33,8 @@ import {
   assignmentCrewStepperMax,
   invitationAttendanceBounds,
   claimHeadcount,
+  assignmentCountsAsUpcoming,
+  jobCountsAsUpcoming,
   detectConfirmedAssignmentConflict,
   confirmedScheduleConflictReason,
   reconcileScheduleConflictWarnings,
@@ -70,6 +72,49 @@ function schedule(overrides: Partial<AssignmentSchedule> = {}): AssignmentSchedu
     ...overrides,
   };
 }
+
+describe("jobCountsAsUpcoming", () => {
+  it("drops today's visit after its scheduled block ends", () => {
+    const today = "2026-10-26";
+    const job = {
+      jobId: "job-1",
+      date: today,
+      status: "SCHEDULED",
+      arrivalWindowStart: "09:00",
+      arrivalWindowEnd: "09:00",
+      expectedDurationMinutes: 120,
+    };
+    const end = calculateBlockedRange({
+      date: job.date,
+      arrivalWindowStart: job.arrivalWindowStart,
+      arrivalWindowEnd: job.arrivalWindowEnd,
+      expectedDurationMinutes: job.expectedDurationMinutes,
+    }).endUtc.getTime();
+    assert.equal(jobCountsAsUpcoming(job, [], today, end - 1), true);
+    assert.equal(jobCountsAsUpcoming(job, [], today, end), false);
+    assert.equal(jobCountsAsUpcoming(job, [], today, end + 60_000), false);
+  });
+
+  it("drops a confirmed assignment after its block ends", () => {
+    const today = "2026-10-26";
+    const job = { jobId: "job-1", status: "SCHEDULED" };
+    const assignment = {
+      status: "CONFIRMED" as const,
+      serviceDate: today,
+      arrivalWindowStart: "08:00",
+      arrivalWindowEnd: "08:00",
+      expectedDurationMinutes: 180,
+    };
+    const end = calculateBlockedRange({
+      date: today,
+      arrivalWindowStart: assignment.arrivalWindowStart,
+      arrivalWindowEnd: assignment.arrivalWindowEnd,
+      expectedDurationMinutes: assignment.expectedDurationMinutes,
+    }).endUtc.getTime();
+    assert.equal(assignmentCountsAsUpcoming(assignment, job, today, end - 1), true);
+    assert.equal(assignmentCountsAsUpcoming(assignment, job, today, end), false);
+  });
+});
 
 describe("blocked time and effective availability", () => {
   it("blocks from the arrival window start through start plus duration", () => {

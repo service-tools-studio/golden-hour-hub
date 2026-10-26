@@ -125,12 +125,14 @@ export function generateOccurrenceDates(
   anchorDate: string,
   throughDate: string,
   endDate?: string,
+  scanFromDate?: string,
 ): string[] {
   const last = endDate && endDate < throughDate ? endDate : throughDate;
-  if (last < anchorDate) return [];
+  const scanFrom = scanFromDate ?? anchorDate;
+  if (last < scanFrom) return [];
   if (rule.frequency === "WEEK") {
     const dates: string[] = [];
-    let cursor = anchorDate;
+    let cursor = scanFrom;
     while (cursor <= last) {
       if (dateMatchesRule(rule, cursor, anchorDate)) dates.push(cursor);
       cursor = addDays(cursor, 1);
@@ -187,6 +189,25 @@ export function occurrenceAnchor(startDate: string, rule: RecurrenceRule, jobDat
   const days = rule.daysOfWeek ?? [];
   if (rule.frequency !== "WEEK" || days.length > 0) return startDate;
   return [...jobDates].sort().at(-1) ?? startDate;
+}
+
+/** Legacy weekly rows with no weekday chip — treat as repeating on the latest visit weekday (or start date). */
+export function effectiveWeekRecurrence(rule: RecurrenceRule, startDate: string, jobDates: string[]): RecurrenceRule {
+  if (rule.frequency !== "WEEK") return rule;
+  if ((rule.daysOfWeek?.length ?? 0) > 0) return rule;
+  const latest = [...jobDates].sort().at(-1);
+  return { ...rule, daysOfWeek: [dayOfWeek(latest ?? startDate)] };
+}
+
+function recurrenceGenerationAnchor(
+  series: Pick<RecurringSeries, "startDate" | "recurrence">,
+  jobDates: string[],
+  rule: RecurrenceRule,
+): string {
+  const implicitWeekday = series.recurrence.frequency === "WEEK" && (series.recurrence.daysOfWeek?.length ?? 0) === 0;
+  const latest = [...jobDates].sort().at(-1);
+  if (implicitWeekday && latest && rule.interval > 1) return latest;
+  return occurrenceAnchor(series.startDate, rule, jobDates);
 }
 
 export function shouldGenerateOccurrence(existingDates: ReadonlySet<string>, date: string): boolean {
@@ -349,13 +370,11 @@ export function removeStaleSeriesOccurrences(input: {
   jobs: Job[];
   assignments: JobAssignment[];
 }): { jobs: Job[]; assignments: JobAssignment[] } {
-  const anchor = occurrenceAnchor(
-    input.series.startDate,
-    input.series.recurrence,
-    input.jobs
-      .filter((job) => job.seriesId === input.series.seriesId && job.status !== "CANCELED")
-      .map((job) => job.date),
-  );
+  const seriesJobDates = input.jobs
+    .filter((job) => job.seriesId === input.series.seriesId && job.status !== "CANCELED")
+    .map((job) => job.date);
+  const recurrence = effectiveWeekRecurrence(input.series.recurrence, input.series.startDate, seriesJobDates);
+  const anchor = recurrenceGenerationAnchor(input.series, seriesJobDates, recurrence);
   const removedJobIds = new Set<string>();
   const jobs = input.jobs.filter((job) => {
     if (job.seriesId !== input.series.seriesId) return true;
@@ -363,7 +382,7 @@ export function removeStaleSeriesOccurrences(input: {
     if (job.date < input.today) return true;
     const matches =
       job.propertyId === input.series.propertyId &&
-      dateMatchesRule(input.series.recurrence, job.date, anchor);
+      dateMatchesRule(recurrence, job.date, anchor);
     if (!matches) removedJobIds.add(job.jobId);
     return matches;
   });
@@ -398,14 +417,12 @@ export function mergeRecurringHorizon(input: {
   for (const item of series) {
     if (item.status !== "ACTIVE") continue;
     const last = item.endDate && item.endDate < through ? item.endDate : through;
-    const anchor = occurrenceAnchor(
-      item.startDate,
-      item.recurrence,
-      jobs
-        .filter((job) => job.seriesId === item.seriesId && job.status !== "CANCELED")
-        .map((job) => job.date),
-    );
-    const dates = generateOccurrenceDates(item.recurrence, anchor, last, item.endDate).filter(
+    const seriesJobDates = jobs
+      .filter((job) => job.seriesId === item.seriesId && job.status !== "CANCELED")
+      .map((job) => job.date);
+    const recurrence = effectiveWeekRecurrence(item.recurrence, item.startDate, seriesJobDates);
+    const patternAnchor = recurrenceGenerationAnchor(item, seriesJobDates, recurrence);
+    const dates = generateOccurrenceDates(recurrence, patternAnchor, last, item.endDate, item.startDate).filter(
       (date) => date >= input.today && date <= through,
     );
     const existing = new Set([
