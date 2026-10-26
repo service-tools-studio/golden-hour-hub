@@ -10,6 +10,7 @@ import {
   validateRequestedCrewSize,
   type ScheduleWindow,
 } from "./scheduling.ts";
+import { isUnsetArrival } from "./arrival.ts";
 import { formatLongDate, mondayOf } from "./time.ts";
 import type { CleanerProfile, Job, JobAssignment, Result } from "./types.ts";
 
@@ -54,25 +55,21 @@ export function validateInvitationAcceptance(input: {
   });
   if (!crew.ok) return crew;
 
-  const blocked = calculateBlockedRange({
-    date: input.assignment.serviceDate,
-    arrivalWindowStart: input.assignment.arrivalWindowStart,
-    arrivalWindowEnd: input.assignment.arrivalWindowEnd,
-    expectedDurationMinutes: input.assignment.expectedDurationMinutes,
-  });
-  const conflict = detectConfirmedAssignmentConflict({
-    cleanerId: input.cleaner.cleanerId,
-    candidate: {
-      serviceDate: input.assignment.serviceDate,
-      arrivalWindowStart: input.assignment.arrivalWindowStart,
-      arrivalWindowEnd: input.assignment.arrivalWindowEnd,
-      expectedDurationMinutes: input.assignment.expectedDurationMinutes,
-    },
-    confirmedAssignments: input.cleanerConfirmedAssignments.map(toAssignmentSchedule),
-    ignoreAssignmentId: input.assignment.assignmentId,
-  });
-  if (conflict) {
-    return { ok: false, message: "You already have a confirmed cleaning during this time." };
+  if (!isUnsetArrival(input.assignment.arrivalWindowStart, input.assignment.arrivalWindowEnd)) {
+    const conflict = detectConfirmedAssignmentConflict({
+      cleanerId: input.cleaner.cleanerId,
+      candidate: {
+        serviceDate: input.assignment.serviceDate,
+        arrivalWindowStart: input.assignment.arrivalWindowStart!,
+        arrivalWindowEnd: input.assignment.arrivalWindowEnd!,
+        expectedDurationMinutes: input.assignment.expectedDurationMinutes,
+      },
+      confirmedAssignments: input.cleanerConfirmedAssignments.map(toAssignmentSchedule),
+      ignoreAssignmentId: input.assignment.assignmentId,
+    });
+    if (conflict) {
+      return { ok: false, message: "You already have a confirmed cleaning during this time." };
+    }
   }
 
   return {
@@ -335,10 +332,13 @@ function pendingFailureReason(input: {
     enforceJobHeadcount: false,
   });
   if (!crew.ok) return { kind: "other", message: crew.message };
+  if (isUnsetArrival(input.assignment.arrivalWindowStart, input.assignment.arrivalWindowEnd)) {
+    return null;
+  }
   const blocked = calculateBlockedRange({
     date: input.assignment.serviceDate,
-    arrivalWindowStart: input.assignment.arrivalWindowStart,
-    arrivalWindowEnd: input.assignment.arrivalWindowEnd,
+    arrivalWindowStart: input.assignment.arrivalWindowStart!,
+    arrivalWindowEnd: input.assignment.arrivalWindowEnd!,
     expectedDurationMinutes: input.assignment.expectedDurationMinutes,
   });
   if (!availabilityCoversBlockedRange(input.windows, blocked)) {
@@ -348,8 +348,8 @@ function pendingFailureReason(input: {
     cleanerId: input.cleaner.cleanerId,
     candidate: {
       serviceDate: input.assignment.serviceDate,
-      arrivalWindowStart: input.assignment.arrivalWindowStart,
-      arrivalWindowEnd: input.assignment.arrivalWindowEnd,
+      arrivalWindowStart: input.assignment.arrivalWindowStart!,
+      arrivalWindowEnd: input.assignment.arrivalWindowEnd!,
       expectedDurationMinutes: input.assignment.expectedDurationMinutes,
     },
     confirmedAssignments: input.assignments

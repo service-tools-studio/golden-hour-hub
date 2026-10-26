@@ -12,7 +12,7 @@ import {
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
-import { normalizeArrivalWindow } from "@/lib/domain/arrival";
+import { isUnsetArrival, normalizeArrivalWindow } from "@/lib/domain/arrival";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import {
@@ -64,8 +64,7 @@ function cleaningHref(jobId: string, from: CleaningOrigin | undefined) {
 async function notifyDirectAssignment(
   cleaner: CleanerProfile,
   job: Job,
-  arrivalWindowStart: string,
-  arrivalWindowEnd: string,
+  arrivalWindowStart: string | undefined,
   assignmentMessage: string | undefined,
 ) {
   const body = directAssignmentSms({
@@ -83,8 +82,7 @@ async function notifyDirectAssignment(
 async function notifyInviteAssignment(
   cleaner: CleanerProfile,
   job: Job,
-  arrivalWindowStart: string,
-  arrivalWindowEnd: string,
+  arrivalWindowStart: string | undefined,
   assignmentMessage: string | undefined,
 ) {
   const body = inviteAssignmentSms({
@@ -116,6 +114,20 @@ function cleaningSubtitle(job: Job, start: string | undefined): string {
 function jobCleaningWindow(job: Job | undefined): { start: string; end: string } | null {
   if (!job?.arrivalWindowStart || !job?.arrivalWindowEnd) return null;
   return { start: job.arrivalWindowStart, end: job.arrivalWindowEnd };
+}
+
+function visitStartTbd(job: Job | undefined): boolean {
+  return isUnsetArrival(job?.arrivalWindowStart, job?.arrivalWindowEnd);
+}
+
+/** When assignment times are unset, match the visit: TBD if the cleaning start is TBD, otherwise pick a concrete time. */
+function assignmentStartTbdDefault(
+  job: Job | undefined,
+  arrivalWindowStart?: string,
+  arrivalWindowEnd?: string,
+): boolean {
+  if (!isUnsetArrival(arrivalWindowStart, arrivalWindowEnd)) return false;
+  return visitStartTbd(job);
 }
 
 function cleaningArrivalForForm(
@@ -206,8 +218,8 @@ function defaultArrival(
 }
 
 function cleanerArrivals(
-  job: { jobId: string; draftCleanerDetails?: { cleanerId: string; arrivalWindowStart: string; arrivalWindowEnd: string }[] },
-  assignments: { jobId: string; cleanerId: string; status: string; arrivalWindowStart: string; arrivalWindowEnd: string }[],
+  job: { jobId: string; draftCleanerDetails?: { cleanerId: string; arrivalWindowStart?: string; arrivalWindowEnd?: string }[] },
+  assignments: { jobId: string; cleanerId: string; status: string; arrivalWindowStart?: string; arrivalWindowEnd?: string }[],
   cleaners: { cleanerId: string; firstName: string }[],
 ): { cleanerId: string; firstName: string; start: string; end: string }[] {
   const windows: { cleanerId: string; firstName: string; start: string; end: string }[] = [];
@@ -217,7 +229,7 @@ function cleanerArrivals(
     if (assignment.status === "CANCELED" || assignment.status === "EXPIRED_JOB_FILLED" || assignment.status === "DECLINED") continue;
     covered.add(assignment.cleanerId);
     const cleaner = cleaners.find((item) => item.cleanerId === assignment.cleanerId);
-    if (!cleaner) continue;
+    if (!cleaner || !assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) continue;
     windows.push({
       cleanerId: cleaner.cleanerId,
       firstName: cleaner.firstName,
@@ -228,7 +240,7 @@ function cleanerArrivals(
   for (const detail of job.draftCleanerDetails ?? []) {
     if (covered.has(detail.cleanerId)) continue;
     const cleaner = cleaners.find((item) => item.cleanerId === detail.cleanerId);
-    if (!cleaner) continue;
+    if (!cleaner || !detail.arrivalWindowStart || !detail.arrivalWindowEnd) continue;
     windows.push({
       cleanerId: cleaner.cleanerId,
       firstName: cleaner.firstName,
@@ -262,7 +274,9 @@ export function EditJobView({
     hub.availability,
     assignment?.cleanerId ?? "",
     job?.date ?? "",
-    assignment ? { start: assignment.arrivalWindowStart, end: assignment.arrivalWindowEnd } : undefined,
+    assignment?.arrivalWindowStart && assignment.arrivalWindowEnd
+      ? { start: assignment.arrivalWindowStart, end: assignment.arrivalWindowEnd }
+      : undefined,
   );
   const jobStart = cleaningStart(job, hub, assignment?.cleanerId ?? "");
   const cleaningArrival = cleaningArrivalForForm(job, arrivalWindows, jobStart);
@@ -272,6 +286,9 @@ export function EditJobView({
   );
   const [arrivalEnd, setArrivalEnd] = useState(
     cleaningArrival?.end ?? assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "",
+  );
+  const [arrivalStartTbd, setArrivalStartTbd] = useState(
+    assignmentStartTbdDefault(job, assignment?.arrivalWindowStart, assignment?.arrivalWindowEnd),
   );
   const [duration, setDuration] = useState(
     assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
@@ -287,7 +304,7 @@ export function EditJobView({
   const [message, setMessage] = useState<string | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<AssigningMode | null>(null);
-  const assignmentSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, duration, crew, payType, pay });
+  const assignmentSnapshot = JSON.stringify({ arrivalStartTbd, arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const assignmentBaseline = useRef<string | null>(null);
   if (assignment && assignmentBaseline.current === null) assignmentBaseline.current = assignmentSnapshot;
   const assignmentDirty = assignmentBaseline.current !== null && assignmentBaseline.current !== assignmentSnapshot;
@@ -312,7 +329,7 @@ export function EditJobView({
       : null;
   const flag = cleaner && gap ? noticeFlagText(cleaner.firstName, gap) : null;
   const scheduleWarning =
-    assignment && cleaner && job
+    assignment && cleaner && job && !arrivalStartTbd
       ? liveAvailabilityAttentionMessage({
           assignment,
           cleaner,
@@ -354,8 +371,8 @@ export function EditJobView({
       noticeGap(
         false,
         assignmentNoticeFrom({
-          arrivalWindowStart: arrivalStart,
-          arrivalWindowEnd: arrivalEnd,
+          arrivalWindowStart: arrivalStartTbd ? undefined : arrivalStart,
+          arrivalWindowEnd: arrivalStartTbd ? undefined : arrivalEnd,
           expectedDurationMinutes: duration,
           proposedCrewSize: crew,
           payType,
@@ -375,16 +392,22 @@ export function EditJobView({
       setMessage("Enter the crew pay, like 350 or 350.00.");
       return false;
     }
+    if (arrivalStartTbd && mode === "DIRECT") {
+      setMessage("Choose a start time before assigning directly.");
+      return false;
+    }
     if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
     else if (mode === "DRAFT" && nextHref) setAssigning("DRAFT");
 
+    const arrival = arrivalStartTbd
+      ? { arrivalWindowStart: undefined, arrivalWindowEnd: undefined }
+      : { arrivalWindowStart: arrivalStart, arrivalWindowEnd: arrivalEnd };
     const result = hub.completeAssignment({
       jobId,
       assignmentId,
       cleanerId: cleaner.cleanerId,
       propertyId: job.propertyId,
-      arrivalWindowStart: arrivalStart,
-      arrivalWindowEnd: arrivalEnd,
+      ...arrival,
       expectedDurationMinutes: duration,
       proposedCrewSize: crew,
       payType,
@@ -399,12 +422,12 @@ export function EditJobView({
     }
     if (mode === "DIRECT") {
       hub.queueSchedulingSms(
-        notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        notifyDirectAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
         result.message,
       );
     } else if (mode === "INVITE") {
       hub.queueSchedulingSms(
-        notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        notifyInviteAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
         result.message,
       );
     } else if (result.message) {
@@ -473,9 +496,14 @@ export function EditJobView({
           <ArrivalWindowPicker
             start={arrivalStart}
             end={arrivalEnd}
+            startTbd={arrivalStartTbd}
             onChange={(nextStart, nextEnd) => {
               setArrivalStart(nextStart);
               setArrivalEnd(nextEnd);
+              setMessage(null);
+            }}
+            onStartTbdChange={(tbd) => {
+              setArrivalStartTbd(tbd);
               setMessage(null);
             }}
           />
@@ -491,6 +519,7 @@ export function EditJobView({
             ignoreAssignmentId={assignment.status === "CONFIRMED" ? assignment.assignmentId : undefined}
             arrivalStart={arrivalStart}
             arrivalEnd={arrivalEnd}
+            startTbd={arrivalStartTbd}
             durationMinutes={duration}
           />
         ) : null}
@@ -756,7 +785,9 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     hub.availability,
     cleanerId,
     job?.date ?? "",
-    savedDetail ? { start: savedDetail.arrivalWindowStart, end: savedDetail.arrivalWindowEnd } : undefined,
+    savedDetail?.arrivalWindowStart && savedDetail.arrivalWindowEnd
+      ? { start: savedDetail.arrivalWindowStart, end: savedDetail.arrivalWindowEnd }
+      : undefined,
   );
   const jobStart = cleaningStart(job, hub, cleanerId);
   const cleaningArrival = cleaningArrivalForForm(job, windows, jobStart);
@@ -766,6 +797,9 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   );
   const [arrivalEnd, setArrivalEnd] = useState(
     cleaningArrival?.end ?? savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "",
+  );
+  const [arrivalStartTbd, setArrivalStartTbd] = useState(
+    assignmentStartTbdDefault(job, savedDetail?.arrivalWindowStart, savedDetail?.arrivalWindowEnd),
   );
   const [duration, setDuration] = useState(
     savedDetail?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
@@ -782,7 +816,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [navigatingAway, setNavigatingAway] = useState(false);
   const [assigning, setAssigning] = useState<AssigningMode | null>(null);
-  const draftSnapshot = JSON.stringify({ arrivalStart, arrivalEnd, duration, crew, payType, pay });
+  const draftSnapshot = JSON.stringify({ arrivalStartTbd, arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const draftBaseline = useRef<string | null>(null);
   if (job && cleaner && draftBaseline.current === null) draftBaseline.current = draftSnapshot;
   const draftDirty = draftBaseline.current !== null && draftBaseline.current !== draftSnapshot;
@@ -806,15 +840,21 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       setMessage("Enter the crew pay, like 350 or 350.00.");
       return false;
     }
+    if (arrivalStartTbd && mode === "DIRECT") {
+      setMessage("Choose a start time before assigning directly.");
+      return false;
+    }
     if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
     else if (mode === "DRAFT" && nextHref) setAssigning("DRAFT");
 
+    const arrival = arrivalStartTbd
+      ? { arrivalWindowStart: undefined, arrivalWindowEnd: undefined }
+      : { arrivalWindowStart: arrivalStart, arrivalWindowEnd: arrivalEnd };
     const result = hub.completeAssignment({
       jobId: job.jobId,
       cleanerId: cleaner.cleanerId,
       propertyId: job.propertyId,
-      arrivalWindowStart: arrivalStart,
-      arrivalWindowEnd: arrivalEnd,
+      ...arrival,
       expectedDurationMinutes: duration,
       proposedCrewSize: crew,
       payType,
@@ -838,12 +878,12 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     }
     if (mode === "DIRECT") {
       hub.queueSchedulingSms(
-        notifyDirectAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        notifyDirectAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
         result.message,
       );
     } else if (mode === "INVITE") {
       hub.queueSchedulingSms(
-        notifyInviteAssignment(cleaner, job, arrivalStart, arrivalEnd, result.message),
+        notifyInviteAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
         result.message,
       );
     } else if (result.message) {
@@ -894,9 +934,14 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
           <ArrivalWindowPicker
             start={arrivalStart}
             end={arrivalEnd}
+            startTbd={arrivalStartTbd}
             onChange={(nextStart, nextEnd) => {
               setArrivalStart(nextStart);
               setArrivalEnd(nextEnd);
+              setMessage(null);
+            }}
+            onStartTbdChange={(tbd) => {
+              setArrivalStartTbd(tbd);
               setMessage(null);
             }}
           />
@@ -910,6 +955,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
           assignments={hub.assignments}
           arrivalStart={arrivalStart}
           arrivalEnd={arrivalEnd}
+          startTbd={arrivalStartTbd}
           durationMinutes={duration}
         />
         {maxCrew > 1 ? (
@@ -965,8 +1011,8 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
 }
 
 function assignmentNoticeFrom(input: {
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   proposedCrewSize: number;
   payType: PayType;

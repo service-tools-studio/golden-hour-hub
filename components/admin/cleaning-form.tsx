@@ -200,12 +200,12 @@ export function CleaningForm({
     setHeadcount(next);
     setMessage(null);
   }
-  const suggestionKey = property && cleanType ? `${property.propertyId}:${cleanType}` : "";
-  if (headcountFor !== "ready" && suggestionKey !== headcountFor) {
-    setHeadcountFor(suggestionKey);
+  const propertyKey = property?.propertyId ?? "";
+  if (headcountFor !== "ready" && propertyKey !== headcountFor) {
+    setHeadcountFor(propertyKey);
     if (quote) setHeadcount(quote.time.cleaners);
   } else if (headcountFor === "ready") {
-    setHeadcountFor(suggestionKey);
+    setHeadcountFor(propertyKey);
   }
 
   const formSnapshot = JSON.stringify({
@@ -226,7 +226,7 @@ export function CleaningForm({
     pricePerVisit,
   });
   const baseline = useRef<string | null>(null);
-  const settled = headcountFor === suggestionKey;
+  const settled = headcountFor === propertyKey;
   if (baseline.current === null && settled) baseline.current = formSnapshot;
   const dirty = Boolean(customer) && baseline.current !== null && baseline.current !== formSnapshot;
   useUnsavedNavigation(settled, () => dirty, setLeaveHref);
@@ -615,21 +615,6 @@ export function CleaningForm({
               </div>
             ) : null}
 
-            <Field label="Price per visit (optional)">
-              <input
-                type="text"
-                inputMode="decimal"
-                className={fieldClass}
-                placeholder="e.g. 185"
-                value={pricePerVisit}
-                onChange={(event) => {
-                  setPricePerVisit(event.target.value);
-                  setMessage(null);
-                }}
-              />
-              <p className="mt-1.5 text-sm text-ink/60">Admin only. Cleaners never see this.</p>
-            </Field>
-
             <Field label={ESTIMATED_ON_SITE_FIELD_LABEL}>
               <EstimatedDurationPicker
                 value={duration}
@@ -641,7 +626,21 @@ export function CleaningForm({
               <p className="mt-1.5 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
             </Field>
 
-            <Field label="Special instructions">
+            <Field label="Price per visit (optional)" hint="Admin only. Cleaners never see this.">
+              <input
+                type="text"
+                inputMode="decimal"
+                className={fieldClass}
+                placeholder="e.g. 185"
+                value={pricePerVisit}
+                onChange={(event) => {
+                  setPricePerVisit(event.target.value);
+                  setMessage(null);
+                }}
+              />
+            </Field>
+
+            <Field label="Special instructions" hint="Cleaners see these notes.">
               <textarea
                 className={`${fieldClass} min-h-24 py-3`}
                 value={instructions}

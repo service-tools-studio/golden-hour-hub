@@ -19,6 +19,10 @@ export function validateArrivalWindow(
   return { ok: true, ...normalizeArrivalWindow(start) };
 }
 
+export function isUnsetArrival(start?: string, end?: string): boolean {
+  return start === undefined && end === undefined;
+}
+
 /** Visit-level start time may be unset until the admin picks a time or leaves it TBD. */
 export function validateOptionalVisitArrival(
   start?: string,

@@ -14,6 +14,7 @@ export function CleanerAvailabilityPreview({
   ignoreAssignmentId,
   arrivalStart,
   arrivalEnd,
+  startTbd = false,
   durationMinutes,
 }: {
   cleanerId: string;
@@ -24,6 +25,7 @@ export function CleanerAvailabilityPreview({
   ignoreAssignmentId?: string;
   arrivalStart: string;
   arrivalEnd: string;
+  startTbd?: boolean;
   durationMinutes: number;
 }) {
   const effectiveWindows = staffingAvailabilityWindows(
@@ -33,7 +35,8 @@ export function CleanerAvailabilityPreview({
     date,
     ignoreAssignmentId,
   );
-  const span = arrivalStart && arrivalEnd ? cleaningTimeSpan(arrivalStart, arrivalEnd, durationMinutes) : null;
+  const span =
+    !startTbd && arrivalStart && arrivalEnd ? cleaningTimeSpan(arrivalStart, arrivalEnd, durationMinutes) : null;
   const pills = availabilityAgainstSpan(effectiveWindows, span);
   const fitsSubmitted = Boolean(
     span &&

@@ -241,18 +241,23 @@ export function SecondaryButton({
 
 export function Field({
   label,
+  hint,
   children,
   error,
   id,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
   error?: string;
   id?: string;
 }) {
   return (
     <label id={id} className="block">
-      <span className={`mb-1.5 block text-sm font-medium ${error ? "text-red-700" : "text-ink/80"}`}>{label}</span>
+      <div className="mb-1.5">
+        <span className={`block text-sm font-medium ${error ? "text-red-700" : "text-ink/80"}`}>{label}</span>
+        {hint ? <p className="mt-0.5 text-sm text-ink/60">{hint}</p> : null}
+      </div>
       {children}
       {error ? (
         <span role="alert" className="mt-1.5 block text-sm font-semibold text-red-700">

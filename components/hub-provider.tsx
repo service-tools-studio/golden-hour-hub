@@ -111,8 +111,8 @@ export type SaveCleanerDetailsInput = {
   jobId: string;
   cleanerId: string;
   propertyId: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   proposedCrewSize: number;
   payType: PayType;
@@ -257,8 +257,8 @@ function validatePricePerVisitCents(cents?: number): ActionResult | null {
 }
 
 function assignmentNotice(input: {
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   proposedCrewSize: number;
   payType: PayType;
@@ -1292,7 +1292,7 @@ export function HubProvider({
       (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
     );
     if (!property) return { ok: false, message: "Choose one of this customer's properties." };
-    const arrivalTimes = validateArrivalWindow(input.arrivalWindowStart, input.arrivalWindowEnd);
+    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
     if (!arrivalTimes.ok) return arrivalTimes;
     if (
       !Number.isInteger(input.expectedDurationMinutes) ||
@@ -1435,8 +1435,14 @@ export function HubProvider({
     if (!existing && !(job.draftCleanerIds ?? []).includes(cleaner.cleanerId)) {
       return { ok: false, message: "Add that cleaner to the cleaning before saving their details." };
     }
-    const arrivalTimes = validateArrivalWindow(input.arrivalWindowStart, input.arrivalWindowEnd);
+    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
     if (!arrivalTimes.ok) return arrivalTimes;
+    if (
+      input.mode === "DIRECT" &&
+      (arrivalTimes.arrivalWindowStart === undefined || arrivalTimes.arrivalWindowEnd === undefined)
+    ) {
+      return { ok: false, message: "Choose a start time before assigning directly." };
+    }
     if (
       !Number.isInteger(input.expectedDurationMinutes) ||
       input.expectedDurationMinutes < 30 ||
@@ -1460,12 +1466,6 @@ export function HubProvider({
         payPerPersonCents: input.payPerPersonCents,
         confirmedCrewSize: input.proposedCrewSize,
       });
-      const blocked = calculateBlockedRange({
-        date: job.date,
-        arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-        arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-        expectedDurationMinutes: input.expectedDurationMinutes,
-      });
       let nextAssignments = data.assignments.map((item) => {
         if (item.assignmentId !== existing.assignmentId) return item;
         let nextItem: JobAssignment = {
@@ -1488,17 +1488,20 @@ export function HubProvider({
         }
         return nextItem;
       });
-      nextAssignments = syncJobAssignmentsToCleaningArrival(
-        nextAssignments,
-        job.jobId,
-        arrivalTimes.arrivalWindowStart,
-        arrivalTimes.arrivalWindowEnd,
-        now,
-      );
-      const next = withEarliestArrival(
-        jobWithCleaningArrival(job, arrivalTimes.arrivalWindowStart, arrivalTimes.arrivalWindowEnd, now),
-        nextAssignments,
-      );
+      if (arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined) {
+        nextAssignments = syncJobAssignmentsToCleaningArrival(
+          nextAssignments,
+          job.jobId,
+          arrivalTimes.arrivalWindowStart,
+          arrivalTimes.arrivalWindowEnd,
+          now,
+        );
+      }
+      const nextJob =
+        arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined
+          ? jobWithCleaningArrival(job, arrivalTimes.arrivalWindowStart, arrivalTimes.arrivalWindowEnd, now)
+          : { ...job, updatedAt: now, updatedBy: "kelsey" };
+      const next = withEarliestArrival(nextJob, nextAssignments);
       setState({
         ...data,
         jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
@@ -1554,27 +1557,31 @@ export function HubProvider({
     let nextAssignments = existing
       ? data.assignments.map((item) => (item.assignmentId === existing.assignmentId ? savedAssignment : item))
       : [...data.assignments, savedAssignment];
-    nextAssignments = syncJobAssignmentsToCleaningArrival(
-      nextAssignments,
-      job.jobId,
-      arrivalTimes.arrivalWindowStart,
-      arrivalTimes.arrivalWindowEnd,
-      now,
-    );
-    const next = withEarliestArrival(
-      jobWithCleaningArrival(
-        {
-          ...job,
-          draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
-          draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
-          status: "SCHEDULED",
-        },
+    if (arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined) {
+      nextAssignments = syncJobAssignmentsToCleaningArrival(
+        nextAssignments,
+        job.jobId,
         arrivalTimes.arrivalWindowStart,
         arrivalTimes.arrivalWindowEnd,
         now,
-      ),
-      nextAssignments,
-    );
+      );
+    }
+    const scheduledJob = {
+      ...job,
+      draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
+      draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
+      status: "SCHEDULED" as const,
+    };
+    const nextJob =
+      arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined
+        ? jobWithCleaningArrival(
+            scheduledJob,
+            arrivalTimes.arrivalWindowStart,
+            arrivalTimes.arrivalWindowEnd,
+            now,
+          )
+        : { ...scheduledJob, updatedAt: now, updatedBy: "kelsey" };
+    const next = withEarliestArrival(nextJob, nextAssignments);
     let assignments = nextAssignments;
     if (savedAssignment.status === "CONFIRMED") {
       assignments = expireJobInvitesIfHeadcountMet(assignments, job.jobId, job.headcountNeeded, now);

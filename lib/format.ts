@@ -1,3 +1,4 @@
+import { isUnsetArrival } from "./domain/arrival";
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "./domain/cleaners";
 import type {
   AssignmentNotice,
@@ -51,7 +52,7 @@ export function cleanerSmsStartLabel(arrivalWindowStart: string): string {
 
 export type CleanerCleaningSmsDetails = {
   date: string;
-  arrivalWindowStart: string;
+  arrivalWindowStart?: string;
   customerFirstName: string;
   serviceType: ServiceType;
   streetAddress: string;
@@ -69,7 +70,10 @@ function cleanerCleaningSmsAddress(details: CleanerCleaningSmsDetails): string {
 }
 
 function cleanerCleaningSmsDateTime(details: Pick<CleanerCleaningSmsDetails, "date" | "arrivalWindowStart">): string {
-  return `${formatLongDate(details.date)} at ${cleanerSmsStartLabel(details.arrivalWindowStart)}`;
+  if (!details.arrivalWindowStart) {
+    return `${formatLongDate(details.date)} (start time to be confirmed)`;
+  }
+  return `${formatLongDate(details.date)} at ${cleanerSmsStartLabel(details.arrivalWindowStart!)}`;
 }
 
 type CleanerCleaningSmsIntro = "assigned" | "invited" | "updated";
@@ -187,6 +191,10 @@ export const ESTIMATED_ON_SITE_DURATION_MINUTES = Array.from({ length: 23 }, (_,
 /** Admin cleaning form: scheduled start not chosen yet. */
 export const VISIT_START_TIME_TBD_LABEL = "Time TBD";
 
+/** Shown to cleaners on invites and texts when the start time is not set yet. */
+export const CLEANER_INVITE_START_TIME_TBD_NOTE =
+  "The start time will be confirmed and sent to you. We plan to schedule it within your submitted availability.";
+
 export function formatDurationSelectLabel(minutes: number): string {
   const hours = minutes / 60;
   if (hours === 1) return "1 hour";
@@ -212,7 +220,9 @@ export function formatEstimatedOnSiteEnd(
   return formatTimeLabel(span.end);
 }
 
-export function formatArrival(start: string, end: string): string {
+export function formatArrival(start?: string, end?: string): string {
+  if (isUnsetArrival(start, end)) return VISIT_START_TIME_TBD_LABEL;
+  if (!start || !end) return VISIT_START_TIME_TBD_LABEL;
   return hourWindowLabel(start, end);
 }
 
@@ -251,19 +261,26 @@ function compactDuration(minutes: number): string {
 
 export function formatScheduleFacts(input: {
   date: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
 }): { arrive: string; length: string; ends: string } {
+  if (isUnsetArrival(input.arrivalWindowStart, input.arrivalWindowEnd)) {
+    return {
+      arrive: VISIT_START_TIME_TBD_LABEL,
+      length: compactDuration(input.expectedDurationMinutes),
+      ends: "—",
+    };
+  }
   const blocked = calculateBlockedRange({
     date: input.date,
-    arrivalWindowStart: input.arrivalWindowStart,
-    arrivalWindowEnd: input.arrivalWindowEnd,
+    arrivalWindowStart: input.arrivalWindowStart!,
+    arrivalWindowEnd: input.arrivalWindowEnd!,
     expectedDurationMinutes: input.expectedDurationMinutes,
   });
   const end = zonedParts(blocked.endUtc);
   return {
-    arrive: formatTimeLabel(input.arrivalWindowStart),
+    arrive: formatTimeLabel(input.arrivalWindowStart!),
     length: compactDuration(input.expectedDurationMinutes),
     ends: formatTimeLabel(formatHm(end.hour, end.minute)),
   };
@@ -407,17 +424,19 @@ export function inviteAssignmentSms(input: {
   appUrl?: string;
 }): string {
   const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
+  const extraLines = !input.details.arrivalWindowStart ? [CLEANER_INVITE_START_TIME_TBD_NOTE] : undefined;
   return cleanerCleaningSchedulingSmsBody({
     cleanerFirstName: input.cleanerFirstName,
     intro: "invited",
     details: input.details,
+    extraLines,
     footer: `Open the Golden Hour Hub app to accept or decline as soon as you can: ${link}`,
   });
 }
 
 export function cleanerCleaningSmsDetails(input: {
   date: string;
-  arrivalWindowStart: string;
+  arrivalWindowStart?: string;
   serviceType: ServiceType;
   snapshot: Pick<
     JobCustomerSnapshot,
@@ -449,7 +468,7 @@ export function cleanerCleaningSmsDetailsFromJob(
       "customerFirstName" | "customerDisplayName" | "streetAddress" | "city" | "state" | "zip" | "unit"
     >;
   },
-  arrivalWindowStart: string,
+  arrivalWindowStart?: string,
   serviceDate?: string,
 ): CleanerCleaningSmsDetails {
   return cleanerCleaningSmsDetails({
@@ -485,8 +504,8 @@ export function cleanerTextKelseyAboutJobBody(input: {
   customerFirstName: string;
   date: string;
   serviceLabel: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   addressLine: string;
   payLine: string;

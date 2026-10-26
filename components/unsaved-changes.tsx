@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { ButtonLoadingLabel } from "@/components/ui";
 
 export function useUnsavedNavigation(active: boolean, blocked: () => boolean, onBlock: (href: string) => void) {
@@ -123,7 +124,7 @@ export function UnsavedChangesDialog({
 
   async function handleSave() {
     if (phase !== "idle") return;
-    setPhase("saving");
+    flushSync(() => setPhase("saving"));
     try {
       const result = await Promise.resolve(onSave());
       if (result === false) {
@@ -160,7 +161,14 @@ export function UnsavedChangesDialog({
         className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(51,51,51,0.16)]"
         onClick={(event) => event.stopPropagation()}
       >
-        {navigating ? (
+        {saving ? (
+          <>
+            <h2 id="unsaved-title" className="text-lg font-semibold">Saving…</h2>
+            <p className="mt-4 flex min-h-12 items-center justify-center">
+              <ButtonLoadingLabel label="Saving…" />
+            </p>
+          </>
+        ) : navigating ? (
           <>
             <h2 id="unsaved-title" className="text-lg font-semibold">Saved</h2>
             <p className="mt-4 flex min-h-12 items-center justify-center">

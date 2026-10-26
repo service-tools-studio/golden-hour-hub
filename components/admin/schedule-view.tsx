@@ -714,6 +714,7 @@ function buildDayEvents(input: {
         continue;
       }
       const job = input.jobs.find((item) => item.jobId === assignment.jobId);
+      if (!assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) continue;
       const span = calculateBlockedRange({
         date: assignment.serviceDate,
         arrivalWindowStart: assignment.arrivalWindowStart,

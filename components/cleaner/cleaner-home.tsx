@@ -15,6 +15,7 @@ import {
   isWithinRange,
 } from "@/lib/domain/scheduling";
 import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
+import { isUnsetArrival } from "@/lib/domain/arrival";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { SmsOptInActionBanner } from "@/components/cleaner/sms-opt-in-action-banner";
 import {
@@ -28,8 +29,8 @@ import {
   cleanerExpiredInvitationReason,
   cleanerServiceLabel,
   customerFirstNameForCleaner,
+  formatArrival,
   formatLongDate,
-  formatTimeLabel,
 } from "@/lib/format";
 
 function assignmentUpcomingClock(
@@ -45,11 +46,12 @@ const AVAILABILITY_MISMATCH_MESSAGE =
   "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
 
 function inProgress(assignment: JobAssignment, now: number): boolean {
+  if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return false;
   return isWithinRange(
     calculateBlockedRange({
       date: assignment.serviceDate,
-      arrivalWindowStart: assignment.arrivalWindowStart,
-      arrivalWindowEnd: assignment.arrivalWindowEnd,
+      arrivalWindowStart: assignment.arrivalWindowStart!,
+      arrivalWindowEnd: assignment.arrivalWindowEnd!,
       expectedDurationMinutes: assignment.expectedDurationMinutes,
     }),
     now,
@@ -73,7 +75,7 @@ function JobCard({
         </p>
         <p className="text-sm text-ink/70">
           {cleanerServiceLabel(job.serviceType)} · {formatLongDate(assignment.serviceDate)} ·{" "}
-          {formatTimeLabel(assignment.arrivalWindowStart)}
+          {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
         </p>
       </Card>
     </Link>
@@ -125,7 +127,7 @@ export function CleanerHome() {
     .sort(
       (a, b) =>
         b.assignment.serviceDate.localeCompare(a.assignment.serviceDate) ||
-        b.assignment.arrivalWindowStart.localeCompare(a.assignment.arrivalWindowStart),
+        (b.assignment.arrivalWindowStart ?? "").localeCompare(a.assignment.arrivalWindowStart ?? ""),
     );
   const visibleExpiredInvitations = expiredInvitations.filter(
     ({ assignment }) => !dismissedExpiredIds.has(assignment.assignmentId),
@@ -146,7 +148,7 @@ export function CleanerHome() {
     .sort(
       (a, b) =>
         a.assignment.serviceDate.localeCompare(b.assignment.serviceDate) ||
-        a.assignment.arrivalWindowStart.localeCompare(b.assignment.arrivalWindowStart),
+        (a.assignment.arrivalWindowStart ?? "").localeCompare(b.assignment.arrivalWindowStart ?? ""),
     );
   const active = committed.filter((item) => item.job.status === "SCHEDULED");
   const happening = active.filter((item) => inProgress(item.assignment, now));
@@ -166,7 +168,7 @@ export function CleanerHome() {
     .sort(
       (a, b) =>
         b.assignment.serviceDate.localeCompare(a.assignment.serviceDate) ||
-        b.assignment.arrivalWindowStart.localeCompare(a.assignment.arrivalWindowStart),
+        (b.assignment.arrivalWindowStart ?? "").localeCompare(a.assignment.arrivalWindowStart ?? ""),
     );
   const showSmsOptInBanner = !cleanerAllowsSchedulingSms(cleaner);
 
@@ -206,7 +208,7 @@ export function CleanerHome() {
                 <Card key={assignment.assignmentId}>
                   <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
                   <p className="text-sm text-ink/70">
-                    {formatLongDate(job.date)} · {formatTimeLabel(assignment.arrivalWindowStart)}
+                    {formatLongDate(job.date)} · {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
                   </p>
                   <p className="mt-2 text-sm leading-5">
                     {availabilityMismatch

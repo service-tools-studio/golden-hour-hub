@@ -11,11 +11,13 @@ import {
   cleanerInvitationPayLines,
   cleanerServiceLabel,
   customerFirstNameForCleaner,
+  CLEANER_INVITE_START_TIME_TBD_NOTE,
   formatArrival,
   formatDuration,
   formatEstimatedOnSiteEnd,
   formatLongDate,
 } from "@/lib/format";
+import { isUnsetArrival } from "@/lib/domain/arrival";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
 export function ExpiredInvitationCard({
@@ -79,11 +81,14 @@ function InvitationCardContent({
     payPerPersonCents: assignment.payPerPersonCents,
     confirmedCrewSize: attending,
   });
-  const estimatedEnd = formatEstimatedOnSiteEnd(
-    assignment.arrivalWindowStart,
-    assignment.arrivalWindowEnd,
-    assignment.expectedDurationMinutes,
-  );
+  const startTbd = isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd);
+  const estimatedEnd = startTbd
+    ? null
+    : formatEstimatedOnSiteEnd(
+        assignment.arrivalWindowStart!,
+        assignment.arrivalWindowEnd!,
+        assignment.expectedDurationMinutes,
+      );
   const invitePayLines = cleanerInvitationPayLines({
     bringsHelpers,
     payType: assignment.payType,
@@ -152,7 +157,12 @@ function InvitationCardContent({
       <dl className="mt-4 space-y-2 text-base">
         <div className="flex justify-between gap-3">
           <dt className="text-ink/60">Start time</dt>
-          <dd>{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</dd>
+          <dd className="max-w-[14rem] text-right">
+            {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
+            {startTbd ? (
+              <p className="mt-1 text-sm font-normal text-ink/70">{CLEANER_INVITE_START_TIME_TBD_NOTE}</p>
+            ) : null}
+          </dd>
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-ink/60">Estimated cleaning time</dt>

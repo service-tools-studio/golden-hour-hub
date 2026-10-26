@@ -363,8 +363,8 @@ function readAssignment(item: DynamoItem): JobAssignment {
     confirmedCrewSize: optionalNumber(item, "confirmedCrewSize"),
     attentionReason: optionalString(item, "attentionReason"),
     availabilityConflictWeekStart: optionalString(item, "availabilityConflictWeekStart"),
-    arrivalWindowStart: stringField(item, "arrivalWindowStart"),
-    arrivalWindowEnd: stringField(item, "arrivalWindowEnd"),
+    arrivalWindowStart: optionalString(item, "arrivalWindowStart"),
+    arrivalWindowEnd: optionalString(item, "arrivalWindowEnd"),
     expectedDurationMinutes: numberField(item, "expectedDurationMinutes"),
     payType: item.payType === "HOURLY" ? "HOURLY" : "FLAT",
     payPerPersonCents: numberField(item, "payPerPersonCents"),
@@ -403,14 +403,16 @@ function readSubmission(item: DynamoItem): AvailabilitySubmission {
 function readAssignmentNotice(value: unknown): AssignmentNotice | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-  if (typeof record.arrivalWindowStart !== "string" || typeof record.arrivalWindowEnd !== "string") return undefined;
+  const hasStart = typeof record.arrivalWindowStart === "string";
+  const hasEnd = typeof record.arrivalWindowEnd === "string";
+  if (hasStart !== hasEnd) return undefined;
   if (typeof record.expectedDurationMinutes !== "number" || typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
     return undefined;
   }
   if (record.payType !== "FLAT" && record.payType !== "HOURLY") return undefined;
   return {
-    arrivalWindowStart: record.arrivalWindowStart,
-    arrivalWindowEnd: record.arrivalWindowEnd,
+    arrivalWindowStart: hasStart ? (record.arrivalWindowStart as string) : undefined,
+    arrivalWindowEnd: hasEnd ? (record.arrivalWindowEnd as string) : undefined,
     expectedDurationMinutes: record.expectedDurationMinutes,
     proposedCrewSize: record.proposedCrewSize,
     payType: record.payType,
@@ -423,9 +425,12 @@ function readDraftCleanerDetails(value: unknown): DraftCleanerDetail[] | undefin
   const details = value.flatMap((item): DraftCleanerDetail[] => {
     if (!item || typeof item !== "object") return [];
     const record = item as Record<string, unknown>;
-    if (typeof record.cleanerId !== "string" || typeof record.arrivalWindowStart !== "string" || typeof record.arrivalWindowEnd !== "string") {
+    if (typeof record.cleanerId !== "string") {
       return [];
     }
+    const hasStart = typeof record.arrivalWindowStart === "string";
+    const hasEnd = typeof record.arrivalWindowEnd === "string";
+    if (hasStart !== hasEnd) return [];
     if (record.payType !== "FLAT" && record.payType !== "HOURLY") return [];
     if (typeof record.expectedDurationMinutes !== "number" || typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
       return [];
@@ -433,8 +438,8 @@ function readDraftCleanerDetails(value: unknown): DraftCleanerDetail[] | undefin
     return [
       {
         cleanerId: record.cleanerId,
-        arrivalWindowStart: record.arrivalWindowStart,
-        arrivalWindowEnd: record.arrivalWindowEnd,
+        arrivalWindowStart: hasStart ? (record.arrivalWindowStart as string) : undefined,
+        arrivalWindowEnd: hasEnd ? (record.arrivalWindowEnd as string) : undefined,
         expectedDurationMinutes: record.expectedDurationMinutes,
         proposedCrewSize: record.proposedCrewSize,
         payType: record.payType,

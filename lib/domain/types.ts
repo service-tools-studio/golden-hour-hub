@@ -187,8 +187,8 @@ export type Job = {
 
 export type DraftCleanerDetail = {
   cleanerId: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   proposedCrewSize: number;
   payType: PayType;
@@ -196,8 +196,8 @@ export type DraftCleanerDetail = {
 };
 
 export type AssignmentNotice = {
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   proposedCrewSize: number;
   payType: PayType;
@@ -231,8 +231,8 @@ export type JobAssignment = {
   attentionReason?: string;
   /** Week start (YYYY-MM-DD) when submitted availability did not cover this assignment. */
   availabilityConflictWeekStart?: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   payType: PayType;
   /** Cents. Flat: per person for the job. Hourly: per person per hour. */
@@ -260,8 +260,8 @@ export type StaffingTemplateMode = "INVITE" | "DIRECT" | "BLANK";
 export type StaffingTemplateEntry = {
   cleanerId: string;
   proposedCrewSize: number;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   payType: PayType;
   payPerPersonCents: number;

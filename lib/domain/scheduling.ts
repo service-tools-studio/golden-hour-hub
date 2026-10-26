@@ -1,3 +1,4 @@
+import { isUnsetArrival } from "./arrival.ts";
 import { maxCrewSize } from "./cleaners.ts";
 import { confirmedCompensationCents } from "./compensation.ts";
 import type {
@@ -29,8 +30,8 @@ export type AssignmentSchedule = {
   jobId: string;
   status: AssignmentStatus;
   serviceDate: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
 };
 
@@ -220,10 +221,11 @@ export function cleaningCoverage(
   let startUtc: Date | null = null;
   let endUtc: Date | null = null;
   for (const assignment of active) {
+    if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) continue;
     const blocked = calculateBlockedRange({
       date: assignment.serviceDate,
-      arrivalWindowStart: assignment.arrivalWindowStart,
-      arrivalWindowEnd: assignment.arrivalWindowEnd,
+      arrivalWindowStart: assignment.arrivalWindowStart!,
+      arrivalWindowEnd: assignment.arrivalWindowEnd!,
       expectedDurationMinutes: assignment.expectedDurationMinutes,
     });
     if (!startUtc || blocked.startUtc.getTime() < startUtc.getTime()) startUtc = blocked.startUtc;
@@ -372,14 +374,14 @@ export function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date
 
 export type AssignmentTiming = {
   serviceDate: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
 };
 
 /** Active cleaning time: from arrival window start through expected duration. */
 export function calculateLaborRange(input: AssignmentTiming): { startUtc: Date; endUtc: Date } {
-  const startUtc = zonedToUtc(input.serviceDate, input.arrivalWindowStart);
+  const startUtc = zonedToUtc(input.serviceDate, input.arrivalWindowStart!);
   const endUtc = new Date(startUtc.getTime() + input.expectedDurationMinutes * 60_000);
   return { startUtc, endUtc };
 }
@@ -398,12 +400,22 @@ export function detectConfirmedAssignmentConflict(input: {
   confirmedAssignments: AssignmentSchedule[];
   ignoreAssignmentId?: string;
 }): AssignmentSchedule | null {
-  const candidateLabor = calculateLaborRange(input.candidate);
+  if (isUnsetArrival(input.candidate.arrivalWindowStart, input.candidate.arrivalWindowEnd)) {
+    return null;
+  }
+  const candidateLabor = calculateLaborRange(input.candidate as AssignmentTiming & {
+    arrivalWindowStart: string;
+    arrivalWindowEnd: string;
+  });
   for (const assignment of input.confirmedAssignments) {
     if (assignment.cleanerId !== input.cleanerId) continue;
     if (assignment.status !== "CONFIRMED") continue;
     if (assignment.assignmentId === input.ignoreAssignmentId) continue;
-    const otherLabor = calculateLaborRange(assignmentTiming(assignment));
+    if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) continue;
+    const otherLabor = calculateLaborRange(assignmentTiming(assignment) as AssignmentTiming & {
+      arrivalWindowStart: string;
+      arrivalWindowEnd: string;
+    });
     if (
       rangesOverlap(
         candidateLabor.startUtc,
@@ -428,8 +440,14 @@ function assignmentTiming(assignment: AssignmentSchedule): AssignmentTiming {
 }
 
 function assignmentBlockedInput(assignment: AssignmentSchedule) {
+  if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return null;
   const timing = assignmentTiming(assignment);
-  return { date: timing.serviceDate, ...timing };
+  return {
+    date: timing.serviceDate,
+    arrivalWindowStart: timing.arrivalWindowStart!,
+    arrivalWindowEnd: timing.arrivalWindowEnd!,
+    expectedDurationMinutes: timing.expectedDurationMinutes,
+  };
 }
 
 export function validateAvailabilityWindows(
@@ -503,7 +521,9 @@ export function assignmentUncoveredByAvailability(
   windows: ScheduleWindow[],
 ): boolean {
   if (assignment.status !== "CONFIRMED") return false;
-  const blocked = calculateBlockedRange(assignmentBlockedInput(assignment));
+  const blockedInput = assignmentBlockedInput(assignment);
+  if (!blockedInput) return false;
+  const blocked = calculateBlockedRange(blockedInput);
   return !availabilityCoversBlockedRange(windows, blocked);
 }
 
@@ -513,7 +533,10 @@ export function subtractConfirmedBookingsFromAvailability(
 ): ScheduleWindow[] {
   const blocks = confirmedAssignments
     .filter((assignment) => assignment.status === "CONFIRMED")
-    .flatMap((assignment) => calculateBlockedRange(assignmentBlockedInput(assignment)).spans);
+    .flatMap((assignment) => {
+      const blockedInput = assignmentBlockedInput(assignment);
+      return blockedInput ? calculateBlockedRange(blockedInput).spans : [];
+    });
   let remaining = windows.map(windowToSpan).filter((span) => span.endMin > span.startMin);
   for (const block of blocks) {
     remaining = remaining.flatMap((span) => subtractSpan(span, block));

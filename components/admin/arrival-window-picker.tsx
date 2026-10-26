@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { minutesFromTime, timeFromMinutes } from "@/lib/domain/time";
-import { formatTimeLabel } from "@/lib/format";
+import { formatTimeLabel, VISIT_START_TIME_TBD_LABEL } from "@/lib/format";
 
 const WHEEL_ITEM = 36;
 const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
@@ -27,23 +27,33 @@ function clockTime(hour: number, minute: number, suffix: "AM" | "PM"): string {
 export function ArrivalWindowPicker({
   start,
   end,
+  startTbd,
   onChange,
+  onStartTbdChange,
 }: {
   start: string;
   end: string;
+  startTbd: boolean;
   onChange: (start: string, end: string) => void;
+  onStartTbdChange: (tbd: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const clock = clockParts(start);
   const minuteChoices = clock.suffix === "PM" && clock.hour === 11 ? [0] : MINUTES;
 
   function choose(patch: Partial<{ hour: number; minute: number; suffix: "AM" | "PM" }>) {
+    onStartTbdChange(false);
     const parts = { ...clock, ...patch };
     const minute = parts.suffix === "PM" && parts.hour === 11 ? 0 : parts.minute;
     const nextStart = clockTime(parts.hour, minute, parts.suffix);
     const startMin = Math.min(Math.max(minutesFromTime(nextStart), 0), 23 * 60 + 55);
     const time = timeFromMinutes(startMin);
     onChange(time, time);
+  }
+
+  function toggleTbd() {
+    onStartTbdChange(!startTbd);
+    if (!startTbd) setOpen(false);
   }
 
   return (
@@ -56,36 +66,58 @@ export function ArrivalWindowPicker({
           onClick={() => setOpen((current) => !current)}
           className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold ${open ? "bg-gold text-ink" : "bg-ink/8 text-ink"}`}
         >
-          {formatTimeLabel(start)}
+          {startTbd ? VISIT_START_TIME_TBD_LABEL : formatTimeLabel(start)}
         </button>
       </div>
       {open ? (
-        <div className="relative mt-3">
-          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-9 -translate-y-1/2 rounded-lg bg-ink/8" />
-          <div className="flex gap-2">
-            <TimeWheel
-              label="Hour"
-              options={HOURS.map((hour) => ({ value: String(hour), label: String(hour) }))}
-              value={String(clock.hour)}
-              onChange={(value) => choose({ hour: Number(value) })}
-            />
-            <TimeWheel
-              label="Minute"
-              options={(minuteChoices.includes(clock.minute) ? minuteChoices : [clock.minute, ...minuteChoices].sort((a, b) => a - b)).map(
-                (minute) => ({ value: String(minute), label: String(minute).padStart(2, "0") }),
-              )}
-              value={String(clock.minute)}
-              onChange={(value) => choose({ minute: Number(value) })}
-            />
-            <TimeWheel
-              label="AM or PM"
-              options={[
-                { value: "AM", label: "AM" },
-                { value: "PM", label: "PM" },
-              ]}
-              value={clock.suffix}
-              onChange={(value) => choose({ suffix: value === "PM" ? "PM" : "AM" })}
-            />
+        <div className="mt-3 space-y-3">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={startTbd}
+            onClick={toggleTbd}
+            className="flex w-full items-center justify-between gap-3 rounded-2xl bg-cream px-3 py-2.5 text-left"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-ink">{VISIT_START_TIME_TBD_LABEL}</span>
+              <span className="mt-0.5 block text-xs text-ink/60">Leave the start time unset on this assignment</span>
+            </span>
+            <span
+              className={`flex h-7 w-12 shrink-0 rounded-full p-0.5 ${startTbd ? "bg-ink" : "bg-ink/25"}`}
+              aria-hidden="true"
+            >
+              <span
+                className={`block size-6 rounded-full bg-white shadow transition-transform ${startTbd ? "translate-x-5" : ""}`}
+              />
+            </span>
+          </button>
+          <div className="relative">
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-9 -translate-y-1/2 rounded-lg bg-ink/8" />
+            <div className={`flex gap-2 transition-opacity ${startTbd ? "opacity-40" : ""}`}>
+              <TimeWheel
+                label="Hour"
+                options={HOURS.map((hour) => ({ value: String(hour), label: String(hour) }))}
+                value={String(clock.hour)}
+                onChange={(value) => choose({ hour: Number(value) })}
+              />
+              <TimeWheel
+                label="Minute"
+                options={(minuteChoices.includes(clock.minute) ? minuteChoices : [clock.minute, ...minuteChoices].sort((a, b) => a - b)).map(
+                  (minute) => ({ value: String(minute), label: String(minute).padStart(2, "0") }),
+                )}
+                value={String(clock.minute)}
+                onChange={(value) => choose({ minute: Number(value) })}
+              />
+              <TimeWheel
+                label="AM or PM"
+                options={[
+                  { value: "AM", label: "AM" },
+                  { value: "PM", label: "PM" },
+                ]}
+                value={clock.suffix}
+                onChange={(value) => choose({ suffix: value === "PM" ? "PM" : "AM" })}
+              />
+            </div>
           </div>
         </div>
       ) : null}

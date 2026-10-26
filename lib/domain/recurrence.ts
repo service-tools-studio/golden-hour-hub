@@ -296,6 +296,13 @@ export function planOccurrenceStaffing(input: {
       continue;
     }
 
+    if (entry.arrivalWindowStart === undefined || entry.arrivalWindowEnd === undefined) {
+      const reason = "Choose a start time before assigning directly.";
+      attention.push({ cleanerId: cleaner.cleanerId, reason });
+      assignments.push(flaggedAssignment(input, entry, reason));
+      continue;
+    }
+
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: cleaner.cleanerId,
       candidate: {

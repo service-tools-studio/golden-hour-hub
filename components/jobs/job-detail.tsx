@@ -276,16 +276,18 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               const noticeKey = assignmentNoticeDismissKey(assignment);
               const showNotice = Boolean(gap) && !dismissedNotices.has(noticeKey);
               const attentionMessage =
-                liveAvailabilityAttentionMessage({
-                  assignment,
-                  cleaner,
-                  serviceDate: assignment.serviceDate,
-                  windows: windowsForCleaner(hub.availability, cleaner.cleanerId),
-                  confirmedAssignments: hub.assignments,
-                  arrivalWindowStart: assignment.arrivalWindowStart,
-                  arrivalWindowEnd: assignment.arrivalWindowEnd,
-                  expectedDurationMinutes: assignment.expectedDurationMinutes,
-                }) ??
+                (assignment.arrivalWindowStart && assignment.arrivalWindowEnd
+                  ? liveAvailabilityAttentionMessage({
+                      assignment,
+                      cleaner,
+                      serviceDate: assignment.serviceDate,
+                      windows: windowsForCleaner(hub.availability, cleaner.cleanerId),
+                      confirmedAssignments: hub.assignments,
+                      arrivalWindowStart: assignment.arrivalWindowStart,
+                      arrivalWindowEnd: assignment.arrivalWindowEnd,
+                      expectedDurationMinutes: assignment.expectedDurationMinutes,
+                    })
+                  : null) ??
                 (isConfirmedScheduleConflictReason(assignment.attentionReason) ? null : assignment.attentionReason);
               return (
                 <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
@@ -485,8 +487,8 @@ function editPath(jobId: string, from: CleaningOrigin | undefined, params: Recor
 }
 
 function cleanerArrivals(
-  job: { jobId: string; draftCleanerDetails?: { cleanerId: string; arrivalWindowStart: string; arrivalWindowEnd: string }[] },
-  assignments: { jobId: string; cleanerId: string; status: string; arrivalWindowStart: string; arrivalWindowEnd: string }[],
+  job: { jobId: string; draftCleanerDetails?: { cleanerId: string; arrivalWindowStart?: string; arrivalWindowEnd?: string }[] },
+  assignments: { jobId: string; cleanerId: string; status: string; arrivalWindowStart?: string; arrivalWindowEnd?: string }[],
   cleaners: { cleanerId: string; firstName: string }[],
 ): { firstName: string; start: string; end: string }[] {
   const windows: { firstName: string; start: string; end: string }[] = [];
@@ -496,13 +498,13 @@ function cleanerArrivals(
     if (assignment.status === "CANCELED" || assignment.status === "EXPIRED_JOB_FILLED" || assignment.status === "DECLINED") continue;
     covered.add(assignment.cleanerId);
     const cleaner = cleaners.find((item) => item.cleanerId === assignment.cleanerId);
-    if (!cleaner) continue;
+    if (!cleaner || !assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) continue;
     windows.push({ firstName: cleaner.firstName, start: assignment.arrivalWindowStart, end: assignment.arrivalWindowEnd });
   }
   for (const detail of job.draftCleanerDetails ?? []) {
     if (covered.has(detail.cleanerId)) continue;
     const cleaner = cleaners.find((item) => item.cleanerId === detail.cleanerId);
-    if (!cleaner) continue;
+    if (!cleaner || !detail.arrivalWindowStart || !detail.arrivalWindowEnd) continue;
     windows.push({ firstName: cleaner.firstName, start: detail.arrivalWindowStart, end: detail.arrivalWindowEnd });
   }
   return windows;
@@ -705,11 +707,14 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
     job.snapshot.bathrooms,
     job.snapshot.squareFeet,
   );
-  const estimatedEnd = formatEstimatedOnSiteEnd(
-    assignment.arrivalWindowStart,
-    assignment.arrivalWindowEnd,
-    assignment.expectedDurationMinutes,
-  );
+  const estimatedEnd =
+    assignment.arrivalWindowStart && assignment.arrivalWindowEnd
+      ? formatEstimatedOnSiteEnd(
+          assignment.arrivalWindowStart,
+          assignment.arrivalWindowEnd,
+          assignment.expectedDurationMinutes,
+        )
+      : null;
   const kelseyContact = kelseyContactLinks(
     kelseyPhoneDigits,
     cleanerTextKelseyAboutJobBody({
@@ -815,8 +820,8 @@ function ScheduleFacts({
 }: {
   muted?: boolean;
   date: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
 }) {
   const facts = formatScheduleFacts(input);

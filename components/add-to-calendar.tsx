@@ -4,15 +4,17 @@ import { useState } from "react";
 import { ActionSheet } from "@/components/action-sheet";
 import { fullAddress } from "@/components/address-link";
 import { type CalendarEvent, googleCalendarUrl, icsDownloadPath, outlookCalendarUrl } from "@/lib/calendar";
+import { isUnsetArrival } from "@/lib/domain/arrival";
 import { calculateBlockedRange } from "@/lib/domain/scheduling";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { cleanerServiceLabel, customerFirstNameForCleaner, formatArrival } from "@/lib/format";
 
-export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): CalendarEvent {
+export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): CalendarEvent | null {
+  if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return null;
   const range = calculateBlockedRange({
     date: assignment.serviceDate,
-    arrivalWindowStart: assignment.arrivalWindowStart,
-    arrivalWindowEnd: assignment.arrivalWindowEnd,
+    arrivalWindowStart: assignment.arrivalWindowStart!,
+    arrivalWindowEnd: assignment.arrivalWindowEnd!,
     expectedDurationMinutes: assignment.expectedDurationMinutes,
   });
   const notes = [
@@ -33,6 +35,7 @@ export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): Cale
 export function AddToCalendarButton({ job, assignment }: { job: Job; assignment: JobAssignment }) {
   const [open, setOpen] = useState(false);
   const event = cleaningCalendarEvent(job, assignment);
+  if (!event) return null;
   return (
     <>
       <button
