@@ -85,9 +85,10 @@ export function CleanerHome() {
 
   const cleaner = hub.cleaners.find((item) => item.cleanerId === hub.cleanerId);
   if (!cleaner) return null;
+  const cleanerId = cleaner.cleanerId;
 
   function dismissExpiredInvite(assignmentId: string) {
-    dismissExpiredInvitation(cleaner.cleanerId, assignmentId);
+    dismissExpiredInvitation(cleanerId, assignmentId);
     setDismissedExpiredIds((current) => new Set([...current, assignmentId]));
   }
   const availabilityWeeks = editableAvailabilityWeeks(hub.today);
