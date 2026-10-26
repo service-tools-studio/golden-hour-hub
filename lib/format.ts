@@ -63,6 +63,7 @@ export type CleanerCleaningSmsDetails = {
   state: string;
   zip: string;
   unit?: string;
+  specialInstructions?: string;
 };
 
 function cleanerCleaningSmsAddress(details: CleanerCleaningSmsDetails): string {
@@ -101,6 +102,10 @@ function cleanerCleaningSchedulingSmsBody(input: {
     "",
     cleanerCleaningSmsAddress(input.details),
   ];
+  const instructions = input.details.specialInstructions?.trim();
+  if (instructions) {
+    lines.push("", "Instructions:", instructions);
+  }
   if (input.footer) {
     lines.push("", input.footer);
   }
@@ -417,6 +422,7 @@ export function cleanerCleaningSmsDetails(input: {
     JobCustomerSnapshot,
     "customerFirstName" | "customerDisplayName" | "streetAddress" | "city" | "state" | "zip" | "unit"
   >;
+  specialInstructions?: string;
 }): CleanerCleaningSmsDetails {
   return {
     date: input.date,
@@ -428,6 +434,7 @@ export function cleanerCleaningSmsDetails(input: {
     state: input.snapshot.state,
     zip: input.snapshot.zip,
     unit: input.snapshot.unit,
+    specialInstructions: input.specialInstructions?.trim() || undefined,
   };
 }
 
@@ -435,6 +442,7 @@ export function cleanerCleaningSmsDetailsFromJob(
   job: {
     date: string;
     serviceType: ServiceType;
+    specialInstructions?: string;
     snapshot: Pick<
       JobCustomerSnapshot,
       "customerFirstName" | "customerDisplayName" | "streetAddress" | "city" | "state" | "zip" | "unit"
@@ -448,6 +456,7 @@ export function cleanerCleaningSmsDetailsFromJob(
     arrivalWindowStart,
     serviceType: job.serviceType,
     snapshot: job.snapshot,
+    specialInstructions: job.specialInstructions,
   });
 }
 

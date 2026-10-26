@@ -15,6 +15,9 @@ Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}
 >
 > {address}
 >
+> Instructions:
+> {specialInstructions}
+>
 > Details are in the Golden Hour Hub app: {link}
 
 **Invitation**
@@ -53,6 +56,9 @@ Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}
 
 **Arrival time changed**
 
+>
+> Instructions:
+> {specialInstructions}
 > Hi {cleanerFirstName}! Golden Hour Hub here.
 > This cleaning has been updated:
 >
@@ -64,6 +70,9 @@ Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}
 
 **Availability reminder (next week)**
 
+>
+> Instructions:
+> {specialInstructions}
 > Hi {cleanerFirstName}! Golden Hour Hub reminder: please submit your availability for next week ({weekRange}) by Sunday: {link}
 
 ## To customers (manual only — no server send)

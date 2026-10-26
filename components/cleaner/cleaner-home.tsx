@@ -80,14 +80,15 @@ export function CleanerHome() {
     );
     return calculateRemainingHeadcount(job.headcountNeeded, others) > 0;
   });
-  const waiting = hub.assignments.filter(
-    (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "PENDING_AVAILABILITY",
-  );
   const flagged = hub.assignments.filter(
     (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "NEEDS_ATTENTION",
   );
-  const confirmed = hub.assignments
-    .filter((assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "CONFIRMED")
+  const committed = hub.assignments
+    .filter(
+      (assignment) =>
+        assignment.cleanerId === cleaner.cleanerId &&
+        (assignment.status === "CONFIRMED" || assignment.status === "PENDING_AVAILABILITY"),
+    )
     .flatMap((assignment) => {
       const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
       return job ? [{ assignment, job }] : [];
@@ -97,15 +98,27 @@ export function CleanerHome() {
         a.assignment.serviceDate.localeCompare(b.assignment.serviceDate) ||
         a.assignment.arrivalWindowStart.localeCompare(b.assignment.arrivalWindowStart),
     );
+  const confirmed = committed.filter((item) => item.assignment.status === "CONFIRMED");
   const active = confirmed.filter((item) => item.job.status === "SCHEDULED");
   const happening = active.filter((item) => inProgress(item.assignment, now));
   const upcoming = active.filter(
     (item) => !happening.includes(item) && assignmentCountsAsUpcoming(item.assignment, item.job, hub.today, now),
   );
+  const waiting = committed.filter(
+    (item) =>
+      item.assignment.status === "PENDING_AVAILABILITY" &&
+      assignmentCountsAsUpcoming(item.assignment, item.job, hub.today, now),
+  );
   const upcomingIds = new Set(upcoming.map((item) => item.assignment.assignmentId));
   const happeningIds = new Set(happening.map((item) => item.assignment.assignmentId));
-  const history = confirmed
-    .filter((item) => !upcomingIds.has(item.assignment.assignmentId) && !happeningIds.has(item.assignment.assignmentId))
+  const waitingIds = new Set(waiting.map((item) => item.assignment.assignmentId));
+  const history = committed
+    .filter(
+      (item) =>
+        !upcomingIds.has(item.assignment.assignmentId) &&
+        !happeningIds.has(item.assignment.assignmentId) &&
+        !waitingIds.has(item.assignment.assignmentId),
+    )
     .sort(
       (a, b) =>
         b.assignment.serviceDate.localeCompare(a.assignment.serviceDate) ||
@@ -143,26 +156,22 @@ export function CleanerHome() {
         {waiting.length > 0 ? (
           <section className="space-y-3">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Waiting on availability</h2>
-            {waiting.map((assignment) => {
-              const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
-              if (!job) return null;
-              return (
-                <Link key={assignment.assignmentId} href={`/cleaner/jobs/${job.jobId}`} className="block">
-                  <Card>
-                    <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
-                    <p className="text-sm text-ink/70">
-                      {formatLongDate(job.date)} · {formatTimeLabel(assignment.arrivalWindowStart)}
-                      {(assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 1) > 1
-                        ? ` · ${assignment.pendingCrewSize ?? assignment.proposedCrewSize} people`
-                        : null}
-                    </p>
-                    <p className="mt-2 text-sm leading-5">
-                      {waitingOnAvailabilityCopy(hub.today, job.date)}
-                    </p>
-                  </Card>
-                </Link>
-              );
-            })}
+            {waiting.map(({ assignment, job }) => (
+              <Link key={assignment.assignmentId} href={`/cleaner/jobs/${job.jobId}`} className="block">
+                <Card>
+                  <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
+                  <p className="text-sm text-ink/70">
+                    {formatLongDate(assignment.serviceDate)} · {formatTimeLabel(assignment.arrivalWindowStart)}
+                    {(assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 1) > 1
+                      ? ` · ${assignment.pendingCrewSize ?? assignment.proposedCrewSize} people`
+                      : null}
+                  </p>
+                  <p className="mt-2 text-sm leading-5">
+                    {waitingOnAvailabilityCopy(hub.today, assignment.serviceDate)}
+                  </p>
+                </Card>
+              </Link>
+            ))}
           </section>
         ) : null}
 

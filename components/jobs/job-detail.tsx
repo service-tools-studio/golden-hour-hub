@@ -330,6 +330,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                                     arrivalWindowStart: assignment.arrivalWindowStart,
                                     serviceType: job.serviceType,
                                     snapshot: visit,
+                                    specialInstructions: job.specialInstructions,
                                   }),
                                 }),
                               ),

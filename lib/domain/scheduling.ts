@@ -154,7 +154,7 @@ export function assignmentCountsAsUpcoming(
   today: string,
   nowMs: number,
 ): boolean {
-  if (assignment.status !== "CONFIRMED") return false;
+  if (assignment.status !== "CONFIRMED" && assignment.status !== "PENDING_AVAILABILITY") return false;
   if (job.status !== "SCHEDULED") return false;
   const clock = assignmentCleaningClock(job, assignment);
   if (clock.date < today) return false;
