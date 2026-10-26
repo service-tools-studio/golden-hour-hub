@@ -763,12 +763,18 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
         </Card>
         <Card>
           {helpersApproved(cleaner.maxHelperCount) ? (
+            <p className="text-base">Confirmed crew size: {crewSize}</p>
+          ) : null}
+          {assignment.payType === "FLAT" ? (
             <>
-              <p className="text-base">Confirmed crew size: {crewSize}</p>
-              <p className="mt-1 text-sm text-ink/70">{assignmentPayPerPersonDetail(assignment, crewSize)}</p>
+              {helpersApproved(cleaner.maxHelperCount) ? (
+                <p className="mt-1 text-sm text-ink/70">{assignmentPayPerPersonDetail(assignment, crewSize)}</p>
+              ) : null}
+              <p className={`text-xl font-semibold ${helpersApproved(cleaner.maxHelperCount) ? "mt-2" : ""}`}>
+                {payLine(assignment, true, cleaner)}
+              </p>
             </>
           ) : null}
-          <p className="mt-2 text-xl font-semibold">{payLine(assignment, true, cleaner)}</p>
           <p className="mt-4 text-sm leading-5 text-ink/70">
             {helpersApproved(cleaner.maxHelperCount)
               ? "Need to change your schedule or crew? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."

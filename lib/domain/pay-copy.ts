@@ -59,11 +59,8 @@ export function cleanerInvitationPayLines(input: {
   perPersonCents: number;
   crewSize: number;
 }): string[] {
-  const hints = assignmentPayFieldHints(input);
-  if (input.bringsHelpers && input.payType === "HOURLY") {
-    return [`${formatMoney(input.crewTotalCents)} per hour`, ...hints];
-  }
-  return hints;
+  if (input.payType === "HOURLY") return [];
+  return assignmentPayFieldHints(input);
 }
 
 export function assignmentPaySummaryLine(

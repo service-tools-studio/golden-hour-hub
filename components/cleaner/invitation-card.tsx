@@ -205,13 +205,15 @@ function InvitationCardContent({
           <p className="mt-2 text-sm text-ink/60">
             This number includes you. The most for this invite is {attendance.max} {attendance.max === 1 ? "person" : "people"}.
           </p>
-          <div className="mt-3 space-y-1 text-base">
-            {invitePayLines.map((line) => (
-              <p key={line}>{line}</p>
-            ))}
-          </div>
+          {invitePayLines.length > 0 ? (
+            <div className="mt-3 space-y-1 text-base">
+              {invitePayLines.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          ) : null}
         </div>
-      ) : (
+      ) : invitePayLines.length > 0 ? (
         <div className="mt-4 space-y-1">
           {invitePayLines.map((line) => (
             <p key={line} className="text-base font-medium">
@@ -219,7 +221,7 @@ function InvitationCardContent({
             </p>
           ))}
         </div>
-      )}
+      ) : null}
       {message ? (
         <div className="mt-3">
           <Notice>{message}</Notice>

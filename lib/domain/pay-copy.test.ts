@@ -72,7 +72,17 @@ describe("pay copy", () => {
     );
   });
 
-  it("adds crew hourly total on invitations for helpers", () => {
+  it("hides pay on cleaner invitations when pay is hourly", () => {
+    assert.deepEqual(
+      cleanerInvitationPayLines({
+        bringsHelpers: false,
+        payType: "HOURLY",
+        crewTotalCents: 2500,
+        perPersonCents: 2500,
+        crewSize: 1,
+      }),
+      [],
+    );
     assert.deepEqual(
       cleanerInvitationPayLines({
         bringsHelpers: true,
@@ -81,7 +91,7 @@ describe("pay copy", () => {
         perPersonCents: 3500,
         crewSize: 2,
       }),
-      ["$70.00 per hour", "$35.00 per person per hour, 2 person crew"],
+      [],
     );
   });
 

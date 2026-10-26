@@ -36,6 +36,7 @@ import {
   VISIT_START_TIME_TBD_LABEL,
   formatLongDate,
   hourWindowLabel,
+  propertySizeLabel,
   serviceLabel,
 } from "@/lib/format";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
@@ -185,6 +186,9 @@ export function CleaningForm({
   const customer = hub.customers.find((item) => item.customerId === customerId);
   const homes = hub.properties.filter((item) => item.customerId === customerId && item.status === "ACTIVE");
   const property = homes.find((home) => home.propertyId === propertyId);
+  const propertySizeLine = property
+    ? propertySizeLabel(property.bedrooms, property.bathrooms, property.squareFeet)
+    : null;
   const cleanType = cleanTypeFor(serviceType);
   const quote =
     property && cleanType
@@ -601,17 +605,11 @@ export function CleaningForm({
                     +
                   </button>
                 </div>
-                {property.bedrooms !== 0 || property.bathrooms !== 0 || property.squareFeet !== 0 ? (
-                  <>
-                    <p className="mt-2 text-sm text-ink/70">
-                      {property.bedrooms} bed, {property.bathrooms} bath, {property.squareFeet.toLocaleString()} sq ft
-                    </p>
-                    <p className="text-sm text-ink/70">
-                      Estimated time on site is {estimate.text} with {headcount}{" "}
-                      {headcount === 1 ? "cleaner" : "cleaners"}.
-                    </p>
-                  </>
-                ) : null}
+                {propertySizeLine ? <p className="mt-2 text-sm text-ink/70">{propertySizeLine}</p> : null}
+                <p className={`text-sm text-ink/70 ${propertySizeLine ? "" : "mt-2"}`}>
+                  Estimated time on site is {estimate.text} with {headcount}{" "}
+                  {headcount === 1 ? "cleaner" : "cleaners"}.
+                </p>
               </div>
             ) : null}
 

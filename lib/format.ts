@@ -137,8 +137,11 @@ export function serviceLabel(serviceType: ServiceType): string {
 }
 
 export function propertySizeLabel(bedrooms: number, bathrooms: number, squareFeet: number): string | null {
-  if (bedrooms === 0 && bathrooms === 0 && squareFeet === 0) return null;
-  return `${bedrooms} bed · ${bathrooms} bath · ${squareFeet.toLocaleString()} sq ft`;
+  const parts: string[] = [];
+  if (bedrooms > 0) parts.push(`${bedrooms} bed`);
+  if (bathrooms > 0) parts.push(`${bathrooms} bath`);
+  if (squareFeet > 0) parts.push(`${squareFeet.toLocaleString()} sq ft`);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** Cleaners see recurring visits as a standard clean; recurrence is an admin scheduling detail. */
