@@ -28,6 +28,7 @@ import {
   type CustomerInput,
 } from "@/lib/domain/customers";
 import {
+  expireJobInvitesIfHeadcountMet,
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
   validateInvitationAcceptance,
@@ -1339,9 +1340,6 @@ export function HubProvider({
         assignment.status !== "EXPIRED_JOB_FILLED",
     );
     if (already) return { ok: false, message: "That cleaner is already assigned on this cleaning." };
-    if (input.mode === "DIRECT" && detail.proposedCrewSize > job.headcountNeeded) {
-      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
-    }
     const now = new Date().toISOString();
     const weekStart = mondayOf(job.date);
     const availabilityByCleaner: Record<string, { submitted: boolean; windows: { date: string; start: string; end: string }[] }> = {};
@@ -1385,7 +1383,10 @@ export function HubProvider({
       lastNotified: assignmentNotice(detail),
       notifiedServiceDate: job.date,
     };
-    const nextAssignments = [...data.assignments, assignment];
+    let nextAssignments = [...data.assignments, assignment];
+    if (input.mode === "DIRECT" || assignment.status === "CONFIRMED" || assignment.status === "PENDING_AVAILABILITY") {
+      nextAssignments = expireJobInvitesIfHeadcountMet(nextAssignments, job.jobId, job.headcountNeeded, now);
+    }
     const next = withEarliestArrival(
       {
         ...job,
@@ -1437,9 +1438,6 @@ export function HubProvider({
     }
     const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
     if (!crew.ok) return crew;
-    if (input.mode === "DIRECT" && input.proposedCrewSize > job.headcountNeeded) {
-      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
-    }
     if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
       return { ok: false, message: "Enter the pay per person." };
     }
@@ -1568,6 +1566,12 @@ export function HubProvider({
       nextAssignments,
     );
     let assignments = nextAssignments;
+    if (
+      savedAssignment.status === "CONFIRMED" ||
+      savedAssignment.status === "PENDING_AVAILABILITY"
+    ) {
+      assignments = expireJobInvitesIfHeadcountMet(assignments, job.jobId, job.headcountNeeded, now);
+    }
     if (
       savedAssignment.status === "CONFIRMED" &&
       data.submissions.some((submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart)

@@ -239,7 +239,6 @@ export function planOccurrenceStaffing(input: {
 
   const assignments: JobAssignment[] = [];
   const attention: { cleanerId: string; reason: string }[] = [];
-  let confirmedPeople = 0;
 
   for (const entry of input.template) {
     const cleaner = input.cleaners.find((candidate) => candidate.cleanerId === entry.cleanerId);
@@ -273,13 +272,6 @@ export function planOccurrenceStaffing(input: {
           entry,
         ),
       );
-      continue;
-    }
-
-    if (confirmedPeople + entry.proposedCrewSize > input.headcountNeeded) {
-      const reason = `${cleaner.firstName}'s crew does not fit the remaining headcount.`;
-      attention.push({ cleanerId: cleaner.cleanerId, reason });
-      assignments.push(flaggedAssignment(input, entry, reason));
       continue;
     }
 
@@ -324,7 +316,6 @@ export function planOccurrenceStaffing(input: {
         entry,
       ),
     );
-    confirmedPeople += entry.proposedCrewSize;
   }
 
   return { assignments, attention };

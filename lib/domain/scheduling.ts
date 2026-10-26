@@ -176,6 +176,8 @@ export function validateRequestedCrewSize(input: {
   maxHelperCount: number;
   requestedCrewSize: number;
   remainingHeadcount: number;
+  /** When false, only the cleaner's approved crew size is enforced (direct assignments). */
+  enforceJobHeadcount?: boolean;
 }): Result<{ ok: true }> {
   if (!Number.isInteger(input.requestedCrewSize) || input.requestedCrewSize < 1) {
     return { ok: false, message: "Choose how many people from your crew can attend." };
@@ -187,12 +189,14 @@ export function validateRequestedCrewSize(input: {
       message: ceiling === 1 ? "You can only attend on your own for this job." : `Your approved crew size is ${ceiling}.`,
     };
   }
-  if (input.remainingHeadcount <= 0 || input.requestedCrewSize > input.remainingHeadcount) {
-    if (input.remainingHeadcount <= 0) {
-      return { ok: false, message: "This job was just filled." };
+  if (input.enforceJobHeadcount !== false) {
+    if (input.remainingHeadcount <= 0 || input.requestedCrewSize > input.remainingHeadcount) {
+      if (input.remainingHeadcount <= 0) {
+        return { ok: false, message: "This job was just filled." };
+      }
+      const spots = input.remainingHeadcount === 1 ? "1 spot is" : `${input.remainingHeadcount} spots are`;
+      return { ok: false, message: `Only ${spots} still open.` };
     }
-    const spots = input.remainingHeadcount === 1 ? "1 spot is" : `${input.remainingHeadcount} spots are`;
-    return { ok: false, message: `Only ${spots} still open.` };
   }
   return { ok: true };
 }

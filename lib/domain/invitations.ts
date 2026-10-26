@@ -161,6 +161,18 @@ export function expireRemainingInvitationsWhenFilled(
   );
 }
 
+/** After staffing changes on a job, expire outstanding invites when headcount is met. */
+export function expireJobInvitesIfHeadcountMet(
+  assignments: JobAssignment[],
+  jobId: string,
+  headcountNeeded: number,
+  nowIso: string,
+): JobAssignment[] {
+  const onJob = assignments.filter((assignment) => assignment.jobId === jobId);
+  const settled = expireRemainingInvitationsWhenFilled(onJob, headcountNeeded, nowIso);
+  return [...assignments.filter((assignment) => assignment.jobId !== jobId), ...settled];
+}
+
 export function availabilityFollowUpReason(
   firstName: string,
   weekStart: string,
@@ -343,13 +355,8 @@ function pendingFailureReason(input: {
   const crew = validateRequestedCrewSize({
     maxHelperCount: input.cleaner.maxHelperCount,
     requestedCrewSize: input.crewSize,
-    remainingHeadcount: calculateRemainingHeadcount(
-      input.job.headcountNeeded,
-      input.assignments.filter(
-        (assignment) =>
-          assignment.jobId === input.job!.jobId && assignment.assignmentId !== input.assignment.assignmentId,
-      ),
-    ),
+    remainingHeadcount: input.crewSize,
+    enforceJobHeadcount: false,
   });
   if (!crew.ok) return { kind: "other", message: crew.message };
   const blocked = calculateBlockedRange({

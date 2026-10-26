@@ -5,7 +5,7 @@ import { useHub } from "@/components/hub-provider";
 import { InvitationCard } from "@/components/cleaner/invitation-card";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
-import { calculateBlockedRange, isWithinRange } from "@/lib/domain/scheduling";
+import { calculateBlockedRange, calculateRemainingHeadcount, isWithinRange } from "@/lib/domain/scheduling";
 import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { SmsOptInActionBanner } from "@/components/cleaner/sms-opt-in-action-banner";
@@ -56,9 +56,15 @@ export function CleanerHome() {
   const cleaner = hub.cleaners.find((item) => item.cleanerId === hub.cleanerId);
   if (!cleaner) return null;
   const availabilityWeeks = editableAvailabilityWeeks(hub.today);
-  const invitations = hub.assignments.filter(
-    (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "INVITED",
-  );
+  const invitations = hub.assignments.filter((assignment) => {
+    if (assignment.cleanerId !== cleaner.cleanerId || assignment.status !== "INVITED") return false;
+    const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
+    if (!job || job.status !== "SCHEDULED") return false;
+    const others = hub.assignments.filter(
+      (item) => item.jobId === job.jobId && item.assignmentId !== assignment.assignmentId,
+    );
+    return calculateRemainingHeadcount(job.headcountNeeded, others) > 0;
+  });
   const waiting = hub.assignments.filter(
     (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "PENDING_AVAILABILITY",
   );

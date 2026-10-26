@@ -302,6 +302,31 @@ describe("invitation acceptance", () => {
     assert.equal(filled.find((item) => item.assignmentId === "jessica")?.status, "DECLINED");
   });
 
+  it("confirms direct-assigned pending availability even when headcount is already met by others", () => {
+    const pending = invite({
+      status: "PENDING_AVAILABILITY",
+      pendingCrewSize: 1,
+      proposedCrewSize: 1,
+    });
+    const other = invite({
+      assignmentId: "other",
+      cleanerId: "other",
+      status: "CONFIRMED",
+      confirmedCrewSize: 1,
+    });
+    const settled = revalidatePendingAssignments({
+      assignments: [other, pending],
+      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 },
+      weekStart: "2026-09-28",
+      weekEnd: "2026-10-04",
+      windows: openWindow,
+      jobs: [{ jobId: "job-1", status: "SCHEDULED", headcountNeeded: 1 }],
+      nowIso: "2026-09-27T00:00:00.000Z",
+    });
+    assert.equal(settled.find((item) => item.assignmentId === pending.assignmentId)?.status, "CONFIRMED");
+    assert.notEqual(settled.find((item) => item.assignmentId === pending.assignmentId)?.attentionReason, "This job was just filled.");
+  });
+
   it("keeps direct-assigned pending availability when headcount is met", () => {
     const now = "2026-10-01T00:00:00.000Z";
     const filled = expireRemainingInvitationsWhenFilled(

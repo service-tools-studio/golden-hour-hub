@@ -65,7 +65,7 @@ Accept/decline → `hub.acceptInvitation` / `hub.declineInvitation` → domain `
 | **This invitation belongs to someone else.** | Wrong cleaner session vs assignment (or mock cross-user). |
 | **Choose how many people from your crew can attend.** | Crew stepper invalid. |
 | **You can only attend on your own for this job.** / **Your approved crew size is N.** | Crew size above helper approval. |
-| **This job was just filled.** / **Only N spot(s) still open.** | Headcount filled while viewing invite. |
+| **This job was just filled.** / **Only N spot(s) still open.** | Invite accept when job headcount is already met (not shown for direct assignments). |
 | **You already have a confirmed cleaning during this time.** | Overlapping confirmed job. |
 
 Decline failures use the same “no longer available” / “belongs to someone else” paths. Success toasts may include server `message` (not errors).
@@ -174,7 +174,7 @@ Typical path: **New cleaning** or **Edit cleaning** → **Save cleaning**.
 | **Set the headcount on this cleaning first.** | Job headcount 0. |
 | **Enter the pay per person.** | Missing pay on invite/direct. |
 | **The crew is larger than the headcount for this cleaning.** | Crew > job headcount. |
-| **`plan.attention[0].reason`** from `planOccurrenceStaffing` | Invite/direct blocked, e.g. **This cleaner is not active, so the cleaning was left unassigned.** / **{Name} is not approved to bring helpers…** / **{Name}'s crew does not fit the remaining headcount.** / **`This conflicts with another confirmed job for {Name}.`** |
+| **`plan.attention[0].reason`** from `planOccurrenceStaffing` | Invite/direct blocked, e.g. **This cleaner is not active, so the cleaning was left unassigned.** / **{Name} is not approved to bring helpers…** / **`This conflicts with another confirmed job for {Name}.`** |
 | **The cleaning could not be assigned.** | Planner produced no assignment. |
 | **{Name} has not submitted this week.** / **This schedule is outside {Name}'s submitted availability.** | Direct assign when availability rules fail. |
 
