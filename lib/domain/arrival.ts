@@ -19,6 +19,24 @@ export function validateArrivalWindow(
   return { ok: true, ...normalizeArrivalWindow(start) };
 }
 
+/** Visit-level start time may be unset until the admin picks a time or leaves it TBD. */
+export function validateOptionalVisitArrival(
+  start?: string,
+  end?: string,
+): Result<{ arrivalWindowStart?: string; arrivalWindowEnd?: string }> {
+  if (start === undefined && end === undefined) return { ok: true };
+  if (start === undefined || end === undefined) {
+    return { ok: false, message: "Enter a valid start time." };
+  }
+  const parsed = validateArrivalWindow(start, end);
+  if (!parsed.ok) return parsed;
+  return {
+    ok: true,
+    arrivalWindowStart: parsed.arrivalWindowStart,
+    arrivalWindowEnd: parsed.arrivalWindowEnd,
+  };
+}
+
 /** Whether the cleaner-facing assignment details match what they were last told. */
 export function assignmentNoticeInSync(lastNotified: AssignmentNotice, current: AssignmentNotice): boolean {
   return (

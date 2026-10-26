@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { Notice, PageHeader, Screen } from "@/components/ui";
-import { isValidDate, isValidLocalTime, minutesFromTime } from "@/lib/domain/time";
+import { isValidDate, isValidLocalTime, minutesFromTime, nextRoundHourStartInBusinessZone } from "@/lib/domain/time";
 import { formatLongDate } from "@/lib/format";
 
 export function CreateJobView({
@@ -35,7 +35,12 @@ export function CreateJobView({
   const propertyId = knownCustomer
     ? (hub.properties.find((item) => item.customerId === initialCustomerId && item.status === "ACTIVE")?.propertyId ?? "")
     : "";
-  const arrivalStart = fromAvailability && isValidLocalTime(start) ? start : "08:00";
+  const arrivalStart =
+    fromAvailability && isValidLocalTime(start)
+      ? start
+      : serviceDate === hub.today
+        ? nextRoundHourStartInBusinessZone()
+        : "08:00";
   const returnTo = fromAvailability
     ? `/admin/jobs/new?cleanerId=${cleanerId}&date=${date}&start=${start}&end=${end}`
     : `/admin/jobs/new?date=${serviceDate}`;
@@ -81,8 +86,8 @@ export function CreateJobView({
     serviceType: "DEEP_CLEAN",
     arrivalWindowStart: arrivalStart,
     arrivalWindowEnd: arrivalStart,
-    expectedDurationMinutes: 240,
     headcountNeeded: 1,
+    expectedDurationMinutes: 0,
     specialInstructions: "",
     cleanerIds: fromAvailability && cleaner ? [cleaner.cleanerId] : [],
   };

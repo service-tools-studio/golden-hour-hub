@@ -35,7 +35,7 @@ import {
   withAssignmentConfirmed,
   withAssignmentDeclined,
 } from "@/lib/domain/invitations";
-import { normalizeArrivalWindow, validateArrivalWindow } from "@/lib/domain/arrival";
+import { normalizeArrivalWindow, validateArrivalWindow, validateOptionalVisitArrival } from "@/lib/domain/arrival";
 import {
   dateMatchesRule,
   effectiveWeekRecurrence,
@@ -97,8 +97,8 @@ export type CreateJobInput = {
   customerId: string;
   propertyId: string;
   serviceType: ServiceType;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   headcountNeeded: number;
   expectedDurationMinutes: number;
   cleanerIds: string[];
@@ -137,8 +137,8 @@ export type UpdateVisitInput = {
   customerId: string;
   propertyId: string;
   serviceType: ServiceType;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   headcountNeeded: number;
   specialInstructions: string;
@@ -1163,7 +1163,7 @@ export function HubProvider({
       (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
     );
     if (!property) return { ok: false, message: "Choose one of this customer's properties." };
-    const arrivalTimes = validateArrivalWindow(input.arrivalWindowStart, input.arrivalWindowEnd);
+    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
     if (!arrivalTimes.ok) return arrivalTimes;
     if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
       return { ok: false, message: "Enter how many cleaners are needed." };
@@ -1178,6 +1178,9 @@ export function HubProvider({
     if (input.recurringSchedule) {
       if (input.serviceType !== "RECURRING") {
         return { ok: false, message: "Recurring schedule applies only to recurring cleans." };
+      }
+      if (arrivalTimes.arrivalWindowStart === undefined) {
+        return { ok: false, message: "Choose a start time before creating a recurring schedule." };
       }
       const headcountForSeries = input.headcountNeeded > 0 ? input.headcountNeeded : 1;
       if (headcountForSeries < 1) {
@@ -1218,6 +1221,11 @@ export function HubProvider({
     };
     const rule = validateRecurrenceRule(recurrence, input.date);
     if (!rule.ok) return rule;
+    const seriesArrivalStart = arrivalTimes.arrivalWindowStart;
+    const seriesArrivalEnd = arrivalTimes.arrivalWindowEnd;
+    if (seriesArrivalStart === undefined || seriesArrivalEnd === undefined) {
+      return { ok: false, message: "Choose a start time before creating a recurring schedule." };
+    }
     const seriesId = `series-${Date.now()}`;
     const series: RecurringSeries = {
       seriesId,
@@ -1227,8 +1235,8 @@ export function HubProvider({
       startDate: input.date,
       endMode: "UNTIL_CANCELED",
       defaultHeadcountNeeded: job.headcountNeeded,
-      defaultArrivalWindowStart: arrivalTimes.arrivalWindowStart,
-      defaultArrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
+      defaultArrivalWindowStart: seriesArrivalStart,
+      defaultArrivalWindowEnd: seriesArrivalEnd,
       defaultExpectedDurationMinutes: input.expectedDurationMinutes,
       defaultServiceType: "RECURRING",
       defaultSpecialInstructions: input.specialInstructions.trim() || undefined,
@@ -1676,7 +1684,7 @@ export function HubProvider({
     );
     if (!property) return { ok: false, message: "Choose one of this customer's properties." };
     if (!isValidDate(input.date)) return { ok: false, message: "Choose a date." };
-    const arrivalTimes = validateArrivalWindow(input.arrivalWindowStart, input.arrivalWindowEnd);
+    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
     if (!arrivalTimes.ok) return arrivalTimes;
     if (
       !Number.isInteger(input.expectedDurationMinutes) ||
@@ -1694,6 +1702,9 @@ export function HubProvider({
       }
       if (input.serviceType !== "RECURRING") {
         return { ok: false, message: "Recurring schedule applies only to recurring cleans." };
+      }
+      if (arrivalTimes.arrivalWindowStart === undefined) {
+        return { ok: false, message: "Choose a start time before creating a recurring schedule." };
       }
       const headcountForSeries = input.headcountNeeded > 0 ? input.headcountNeeded : 1;
       if (headcountForSeries < 1) {
@@ -1734,7 +1745,10 @@ export function HubProvider({
       if (!perCleaner.ok) return perCleaner;
     }
     const now = new Date().toISOString();
-    const arrival = { start: arrivalTimes.arrivalWindowStart, end: arrivalTimes.arrivalWindowEnd };
+    const arrival = {
+      start: arrivalTimes.arrivalWindowStart,
+      end: arrivalTimes.arrivalWindowEnd,
+    };
     const selected = new Set(cleanerIds);
     const nextAssignments = data.assignments.map((item) => {
       if (item.jobId !== job.jobId) return item;
@@ -1840,6 +1854,11 @@ export function HubProvider({
       };
       const rule = validateRecurrenceRule(recurrence, input.date);
       if (!rule.ok) return rule;
+      const seriesArrivalStart = arrivalTimes.arrivalWindowStart;
+      const seriesArrivalEnd = arrivalTimes.arrivalWindowEnd;
+      if (seriesArrivalStart === undefined || seriesArrivalEnd === undefined) {
+        return { ok: false, message: "Choose a start time before creating a recurring schedule." };
+      }
       const seriesId = `series-${Date.now()}`;
       const series: RecurringSeries = {
         seriesId,
@@ -1849,8 +1868,8 @@ export function HubProvider({
         startDate: input.date,
         endMode: "UNTIL_CANCELED",
         defaultHeadcountNeeded: headcountNeeded,
-        defaultArrivalWindowStart: arrivalTimes.arrivalWindowStart,
-        defaultArrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
+        defaultArrivalWindowStart: seriesArrivalStart,
+        defaultArrivalWindowEnd: seriesArrivalEnd,
         defaultExpectedDurationMinutes: input.expectedDurationMinutes,
         defaultServiceType: "RECURRING",
         defaultSpecialInstructions: input.specialInstructions.trim() || undefined,

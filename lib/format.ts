@@ -184,6 +184,9 @@ export const ESTIMATED_ON_SITE_FIELD_HINT = "Counted from the scheduled start ti
 /** 1 hour through 12 hours in 30-minute steps (for admin duration selects). */
 export const ESTIMATED_ON_SITE_DURATION_MINUTES = Array.from({ length: 23 }, (_, index) => 60 + index * 30);
 
+/** Admin cleaning form: scheduled start not chosen yet. */
+export const VISIT_START_TIME_TBD_LABEL = "Time TBD";
+
 export function formatDurationSelectLabel(minutes: number): string {
   const hours = minutes / 60;
   if (hours === 1) return "1 hour";

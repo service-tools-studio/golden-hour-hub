@@ -579,6 +579,49 @@ describe("rolling eight-week horizon", () => {
     assert.equal(stopped.jobs[0].jobId, "job-past");
   });
 
+  it("drops upcoming jobs when a recurring series is paused", () => {
+    const today = "2026-10-26";
+    const upcoming = {
+      ...pastJob(),
+      jobId: "job-upcoming",
+      date: "2026-11-04",
+      status: "SCHEDULED" as const,
+    };
+    const assignment = {
+      assignmentId: "as-1",
+      jobId: "job-upcoming",
+      cleanerId: "claudia",
+      serviceDate: upcoming.date,
+      status: "CONFIRMED" as const,
+      proposedCrewSize: 1,
+      confirmedCrewSize: 1,
+      arrivalWindowStart: "09:00",
+      arrivalWindowEnd: "09:00",
+      expectedDurationMinutes: 240,
+      payType: "HOURLY" as const,
+      payPerPersonCents: 3000,
+      proposedTotalPayCents: 3000,
+      confirmedTotalPayCents: 3000,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+    const stopped = mergeRecurringHorizon({
+      today,
+      series: [series({ status: "INACTIVE" })],
+      jobs: [pastJob(), upcoming],
+      customers: [customer],
+      properties: [property],
+      cleaners: [],
+      availability: [],
+      submissions: [],
+      assignments: [assignment],
+      nowIso: "2026-10-26T00:00:00.000Z",
+    });
+    assert.equal(stopped.jobs.length, 1);
+    assert.equal(stopped.jobs[0].jobId, "job-past");
+    assert.equal(stopped.assignments.length, 0);
+  });
+
   it("does not recreate a deleted occurrence", () => {
     const today = "2026-09-28";
     const result = mergeRecurringHorizon({

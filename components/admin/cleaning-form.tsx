@@ -18,11 +18,22 @@ import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from 
 import { CustomerCombobox } from "@/components/admin/customer-combobox";
 import { searchCustomers } from "@/lib/domain/customers";
 import { recurrenceSummary } from "@/lib/domain/recurrence";
-import { addDays, dayOfWeek, eachDate, formatMonthYear, formatTimeLabel, minutesFromTime, sundayOf, timeFromMinutes } from "@/lib/domain/time";
+import {
+  addDays,
+  dayOfWeek,
+  eachDate,
+  formatMonthYear,
+  formatTimeLabel,
+  minutesFromTime,
+  nextRoundHourStartInBusinessZone,
+  sundayOf,
+  timeFromMinutes,
+} from "@/lib/domain/time";
 import type { JobAssignment, Property, ServiceType } from "@/lib/domain/types";
 import {
   ESTIMATED_ON_SITE_FIELD_HINT,
   ESTIMATED_ON_SITE_FIELD_LABEL,
+  VISIT_START_TIME_TBD_LABEL,
   formatLongDate,
   hourWindowLabel,
   serviceLabel,
@@ -44,8 +55,8 @@ export type CleaningValues = {
   customerId: string;
   propertyId: string;
   serviceType: ServiceType;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
   headcountNeeded: number;
   specialInstructions: string;
@@ -56,8 +67,10 @@ export type CleaningValues = {
   recurringSchedule?: { interval: 1 | 2 | 4 };
 };
 
-function roundUpToHour(hours: number): number {
-  return Math.max(1, Math.ceil(hours - 1e-9)) * 60;
+function initialDurationMinutes(minutes?: number): number | null {
+  if (minutes === undefined || minutes === 0) return null;
+  if (Number.isInteger(minutes) && minutes >= 30 && minutes <= 12 * 60) return minutes;
+  return null;
 }
 
 function trimHours(hours: number): string {
@@ -142,7 +155,10 @@ export function CleaningForm({
   const [customerId, setCustomerId] = useState(initial.customerId);
   const [propertyId, setPropertyId] = useState(initial.propertyId);
   const [serviceType, setServiceType] = useState<ServiceType>(initial.serviceType);
-  const opening = hardStartTime(initial.arrivalWindowStart);
+  const [arrivalStartTbd, setArrivalStartTbd] = useState(
+    !initial.arrivalWindowStart || !initial.arrivalWindowEnd,
+  );
+  const opening = hardStartTime(initial.arrivalWindowStart ?? "08:00");
   const [arrivalStart, setArrivalStart] = useState(opening.start);
   const [arrivalEnd, setArrivalEnd] = useState(opening.end);
   const [picker, setPicker] = useState<"date" | "time" | null>(null);
@@ -150,7 +166,7 @@ export function CleaningForm({
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [headcount, setHeadcount] = useState(initial.headcountNeeded > 0 ? initial.headcountNeeded : 1);
-  const [duration, setDuration] = useState(initial.expectedDurationMinutes);
+  const [duration, setDuration] = useState<number | null>(initialDurationMinutes(initial.expectedDurationMinutes));
   const [headcountFor, setHeadcountFor] = useState(estimateOnLoad ? "" : "ready");
   const [draftCleanerIds, setDraftCleanerIds] = useState<string[]>(initial.cleanerIds);
   const [cleanerArrivals, setCleanerArrivals] = useState<CleanerArrival[]>(initial.cleanerArrivals ?? []);
@@ -182,18 +198,12 @@ export function CleaningForm({
   const estimate = quote ? onSiteHours(quote, headcount) : null;
   function changeHeadcount(next: number) {
     setHeadcount(next);
-    if (quote) setDuration(roundUpToHour(onSiteHours(quote, next).high));
     setMessage(null);
   }
   const suggestionKey = property && cleanType ? `${property.propertyId}:${cleanType}` : "";
   if (headcountFor !== "ready" && suggestionKey !== headcountFor) {
     setHeadcountFor(suggestionKey);
-    if (quote) {
-      setHeadcount(quote.time.cleaners);
-      setDuration(roundUpToHour(quote.time.hoursHigh));
-    } else {
-      setDuration(240);
-    }
+    if (quote) setHeadcount(quote.time.cleaners);
   } else if (headcountFor === "ready") {
     setHeadcountFor(suggestionKey);
   }
@@ -203,6 +213,7 @@ export function CleaningForm({
     customerId,
     propertyId,
     serviceType,
+    arrivalStartTbd,
     arrivalStart,
     arrivalEnd,
     instructions,
@@ -254,7 +265,16 @@ export function CleaningForm({
     });
   }
 
+  function chooseStartTbd() {
+    setArrivalStartTbd((on) => {
+      if (!on) setPicker(null);
+      return !on;
+    });
+    setMessage(null);
+  }
+
   function chooseStart(start: string) {
+    setArrivalStartTbd(false);
     const window = hardStartTime(start);
     setArrivalStart(window.start);
     setArrivalEnd(window.end);
@@ -292,9 +312,9 @@ export function CleaningForm({
       customerId,
       propertyId,
       serviceType,
-      arrivalWindowStart: arrivalStart,
-      arrivalWindowEnd: arrivalEnd,
-      expectedDurationMinutes: duration,
+      arrivalWindowStart: arrivalStartTbd ? undefined : arrivalStart,
+      arrivalWindowEnd: arrivalStartTbd ? undefined : arrivalEnd,
+      expectedDurationMinutes: duration ?? 0,
       headcountNeeded: quote ? headcount : 0,
       specialInstructions: instructions,
       cleanerIds: draftCleanerIds,
@@ -322,12 +342,23 @@ export function CleaningForm({
   }
 
   function submit(nextHref?: string) {
+    if (duration === null || !Number.isInteger(duration) || duration < 30 || duration > 12 * 60) {
+      setMessage("Choose an estimated cleaning time.");
+      return false;
+    }
+    if (allowRecurringSchedule && serviceType === "RECURRING" && recurringEnabled && arrivalStartTbd) {
+      setMessage("Choose a start time before creating a recurring schedule.");
+      return false;
+    }
     const parsedPrice = pricePerVisitCentsFromInput();
     if (parsedPrice === null) {
       setMessage("Enter a valid price per visit.");
       return false;
     }
-    const result = onSubmit({ ...values(), pricePerVisitCents: parsedPrice }, nextHref);
+    const result = onSubmit(
+      { ...values(), expectedDurationMinutes: duration, pricePerVisitCents: parsedPrice },
+      nextHref,
+    );
     if (!result.ok) {
       setMessage(result.message ?? "The cleaning could not be saved.");
       return false;
@@ -496,6 +527,7 @@ export function CleaningForm({
             <ArrivalStart
               date={date}
               start={arrivalStart}
+              startTbd={arrivalStartTbd}
               today={hub.today}
               picker={picker}
               onPicker={(next) => {
@@ -505,9 +537,13 @@ export function CleaningForm({
               onDate={(next) => {
                 setDate(next);
                 setMessage(null);
+                if (next === hub.today && !arrivalStartTbd) {
+                  chooseStart(nextRoundHourStartInBusinessZone());
+                }
                 onDateChange?.(next);
               }}
               onStart={chooseStart}
+              onStartTbd={chooseStartTbd}
             />
             {afterDate ? afterDate(date) : null}
             {afterArrival ? afterArrival(arrivalStart, arrivalEnd) : null}
@@ -516,7 +552,11 @@ export function CleaningForm({
               date={date}
               assignments={hub.assignments}
               windows={hub.availability.filter((window) => window.date === date)}
-              span={cleaningTimeSpan(arrivalStart, arrivalEnd, duration)}
+              span={
+                arrivalStartTbd || duration === null
+                  ? null
+                  : cleaningTimeSpan(arrivalStart, arrivalEnd, duration)
+              }
               selected={draftCleanerIds}
               arrivals={cleanerArrivals}
               jobStart={arrivalStart}
@@ -893,19 +933,23 @@ function clockTime(hour: number, minute: number, suffix: "AM" | "PM"): string {
 function ArrivalStart({
   date,
   start,
+  startTbd,
   today,
   picker,
   onPicker,
   onDate,
   onStart,
+  onStartTbd,
 }: {
   date: string;
   start: string;
+  startTbd: boolean;
   today: string;
   picker: "date" | "time" | null;
   onPicker: (picker: "date" | "time" | null) => void;
   onDate: (date: string) => void;
   onStart: (start: string) => void;
+  onStartTbd: () => void;
 }) {
   const clock = clockParts(start);
   const minuteChoices = clock.suffix === "PM" && clock.hour === 11 ? [0] : MINUTES;
@@ -935,7 +979,7 @@ function ArrivalStart({
             onClick={() => onPicker(picker === "time" ? null : "time")}
             className={`rounded-full px-3 py-1.5 text-sm font-semibold ${picker === "time" ? "bg-gold text-ink" : "bg-ink/8 text-ink"}`}
           >
-            {formatTimeLabel(start)}
+            {startTbd ? VISIT_START_TIME_TBD_LABEL : formatTimeLabel(start)}
           </button>
         </span>
       </div>
@@ -947,9 +991,30 @@ function ArrivalStart({
         />
       ) : null}
       {picker === "time" ? (
-        <div className="relative mt-3">
+        <div className="mt-3 space-y-3">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={startTbd}
+            onClick={onStartTbd}
+            className="flex w-full items-center justify-between gap-3 rounded-2xl bg-cream px-3 py-2.5 text-left"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-ink">{VISIT_START_TIME_TBD_LABEL}</span>
+              <span className="mt-0.5 block text-xs text-ink/60">Leave the start time unset on this cleaning</span>
+            </span>
+            <span
+              className={`flex h-7 w-12 shrink-0 rounded-full p-0.5 ${startTbd ? "bg-ink" : "bg-ink/25"}`}
+              aria-hidden="true"
+            >
+              <span
+                className={`block size-6 rounded-full bg-white shadow transition-transform ${startTbd ? "translate-x-5" : ""}`}
+              />
+            </span>
+          </button>
+          <div className="relative">
           <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-9 -translate-y-1/2 rounded-lg bg-ink/8" />
-          <div className="flex gap-2">
+          <div className={`flex gap-2 transition-opacity ${startTbd ? "opacity-40" : ""}`}>
           <TimeWheel
             label="Hour"
             options={HOURS.map((hour) => ({ value: String(hour), label: String(hour) }))}
@@ -973,6 +1038,7 @@ function ArrivalStart({
             value={clock.suffix}
             onChange={(value) => chooseClock({ suffix: value === "PM" ? "PM" : "AM" })}
           />
+          </div>
           </div>
         </div>
       ) : null}

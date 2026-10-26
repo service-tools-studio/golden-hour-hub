@@ -361,6 +361,39 @@ export function seriesScheduleChanged(
   );
 }
 
+/** Remove future occurrences for paused or canceled recurring series; keep past history. */
+export function removeUpcomingJobsForInactiveSeries(input: {
+  today: string;
+  series: RecurringSeries[];
+  jobs: Job[];
+  assignments: JobAssignment[];
+}): { jobs: Job[]; assignments: JobAssignment[] } {
+  const inactiveSeriesIds = new Set(
+    input.series.filter((item) => item.status !== "ACTIVE").map((item) => item.seriesId),
+  );
+  if (inactiveSeriesIds.size === 0) {
+    return { jobs: input.jobs, assignments: input.assignments };
+  }
+  const removedJobIds = new Set(
+    input.jobs
+      .filter(
+        (job) =>
+          job.seriesId &&
+          inactiveSeriesIds.has(job.seriesId) &&
+          job.date >= input.today &&
+          job.status !== "CANCELED",
+      )
+      .map((job) => job.jobId),
+  );
+  if (removedJobIds.size === 0) {
+    return { jobs: input.jobs, assignments: input.assignments };
+  }
+  return {
+    jobs: input.jobs.filter((job) => !removedJobIds.has(job.jobId)),
+    assignments: input.assignments.filter((assignment) => !removedJobIds.has(assignment.jobId)),
+  };
+}
+
 /** Drop upcoming series jobs that no longer fit the schedule (before regenerating the horizon). */
 export function removeStaleSeriesOccurrences(input: {
   today: string;
@@ -405,9 +438,15 @@ export function mergeRecurringHorizon(input: {
   assignments: JobAssignment[];
   nowIso: string;
 }): { series: RecurringSeries[]; jobs: Job[]; assignments: JobAssignment[] } {
+  const pruned = removeUpcomingJobsForInactiveSeries({
+    today: input.today,
+    series: input.series,
+    jobs: input.jobs,
+    assignments: input.assignments,
+  });
   const through = recurringHorizonThrough(input.today);
-  const jobs = [...input.jobs];
-  const assignments = [...input.assignments];
+  const jobs = [...pruned.jobs];
+  const assignments = [...pruned.assignments];
   const series = input.series.map((item) => ({ ...item }));
   let sequence = 0;
   const newId = () => `gen-${sequence++}`;

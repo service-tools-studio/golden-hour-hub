@@ -9,10 +9,11 @@ import {
   formatDurationSelectLabel,
 } from "@/lib/format";
 
-function durationOptions(current: number): number[] {
-  return ESTIMATED_ON_SITE_DURATION_MINUTES.includes(current)
-    ? ESTIMATED_ON_SITE_DURATION_MINUTES
-    : [current, ...ESTIMATED_ON_SITE_DURATION_MINUTES];
+function durationOptions(current: number | null): number[] {
+  if (current === null || ESTIMATED_ON_SITE_DURATION_MINUTES.includes(current)) {
+    return ESTIMATED_ON_SITE_DURATION_MINUTES;
+  }
+  return [current, ...ESTIMATED_ON_SITE_DURATION_MINUTES];
 }
 
 export function EstimatedDurationPicker({
@@ -20,7 +21,7 @@ export function EstimatedDurationPicker({
   onChange,
   id,
 }: {
-  value: number;
+  value: number | null;
   onChange: (minutes: number) => void;
   id?: string;
 }) {
@@ -43,7 +44,9 @@ export function EstimatedDurationPicker({
         onClick={() => setOpen(true)}
         className={`${fieldClass} flex items-center justify-between gap-2 text-left`}
       >
-        <span>{formatDurationSelectLabel(value)}</span>
+        <span className={value === null ? "text-ink/45" : undefined}>
+          {value === null ? "" : formatDurationSelectLabel(value)}
+        </span>
         <ChevronDown className="shrink-0 text-ink/45" />
       </button>
       {open
@@ -63,7 +66,11 @@ export function EstimatedDurationPicker({
                   <h2 id={titleId} className="text-lg font-semibold">Estimated cleaning time</h2>
                   <p className="mt-1 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
                 </div>
-                <ul className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2" role="listbox" aria-activedescendant={`duration-${value}`}>
+                <ul
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+                  role="listbox"
+                  aria-activedescendant={value === null ? undefined : `duration-${value}`}
+                >
                   {options.map((minutes) => {
                     const selected = minutes === value;
                     return (

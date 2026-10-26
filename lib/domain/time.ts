@@ -173,6 +173,18 @@ export function zonedParts(instant: Date): ZonedParts {
   return { year, month, day, hour, minute };
 }
 
+/** Whole-hour minute value for the current hour, or the next hour when past :00. */
+export function minutesAtNextRoundHour(hour: number, minute: number): number {
+  const nextHour = minute > 0 ? hour + 1 : hour;
+  return Math.min(Math.max(nextHour, 0), 23) * 60;
+}
+
+/** Default cleaning start when the visit is scheduled for today (business timezone). */
+export function nextRoundHourStartInBusinessZone(now = new Date()): string {
+  const { hour, minute } = zonedParts(now);
+  return timeFromMinutes(minutesAtNextRoundHour(hour, minute));
+}
+
 function civilStamp(year: number, month: number, day: number, hour: number, minute: number): number {
   return Date.UTC(year, month - 1, day, hour, minute);
 }
