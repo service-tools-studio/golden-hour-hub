@@ -165,6 +165,45 @@ export function assignmentCountsAsUpcoming(
   return nowMs < endMs;
 }
 
+/** Outstanding invite the cleaner can still accept or decline. */
+export function invitedAssignmentIsActionable(
+  assignment: Pick<
+    JobAssignment,
+    "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes"
+  >,
+  job: Pick<JobCleaningClock, "jobId" | "status">,
+  today: string,
+  nowMs: number,
+  remainingHeadcount: number,
+): boolean {
+  if (assignment.status !== "INVITED") return false;
+  if (job.status !== "SCHEDULED") return false;
+  if (remainingHeadcount <= 0) return false;
+  const clock = assignmentCleaningClock(job, assignment);
+  if (clock.date < today) return false;
+  if (clock.date > today) return true;
+  if (jobCleaningInProgress(clock, [], nowMs)) return true;
+  const endMs = jobCleaningEndMs(clock, []);
+  if (!Number.isFinite(endMs)) return true;
+  return nowMs < endMs;
+}
+
+/** Invite no longer actionable — past cleaning time, job filled, or marked expired. */
+export function cleanerInvitationIsExpired(
+  assignment: Pick<
+    JobAssignment,
+    "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes"
+  >,
+  job: Pick<JobCleaningClock, "jobId" | "status">,
+  today: string,
+  nowMs: number,
+  remainingHeadcount: number,
+): boolean {
+  if (assignment.status === "EXPIRED_JOB_FILLED") return true;
+  if (assignment.status !== "INVITED") return false;
+  return !invitedAssignmentIsActionable(assignment, job, today, nowMs, remainingHeadcount);
+}
+
 const COUNTS_TOWARD_JOB_TIME = new Set<AssignmentStatus>(["INVITED", "CONFIRMED"]);
 
 /** Earliest arrival-window start through the latest expected end, across cleaners still on the job. */

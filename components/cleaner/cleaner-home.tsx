@@ -1,23 +1,31 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useHub } from "@/components/hub-provider";
-import { InvitationCard } from "@/components/cleaner/invitation-card";
+import { ExpiredInvitationCard, InvitationCard } from "@/components/cleaner/invitation-card";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import {
   assignmentCountsAsUpcoming,
   calculateBlockedRange,
   calculateRemainingHeadcount,
+  cleanerInvitationIsExpired,
+  invitedAssignmentIsActionable,
   isWithinRange,
 } from "@/lib/domain/scheduling";
 import { editableAvailabilityWeeks, formatWeekRange, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { SmsOptInActionBanner } from "@/components/cleaner/sms-opt-in-action-banner";
+import {
+  dismissExpiredInvitation,
+  readDismissedExpiredInvitationIds,
+} from "@/lib/cleaner/expired-invitation-dismissals";
 import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
 import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
 import { kelseyContactLinks } from "@/lib/contact";
 import {
+  cleanerExpiredInvitationReason,
   cleanerServiceLabel,
   customerFirstNameForCleaner,
   formatLongDate,
@@ -68,18 +76,51 @@ export function CleanerHome() {
   const hub = useHub();
   const kelseyContact = kelseyContactLinks(useKelseyPhoneDigits());
   const now = useNow();
+  const [dismissedExpiredIds, setDismissedExpiredIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    if (!hub.cleanerId) return;
+    setDismissedExpiredIds(readDismissedExpiredInvitationIds(hub.cleanerId));
+  }, [hub.cleanerId]);
+
   const cleaner = hub.cleaners.find((item) => item.cleanerId === hub.cleanerId);
   if (!cleaner) return null;
+
+  function dismissExpiredInvite(assignmentId: string) {
+    dismissExpiredInvitation(cleaner.cleanerId, assignmentId);
+    setDismissedExpiredIds((current) => new Set([...current, assignmentId]));
+  }
   const availabilityWeeks = editableAvailabilityWeeks(hub.today);
-  const invitations = hub.assignments.filter((assignment) => {
-    if (assignment.cleanerId !== cleaner.cleanerId || assignment.status !== "INVITED") return false;
-    const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
-    if (!job || job.status !== "SCHEDULED") return false;
-    const others = hub.assignments.filter(
-      (item) => item.jobId === job.jobId && item.assignmentId !== assignment.assignmentId,
+  const invitationRows = hub.assignments
+    .filter(
+      (assignment) =>
+        assignment.cleanerId === cleaner.cleanerId &&
+        (assignment.status === "INVITED" || assignment.status === "EXPIRED_JOB_FILLED"),
+    )
+    .flatMap((assignment) => {
+      const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
+      if (!job) return [];
+      const others = hub.assignments.filter(
+        (item) => item.jobId === job.jobId && item.assignmentId !== assignment.assignmentId,
+      );
+      const remainingHeadcount = calculateRemainingHeadcount(job.headcountNeeded, others);
+      return [{ assignment, job, remainingHeadcount }];
+    });
+  const invitations = invitationRows.filter(({ assignment, job, remainingHeadcount }) =>
+    invitedAssignmentIsActionable(assignment, job, hub.today, now, remainingHeadcount),
+  );
+  const expiredInvitations = invitationRows
+    .filter(({ assignment, job, remainingHeadcount }) =>
+      cleanerInvitationIsExpired(assignment, job, hub.today, now, remainingHeadcount),
+    )
+    .sort(
+      (a, b) =>
+        b.assignment.serviceDate.localeCompare(a.assignment.serviceDate) ||
+        b.assignment.arrivalWindowStart.localeCompare(a.assignment.arrivalWindowStart),
     );
-    return calculateRemainingHeadcount(job.headcountNeeded, others) > 0;
-  });
+  const visibleExpiredInvitations = expiredInvitations.filter(
+    ({ assignment }) => !dismissedExpiredIds.has(assignment.assignmentId),
+  );
   const flagged = hub.assignments.filter(
     (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "NEEDS_ATTENTION",
   );
@@ -145,11 +186,9 @@ export function CleanerHome() {
             <p className="text-2xl font-semibold">
               {invitations.length} job {invitations.length === 1 ? "invitation" : "invitations"}
             </p>
-            {invitations.map((assignment) => {
-              const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
-              if (!job) return null;
-              return <InvitationCard key={assignment.assignmentId} assignment={assignment} job={job} cleaner={cleaner} />;
-            })}
+            {invitations.map(({ assignment, job }) => (
+              <InvitationCard key={assignment.assignmentId} assignment={assignment} job={job} cleaner={cleaner} />
+            ))}
           </section>
         ) : null}
 
@@ -263,6 +302,22 @@ export function CleanerHome() {
             );
           })}
         </section>
+
+        {visibleExpiredInvitations.length > 0 ? (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Expired invitations</h2>
+            {visibleExpiredInvitations.map(({ assignment, job, remainingHeadcount }) => (
+              <ExpiredInvitationCard
+                key={assignment.assignmentId}
+                assignment={assignment}
+                job={job}
+                cleaner={cleaner}
+                reason={cleanerExpiredInvitationReason(assignment, job, remainingHeadcount)}
+                onDismiss={() => dismissExpiredInvite(assignment.assignmentId)}
+              />
+            ))}
+          </section>
+        ) : null}
 
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Job history</h2>

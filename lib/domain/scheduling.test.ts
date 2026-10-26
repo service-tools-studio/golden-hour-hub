@@ -34,6 +34,8 @@ import {
   invitationAttendanceBounds,
   claimHeadcount,
   assignmentCountsAsUpcoming,
+  cleanerInvitationIsExpired,
+  invitedAssignmentIsActionable,
   jobCountsAsUpcoming,
   detectConfirmedAssignmentConflict,
   confirmedScheduleConflictReason,
@@ -126,6 +128,40 @@ describe("jobCountsAsUpcoming", () => {
       expectedDurationMinutes: 120,
     };
     assert.equal(assignmentCountsAsUpcoming(assignment, job, today, Date.now()), false);
+  });
+});
+
+describe("cleaner invitation expiry", () => {
+  const job = { jobId: "job-1", status: "SCHEDULED" as const };
+  const invite = {
+    status: "INVITED" as const,
+    serviceDate: "2026-10-24",
+    arrivalWindowStart: "09:00",
+    arrivalWindowEnd: "09:00",
+    expectedDurationMinutes: 300,
+  };
+
+  it("keeps future invites actionable when headcount is open", () => {
+    const today = "2026-10-20";
+    assert.equal(invitedAssignmentIsActionable(invite, job, today, Date.now(), 1), true);
+    assert.equal(cleanerInvitationIsExpired(invite, job, today, Date.now(), 1), false);
+  });
+
+  it("expires invites after the cleaning date", () => {
+    const today = "2026-10-26";
+    assert.equal(invitedAssignmentIsActionable(invite, job, today, Date.now(), 1), false);
+    assert.equal(cleanerInvitationIsExpired(invite, job, today, Date.now(), 1), true);
+  });
+
+  it("expires invites when headcount is full", () => {
+    const today = "2026-10-20";
+    assert.equal(invitedAssignmentIsActionable(invite, job, today, Date.now(), 0), false);
+    assert.equal(cleanerInvitationIsExpired(invite, job, today, Date.now(), 0), true);
+  });
+
+  it("treats EXPIRED_JOB_FILLED as expired", () => {
+    const filled = { ...invite, status: "EXPIRED_JOB_FILLED" as const };
+    assert.equal(cleanerInvitationIsExpired(filled, job, "2026-10-20", Date.now(), 1), true);
   });
 });
 

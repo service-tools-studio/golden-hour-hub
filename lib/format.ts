@@ -3,6 +3,7 @@ import type {
   AssignmentNotice,
   AssignmentStatus,
   CleanerProfile,
+  Job,
   JobAssignment,
   JobCustomerSnapshot,
   ServiceType,
@@ -284,6 +285,18 @@ export function relativeDay(date: string, today: string): string {
   if (date === today) return "Today";
   if (date === addDays(today, 1)) return "Tomorrow";
   return formatShortDate(date);
+}
+
+export function cleanerExpiredInvitationReason(
+  assignment: Pick<JobAssignment, "status">,
+  job: Pick<Job, "status">,
+  remainingHeadcount: number,
+): string {
+  if (assignment.status === "EXPIRED_JOB_FILLED" || remainingHeadcount <= 0) {
+    return "This job was filled.";
+  }
+  if (job.status !== "SCHEDULED") return "This cleaning was canceled.";
+  return "This invitation expired.";
 }
 
 export function assignmentStatusLabel(status: AssignmentStatus): string {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { NavigatingLink } from "@/components/navigating-link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
@@ -156,7 +157,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   return (
     <div className="space-y-3">
         <Card>
-          <Link href={editPath(job.jobId, from)} className="block">
+          <NavigatingLink href={editPath(job.jobId, from)} className="block">
             <ServiceLine serviceType={job.serviceType} prominent />
             <div className="mt-3">
               <p className="font-semibold">{visit.customerDisplayName}</p>
@@ -184,7 +185,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             {job.pricePerVisitCents !== undefined ? (
               <p className="mt-2 text-sm text-ink/70">Price per visit: {formatMoney(job.pricePerVisitCents)}</p>
             ) : null}
-          </Link>
+          </NavigatingLink>
           {arrivalFlag ? (
             <div className="mt-3 rounded-2xl bg-red-50 p-3">
               <p className="flex items-start gap-2 text-sm font-semibold text-red-700">
@@ -216,14 +217,14 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               )}
             </div>
           ) : null}
-          <Link href={editPath(job.jobId, from)} className="block">
+          <NavigatingLink href={editPath(job.jobId, from)} className="block">
             <div className="mt-3 flex items-start justify-between gap-3">
               <div className="text-sm font-semibold">
                 <p>Confirmed headcount: {confirmed} / {needed}</p>
               </div>
               {full ? <span className="rounded-full bg-mint px-3 py-1 text-sm font-semibold">Fully Staffed</span> : null}
             </div>
-          </Link>
+          </NavigatingLink>
           <div className="mt-4 space-y-4 border-t border-ink/10 pt-4">
             <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Cleaners</p>
             {pendingCleanerIds.length === 0 && assignments.length === 0 ? (
@@ -235,7 +236,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               const detail = job.draftCleanerDetails?.find((item) => item.cleanerId === cleanerId);
               return (
                 <div key={cleanerId} className="flex items-start justify-between gap-3">
-                  <Link href={editPath(job.jobId, from, { cleaner: cleanerId })} className="block min-w-0 flex-1">
+                  <NavigatingLink href={editPath(job.jobId, from, { cleaner: cleanerId })} className="block min-w-0 flex-1">
                     {detail ? (
                       <>
                         <p className="text-base font-semibold">
@@ -262,7 +263,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         </p>
                       </>
                     )}
-                  </Link>
+                  </NavigatingLink>
                   <RemoveCleaner jobId={job.jobId} cleanerId={cleanerId} />
                 </div>
               );
@@ -291,7 +292,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               return (
                 <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
                   <div className="min-w-0 flex-1">
-                    <Link href={editPath(job.jobId, from, { assignment: assignment.assignmentId })} className="block">
+                    <NavigatingLink href={editPath(job.jobId, from, { assignment: assignment.assignmentId })} className="block">
                       <p className="text-base font-semibold">
                         {cleaner.firstName} {cleaner.lastName}
                       </p>
@@ -312,7 +313,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         arrivalWindowEnd={assignment.arrivalWindowEnd}
                         expectedDurationMinutes={assignment.expectedDurationMinutes}
                       />
-                    </Link>
+                    </NavigatingLink>
                     {showNotice ? (
                       <NotifyCleanerNotice
                         firstName={cleaner.firstName}

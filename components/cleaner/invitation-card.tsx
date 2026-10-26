@@ -19,6 +19,30 @@ import {
 } from "@/lib/format";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
+export function ExpiredInvitationCard({
+  assignment,
+  job,
+  cleaner,
+  reason,
+  onDismiss,
+}: {
+  assignment: JobAssignment;
+  job: Job;
+  cleaner: CleanerProfile;
+  reason: string;
+  onDismiss?: () => void;
+}) {
+  return (
+    <InvitationCardContent
+      assignment={assignment}
+      job={job}
+      cleaner={cleaner}
+      expiredReason={reason}
+      onDismissExpired={onDismiss}
+    />
+  );
+}
+
 export function InvitationCard({
   assignment,
   job,
@@ -27,6 +51,22 @@ export function InvitationCard({
   assignment: JobAssignment;
   job: Job;
   cleaner: CleanerProfile;
+}) {
+  return <InvitationCardContent assignment={assignment} job={job} cleaner={cleaner} />;
+}
+
+function InvitationCardContent({
+  assignment,
+  job,
+  cleaner,
+  expiredReason,
+  onDismissExpired,
+}: {
+  assignment: JobAssignment;
+  job: Job;
+  cleaner: CleanerProfile;
+  expiredReason?: string;
+  onDismissExpired?: () => void;
 }) {
   const hub = useHub();
   const bringsHelpers = helpersApproved(cleaner.maxHelperCount);
@@ -80,9 +120,24 @@ export function InvitationCard({
     }
   }
 
+  const expired = Boolean(expiredReason);
+
   return (
-    <Card>
-      <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">New job available</p>
+    <Card className={expired ? "text-ink/75" : undefined}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">
+          {expired ? "Expired invitation" : "New job available"}
+        </p>
+        {expired && onDismissExpired ? (
+          <button
+            type="button"
+            onClick={onDismissExpired}
+            className="shrink-0 text-xs font-semibold text-ink/50 underline decoration-ink/25 underline-offset-2"
+          >
+            Dismiss
+          </button>
+        ) : null}
+      </div>
       <h3 className="mt-1 text-xl font-semibold">
         {customerFirstNameForCleaner(job.snapshot)} - {cleanerServiceLabel(job.serviceType)}
       </h3>
@@ -116,7 +171,7 @@ export function InvitationCard({
           </dd>
         </div>
       </dl>
-      {bringsHelpers ? (
+      {bringsHelpers && !expired ? (
         <div className="mt-4">
           <p className="text-sm text-ink/70">Number from your crew expected: {assignment.proposedCrewSize} people</p>
           <p className="mt-3 text-base font-medium">How many people from your crew can attend?</p>
@@ -164,24 +219,28 @@ export function InvitationCard({
           <Notice>{message}</Notice>
         </div>
       ) : null}
-      <div className="mt-4 space-y-2" aria-busy={pending !== null}>
-        <PrimaryButton
-          onClick={accept}
-          disabled={pending !== null}
-          loading={pending === "accept"}
-          loadingLabel="Accepting…"
-        >
-          {weekSubmitted ? (bringsHelpers ? "Confirm & Accept Job" : "Accept Job") : "I'll take this cleaning"}
-        </PrimaryButton>
-        <SecondaryButton
-          onClick={decline}
-          disabled={pending !== null}
-          loading={pending === "decline"}
-          loadingLabel="Declining…"
-        >
-          Decline
-        </SecondaryButton>
-      </div>
+      {expiredReason ? (
+        <p className="mt-4 text-sm leading-5 text-ink/70">{expiredReason}</p>
+      ) : (
+        <div className="mt-4 space-y-2" aria-busy={pending !== null}>
+          <PrimaryButton
+            onClick={accept}
+            disabled={pending !== null}
+            loading={pending === "accept"}
+            loadingLabel="Accepting…"
+          >
+            {weekSubmitted ? (bringsHelpers ? "Confirm & Accept Job" : "Accept Job") : "I'll take this cleaning"}
+          </PrimaryButton>
+          <SecondaryButton
+            onClick={decline}
+            disabled={pending !== null}
+            loading={pending === "decline"}
+            loadingLabel="Declining…"
+          >
+            Decline
+          </SecondaryButton>
+        </div>
+      )}
     </Card>
   );
 }
