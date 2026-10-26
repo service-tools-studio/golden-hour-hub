@@ -154,7 +154,7 @@ export function assignmentCountsAsUpcoming(
   today: string,
   nowMs: number,
 ): boolean {
-  if (assignment.status !== "CONFIRMED" && assignment.status !== "PENDING_AVAILABILITY") return false;
+  if (assignment.status !== "CONFIRMED") return false;
   if (job.status !== "SCHEDULED") return false;
   const clock = assignmentCleaningClock(job, assignment);
   if (clock.date < today) return false;
@@ -241,11 +241,12 @@ export function calculateInvitedHeadcount(
   }, 0);
 }
 
-/** Headcount that counts toward staffing the job (confirmed + direct-assigned awaiting availability). */
+/** Headcount that counts toward staffing the job (confirmed assignments only). */
 export function staffedCrewSize(
   assignment: Pick<JobAssignment, "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">,
 ): number {
   if (assignment.status === "CONFIRMED") return assignment.confirmedCrewSize ?? 0;
+  // Legacy rows stored before pending-availability was removed.
   if (assignment.status === "PENDING_AVAILABILITY") {
     return assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 0;
   }

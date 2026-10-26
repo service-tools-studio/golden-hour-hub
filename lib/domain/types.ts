@@ -206,6 +206,7 @@ export type AssignmentNotice = {
 
 export type AssignmentStatus =
   | "INVITED"
+  /** @deprecated Legacy stored rows only; new assignments are confirmed directly. */
   | "PENDING_AVAILABILITY"
   | "CONFIRMED"
   | "NEEDS_ATTENTION"

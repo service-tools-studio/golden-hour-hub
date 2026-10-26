@@ -323,7 +323,6 @@ export function planOccurrenceStaffing(input: {
       continue;
     }
 
-    const weekSubmitted = input.availabilityByCleaner[entry.cleanerId]?.submitted ?? false;
     assignments.push(
       buildAssignment(
         {
@@ -332,7 +331,6 @@ export function planOccurrenceStaffing(input: {
           mode: "DIRECT",
           nowIso: input.nowIso,
           newId: input.newId,
-          pendingAvailability: !weekSubmitted,
         },
         entry,
       ),
@@ -496,7 +494,6 @@ function buildAssignment(
     mode: Exclude<StaffingTemplateMode, "BLANK">;
     nowIso: string;
     newId: () => string;
-    pendingAvailability?: boolean;
   },
   entry: StaffingTemplateEntry,
 ): JobAssignment {
@@ -505,16 +502,14 @@ function buildAssignment(
     payPerPersonCents: entry.payPerPersonCents,
     confirmedCrewSize: entry.proposedCrewSize,
   });
-  const confirmed = input.mode === "DIRECT" && !input.pendingAvailability;
-  const pending = input.mode === "DIRECT" && input.pendingAvailability === true;
+  const confirmed = input.mode === "DIRECT";
   return {
     assignmentId: input.newId(),
     jobId: input.jobId,
     cleanerId: entry.cleanerId,
     serviceDate: input.serviceDate,
-    status: confirmed ? "CONFIRMED" : pending ? "PENDING_AVAILABILITY" : "INVITED",
+    status: confirmed ? "CONFIRMED" : "INVITED",
     proposedCrewSize: entry.proposedCrewSize,
-    pendingCrewSize: pending ? entry.proposedCrewSize : undefined,
     confirmedCrewSize: confirmed ? entry.proposedCrewSize : undefined,
     arrivalWindowStart: entry.arrivalWindowStart,
     arrivalWindowEnd: entry.arrivalWindowEnd,
@@ -524,7 +519,7 @@ function buildAssignment(
     proposedTotalPayCents,
     confirmedTotalPayCents: confirmed ? proposedTotalPayCents : undefined,
     invitedAt: input.nowIso,
-    respondedAt: confirmed || pending ? input.nowIso : undefined,
+    respondedAt: confirmed ? input.nowIso : undefined,
     createdAt: input.nowIso,
     updatedAt: input.nowIso,
   };

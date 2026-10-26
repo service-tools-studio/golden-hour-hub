@@ -7,7 +7,6 @@ import { Card, Notice, PrimaryButton, SecondaryButton } from "@/components/ui";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { confirmedCompensationCents } from "@/lib/domain/compensation";
 import { invitationAttendanceBounds } from "@/lib/domain/scheduling";
-import { mondayOf } from "@/lib/domain/time";
 import {
   cleanerInvitationPayLines,
   cleanerServiceLabel,
@@ -71,9 +70,6 @@ function InvitationCardContent({
   const hub = useHub();
   const bringsHelpers = helpersApproved(cleaner.maxHelperCount);
   const attendance = invitationAttendanceBounds(assignment.proposedCrewSize, cleaner.maxHelperCount);
-  const weekSubmitted = hub.submissions.some(
-    (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === mondayOf(job.date),
-  );
   const [crew, setCrew] = useState(attendance.default);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<"accept" | "decline" | null>(null);
@@ -229,7 +225,7 @@ function InvitationCardContent({
             loading={pending === "accept"}
             loadingLabel="Accepting…"
           >
-            {weekSubmitted ? (bringsHelpers ? "Confirm & Accept Job" : "Accept Job") : "I'll take this cleaning"}
+            {bringsHelpers ? "Confirm & Accept Job" : "Accept Job"}
           </PrimaryButton>
           <SecondaryButton
             onClick={decline}

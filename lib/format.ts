@@ -21,16 +21,11 @@ import { cleaningTimeSpan } from "./domain/availability";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import {
   addDays,
-  availabilityWeekBounds,
-  availabilityWeekOpensForEditing,
   formatHm,
   formatLongDate,
   formatShortDate,
   formatTimeLabel,
-  formatWeekRange,
-  isAvailabilityWeekEditable,
   minutesFromTime,
-  mondayOf,
   timeFromMinutes,
   zonedParts,
 } from "./domain/time";
@@ -167,16 +162,6 @@ export function cleanerHubAppUrl(path = "/cleaner"): string {
 /** Admin iMessage prefill — drop automated “Golden Hour Hub here.” opener. */
 export function manualCleanerSmsBody(body: string): string {
   return body.replace(/ Golden Hour Hub here\./g, "").replace(/ Golden Hour here\./g, "");
-}
-
-export function waitingOnAvailabilityCopy(today: string, serviceDate: string): string {
-  const week = availabilityWeekBounds(mondayOf(serviceDate));
-  const range = formatWeekRange(week.weekStart, week.weekEnd);
-  if (isAvailabilityWeekEditable(today, serviceDate)) {
-    return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submit the week of ${range} in Availability below.`;
-  }
-  const opens = availabilityWeekOpensForEditing(serviceDate);
-  return `You committed to this job. You're fully confirmed once your availability hours include this cleaning. Submitting availability for the week of ${range} isn't open in the app yet — you can submit it starting ${formatLongDate(opens)}.`;
 }
 
 export function serviceEmoji(serviceType: ServiceType): string | null {

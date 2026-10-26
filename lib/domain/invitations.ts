@@ -110,28 +110,6 @@ export function withAssignmentConfirmed(
   );
 }
 
-export function withAssignmentPendingAvailability(
-  assignments: JobAssignment[],
-  assignmentId: string,
-  pendingCrewSize: number,
-  nowIso: string,
-): JobAssignment[] {
-  return assignments.map((assignment) =>
-    assignment.assignmentId === assignmentId
-      ? {
-          ...assignment,
-          status: "PENDING_AVAILABILITY",
-          pendingCrewSize,
-          confirmedCrewSize: undefined,
-          confirmedTotalPayCents: undefined,
-          attentionReason: undefined,
-          respondedAt: nowIso,
-          updatedAt: nowIso,
-        }
-      : assignment,
-  );
-}
-
 export function withAssignmentDeclined(
   assignments: JobAssignment[],
   assignmentId: string,
@@ -146,7 +124,7 @@ export function withAssignmentDeclined(
 
 /**
  * When headcount is met, clear outstanding invites only.
- * Committed cleaners (confirmed, direct-assigned pending availability, needs attention) stay on the job.
+ * Committed cleaners (confirmed, needs attention) stay on the job.
  */
 export function expireRemainingInvitationsWhenFilled(
   assignments: JobAssignment[],
@@ -254,8 +232,8 @@ export function liveAvailabilityAttentionMessage(input: {
 }
 
 /**
- * After a week of availability is submitted, confirm pending rows that fit and flag
- * confirmed or pending assignments that no longer fit the submitted windows.
+ * After a week of availability is submitted, flag confirmed assignments that no longer
+ * fit the submitted windows or conflict with other confirmed work.
  */
 export function revalidatePendingAssignments(input: {
   assignments: JobAssignment[];
@@ -273,9 +251,7 @@ export function revalidatePendingAssignments(input: {
     .filter(
       (assignment) =>
         assignment.cleanerId === input.cleaner.cleanerId &&
-        (assignment.status === "PENDING_AVAILABILITY" ||
-          assignment.status === "CONFIRMED" ||
-          assignment.status === "NEEDS_ATTENTION") &&
+        (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION") &&
         ((assignment.serviceDate >= input.weekStart && assignment.serviceDate <= input.weekEnd) ||
           coveredDates.has(assignment.serviceDate)),
     )

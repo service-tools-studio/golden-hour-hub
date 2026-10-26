@@ -30,8 +30,16 @@ import {
   customerFirstNameForCleaner,
   formatLongDate,
   formatTimeLabel,
-  waitingOnAvailabilityCopy,
 } from "@/lib/format";
+
+function assignmentUpcomingClock(
+  assignment: JobAssignment,
+): Pick<JobAssignment, "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes"> {
+  if (assignment.status === "PENDING_AVAILABILITY") {
+    return { ...assignment, status: "CONFIRMED" };
+  }
+  return assignment;
+}
 
 const AVAILABILITY_MISMATCH_MESSAGE =
   "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
@@ -140,26 +148,20 @@ export function CleanerHome() {
         a.assignment.serviceDate.localeCompare(b.assignment.serviceDate) ||
         a.assignment.arrivalWindowStart.localeCompare(b.assignment.arrivalWindowStart),
     );
-  const confirmed = committed.filter((item) => item.assignment.status === "CONFIRMED");
-  const active = confirmed.filter((item) => item.job.status === "SCHEDULED");
+  const active = committed.filter((item) => item.job.status === "SCHEDULED");
   const happening = active.filter((item) => inProgress(item.assignment, now));
   const upcoming = active.filter(
-    (item) => !happening.includes(item) && assignmentCountsAsUpcoming(item.assignment, item.job, hub.today, now),
-  );
-  const waiting = committed.filter(
     (item) =>
-      item.assignment.status === "PENDING_AVAILABILITY" &&
-      assignmentCountsAsUpcoming(item.assignment, item.job, hub.today, now),
+      !happening.includes(item) &&
+      assignmentCountsAsUpcoming(assignmentUpcomingClock(item.assignment), item.job, hub.today, now),
   );
   const upcomingIds = new Set(upcoming.map((item) => item.assignment.assignmentId));
   const happeningIds = new Set(happening.map((item) => item.assignment.assignmentId));
-  const waitingIds = new Set(waiting.map((item) => item.assignment.assignmentId));
   const history = committed
     .filter(
       (item) =>
         !upcomingIds.has(item.assignment.assignmentId) &&
-        !happeningIds.has(item.assignment.assignmentId) &&
-        !waitingIds.has(item.assignment.assignmentId),
+        !happeningIds.has(item.assignment.assignmentId),
     )
     .sort(
       (a, b) =>
@@ -189,28 +191,6 @@ export function CleanerHome() {
             </p>
             {invitations.map(({ assignment, job }) => (
               <InvitationCard key={assignment.assignmentId} assignment={assignment} job={job} cleaner={cleaner} />
-            ))}
-          </section>
-        ) : null}
-
-        {waiting.length > 0 ? (
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Waiting on availability</h2>
-            {waiting.map(({ assignment, job }) => (
-              <Link key={assignment.assignmentId} href={`/cleaner/jobs/${job.jobId}`} className="block">
-                <Card>
-                  <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
-                  <p className="text-sm text-ink/70">
-                    {formatLongDate(assignment.serviceDate)} · {formatTimeLabel(assignment.arrivalWindowStart)}
-                    {(assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 1) > 1
-                      ? ` · ${assignment.pendingCrewSize ?? assignment.proposedCrewSize} people`
-                      : null}
-                  </p>
-                  <p className="mt-2 text-sm leading-5">
-                    {waitingOnAvailabilityCopy(hub.today, assignment.serviceDate)}
-                  </p>
-                </Card>
-              </Link>
             ))}
           </section>
         ) : null}

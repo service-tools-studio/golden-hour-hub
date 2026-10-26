@@ -158,11 +158,12 @@ describe("invitation acceptance", () => {
     if (withinNewMax.ok && withinNewMax.status === "CONFIRMED") assert.equal(withinNewMax.confirmedCrewSize, 2);
   });
 
-  it("confirms a pending assignment once availability fits and flags one that does not", () => {
-    const pending = invite({
-      status: "PENDING_AVAILABILITY",
+  it("flags confirmed assignments when submitted availability no longer fits crew or schedule", () => {
+    const oversized = invite({
+      status: "CONFIRMED",
       serviceDate: "2026-10-02",
-      pendingCrewSize: 3,
+      confirmedCrewSize: 3,
+      confirmedTotalPayCents: 15000,
       proposedCrewSize: 3,
     });
     const historical = invite({
@@ -176,13 +177,14 @@ describe("invitation acceptance", () => {
     const outside = invite({
       assignmentId: "outside",
       jobId: "job-outside",
-      status: "PENDING_AVAILABILITY",
+      status: "CONFIRMED",
       serviceDate: "2026-10-03",
-      pendingCrewSize: 1,
+      confirmedCrewSize: 1,
+      confirmedTotalPayCents: 5000,
       proposedCrewSize: 1,
     });
     const settled = revalidatePendingAssignments({
-      assignments: [pending, historical, outside],
+      assignments: [oversized, historical, outside],
       cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 1 },
       weekStart: "2026-09-28",
       weekEnd: "2026-10-04",
@@ -229,27 +231,29 @@ describe("invitation acceptance", () => {
     assert.equal(settled[0].availabilityConflictWeekStart, "2026-09-28");
   });
 
-  it("confirms a pending assignment on a covered day outside the submitted week", () => {
-    const pending = invite({
-      status: "PENDING_AVAILABILITY",
+  it("revalidates a confirmed assignment on a covered day outside the submitted week", () => {
+    const confirmed = invite({
+      status: "CONFIRMED",
       serviceDate: "2026-10-04",
-      pendingCrewSize: 1,
+      confirmedCrewSize: 1,
+      confirmedTotalPayCents: 5000,
       proposedCrewSize: 1,
       proposedTotalPayCents: 5000,
       arrivalWindowStart: "18:00",
       arrivalWindowEnd: "19:00",
       expectedDurationMinutes: 300,
     });
-    const untouched = invite({
+    const laterWeek = invite({
       assignmentId: "later",
       jobId: "job-later",
-      status: "PENDING_AVAILABILITY",
+      status: "CONFIRMED",
       serviceDate: "2026-10-12",
-      pendingCrewSize: 1,
+      confirmedCrewSize: 1,
+      confirmedTotalPayCents: 5000,
       proposedCrewSize: 1,
     });
     const settled = revalidatePendingAssignments({
-      assignments: [pending, untouched],
+      assignments: [confirmed, laterWeek],
       cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 0 },
       weekStart: "2026-10-05",
       weekEnd: "2026-10-11",
@@ -260,31 +264,11 @@ describe("invitation acceptance", () => {
       ],
       nowIso: "2026-10-04T00:00:00.000Z",
     });
-    const confirmed = settled.find((item) => item.assignmentId === "invite-1");
-    const waiting = settled.find((item) => item.assignmentId === "later");
-    assert.equal(confirmed?.status, "CONFIRMED");
-    assert.equal(confirmed?.confirmedCrewSize, 1);
-    assert.equal(waiting?.status, "PENDING_AVAILABILITY");
-  });
-
-  it("confirms a pending assignment that fits the newly submitted week", () => {
-    const pending = invite({
-      status: "PENDING_AVAILABILITY",
-      pendingCrewSize: 2,
-    });
-    const settled = revalidatePendingAssignments({
-      assignments: [pending],
-      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 },
-      weekStart: "2026-09-28",
-      weekEnd: "2026-10-04",
-      windows: openWindow,
-      jobs: [{ jobId: "job-1", status: "SCHEDULED", headcountNeeded: 3 }],
-      nowIso: "2026-09-27T00:00:00.000Z",
-    });
-    assert.equal(settled[0].status, "CONFIRMED");
-    assert.equal(settled[0].confirmedCrewSize, 2);
-    assert.equal(settled[0].confirmedTotalPayCents, 10000);
-    assert.equal(settled[0].pendingCrewSize, undefined);
+    const kept = settled.find((item) => item.assignmentId === "invite-1");
+    const untouched = settled.find((item) => item.assignmentId === "later");
+    assert.equal(kept?.status, "CONFIRMED");
+    assert.equal(kept?.confirmedCrewSize, 1);
+    assert.equal(untouched?.status, "CONFIRMED");
   });
 
   it("expires outstanding invites once headcount is met", () => {
@@ -302,32 +286,7 @@ describe("invitation acceptance", () => {
     assert.equal(filled.find((item) => item.assignmentId === "jessica")?.status, "DECLINED");
   });
 
-  it("confirms direct-assigned pending availability even when headcount is already met by others", () => {
-    const pending = invite({
-      status: "PENDING_AVAILABILITY",
-      pendingCrewSize: 1,
-      proposedCrewSize: 1,
-    });
-    const other = invite({
-      assignmentId: "other",
-      cleanerId: "other",
-      status: "CONFIRMED",
-      confirmedCrewSize: 1,
-    });
-    const settled = revalidatePendingAssignments({
-      assignments: [other, pending],
-      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 },
-      weekStart: "2026-09-28",
-      weekEnd: "2026-10-04",
-      windows: openWindow,
-      jobs: [{ jobId: "job-1", status: "SCHEDULED", headcountNeeded: 1 }],
-      nowIso: "2026-09-27T00:00:00.000Z",
-    });
-    assert.equal(settled.find((item) => item.assignmentId === pending.assignmentId)?.status, "CONFIRMED");
-    assert.notEqual(settled.find((item) => item.assignmentId === pending.assignmentId)?.attentionReason, "This job was just filled.");
-  });
-
-  it("keeps direct-assigned pending availability when headcount is met", () => {
+  it("keeps confirmed assignments when headcount is met", () => {
     const now = "2026-10-01T00:00:00.000Z";
     const filled = expireRemainingInvitationsWhenFilled(
       [
@@ -335,15 +294,15 @@ describe("invitation acceptance", () => {
         invite({
           assignmentId: "maria",
           cleanerId: "maria",
-          status: "PENDING_AVAILABILITY",
-          pendingCrewSize: 1,
+          status: "CONFIRMED",
+          confirmedCrewSize: 1,
           proposedCrewSize: 1,
         }),
       ],
       2,
       now,
     );
-    assert.equal(filled.find((item) => item.assignmentId === "maria")?.status, "PENDING_AVAILABILITY");
+    assert.equal(filled.find((item) => item.assignmentId === "maria")?.status, "CONFIRMED");
   });
 
   it("confirms only the selected occurrence", () => {

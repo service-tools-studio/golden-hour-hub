@@ -117,18 +117,6 @@ describe("jobCountsAsUpcoming", () => {
     assert.equal(assignmentCountsAsUpcoming(assignment, job, today, end), false);
   });
 
-  it("treats past pending-availability assignments as no longer upcoming", () => {
-    const today = "2026-10-26";
-    const job = { jobId: "job-1", status: "SCHEDULED" };
-    const assignment = {
-      status: "PENDING_AVAILABILITY" as const,
-      serviceDate: "2026-10-24",
-      arrivalWindowStart: "09:00",
-      arrivalWindowEnd: "09:00",
-      expectedDurationMinutes: 120,
-    };
-    assert.equal(assignmentCountsAsUpcoming(assignment, job, today, Date.now()), false);
-  });
 });
 
 describe("cleaner invitation expiry", () => {

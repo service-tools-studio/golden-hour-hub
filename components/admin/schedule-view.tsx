@@ -796,7 +796,7 @@ const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
 
 function pendingLabel(assignment: JobAssignment): string {
   if (assignment.attentionReason) return assignment.attentionReason;
-  if (assignment.status === "PENDING_AVAILABILITY") return "Committed, pending availability submission";
+  if (assignment.status === "PENDING_AVAILABILITY") return "Confirmed";
   if (assignment.status === "NEEDS_ATTENTION") return "Needs attention";
   return "Invitation pending";
 }

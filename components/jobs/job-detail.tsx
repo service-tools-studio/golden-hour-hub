@@ -20,7 +20,6 @@ import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
 import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
 import { kelseyContactLinks } from "@/lib/contact";
-import { isAvailabilityWeekEditable, mondayOf } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
 import {
@@ -57,7 +56,6 @@ import {
   cleanerRemovedFromJobSms,
   customerFirstNameForCleaner,
   manualCleanerSmsBody,
-  waitingOnAvailabilityCopy,
   cleanerServiceLabel,
   cleanerTextKelseyAboutJobBody,
   serviceLabel,
@@ -701,7 +699,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
   if (!cleaner || !job || !assignment) {
     return <Missing label="That cleaning could not be found." href="/cleaner" />;
   }
-  const pendingAvailability = assignment.status === "PENDING_AVAILABILITY";
+  const crewSize = assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize;
   const snapshotSizeLine = propertySizeLabel(
     job.snapshot.bedrooms,
     job.snapshot.bathrooms,
@@ -723,30 +721,17 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
       arrivalWindowEnd: assignment.arrivalWindowEnd,
       expectedDurationMinutes: assignment.expectedDurationMinutes,
       addressLine: fullAddress(job.snapshot),
-      payLine: payLine(assignment, !pendingAvailability, cleaner),
+      payLine: payLine(assignment, true, cleaner),
     }),
   );
   return (
     <Screen>
       <PageHeader
-        eyebrow={pendingAvailability ? "Your job" : "Confirmed job"}
+        eyebrow="Confirmed job"
         title={customerFirstNameForCleaner(job.snapshot)}
         subtitle={formatLongDate(job.date)}
       />
       <div className="space-y-3 px-5 pt-4">
-        {pendingAvailability ? (
-          <Card>
-            <p className="text-sm leading-5">{waitingOnAvailabilityCopy(hub.today, job.date)}</p>
-            {isAvailabilityWeekEditable(hub.today, job.date) ? (
-              <Link
-                href={`/cleaner/availability?week=${mondayOf(job.date)}`}
-                className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
-              >
-                Submit availability
-              </Link>
-            ) : null}
-          </Card>
-        ) : null}
         <Card>
           <ServiceLine serviceType={job.serviceType} forCleaner />
           <p className="mt-3 text-sm text-ink/60">Start time</p>
@@ -767,34 +752,22 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           {job.specialInstructions ? (
             <JobNoteBlock label="Instructions" text={job.specialInstructions} className="mt-2" />
           ) : null}
-          {pendingAvailability ? null : (
-            <div className="mt-4">
-              <AddToCalendarButton job={job} assignment={assignment} />
-            </div>
-          )}
+          <div className="mt-4">
+            <AddToCalendarButton job={job} assignment={assignment} />
+          </div>
         </Card>
         <Card>
           {helpersApproved(cleaner.maxHelperCount) ? (
             <>
-              <p className="text-base">
-                {pendingAvailability ? "Crew size" : "Confirmed crew size"}:{" "}
-                {assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize}
-              </p>
-              <p className="mt-1 text-sm text-ink/70">
-                {assignmentPayPerPersonDetail(
-                  assignment,
-                  assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize,
-                )}
-              </p>
+              <p className="text-base">Confirmed crew size: {crewSize}</p>
+              <p className="mt-1 text-sm text-ink/70">{assignmentPayPerPersonDetail(assignment, crewSize)}</p>
             </>
           ) : null}
-          <p className="mt-2 text-xl font-semibold">{payLine(assignment, !pendingAvailability, cleaner)}</p>
+          <p className="mt-2 text-xl font-semibold">{payLine(assignment, true, cleaner)}</p>
           <p className="mt-4 text-sm leading-5 text-ink/70">
-            {pendingAvailability
-              ? "Questions about this job? Contact Kelsey."
-              : helpersApproved(cleaner.maxHelperCount)
-                ? "Need to change your schedule or crew? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."
-                : "Need to change your schedule? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."}
+            {helpersApproved(cleaner.maxHelperCount)
+              ? "Need to change your schedule or crew? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."
+              : "Need to change your schedule? Confirmed bookings cannot be changed or canceled through the app. Please call Kelsey."}
           </p>
           {kelseyContact ? (
             <div className="mt-4 flex gap-2">

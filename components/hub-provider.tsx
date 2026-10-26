@@ -320,7 +320,6 @@ function assignmentSavedMessage(
   }
   if (assignment.status === "CONFIRMED") return "Cleaning assigned.";
   if (assignment.status === "INVITED") return "Invitation sent.";
-  if (assignment.status === "PENDING_AVAILABILITY" && mode === "DIRECT") return "Cleaning assigned.";
   return `Saved. Waiting for ${cleaner.firstName} to confirm.`;
 }
 
@@ -1388,7 +1387,7 @@ export function HubProvider({
       notifiedServiceDate: job.date,
     };
     let nextAssignments = [...data.assignments, assignment];
-    if (input.mode === "DIRECT" || assignment.status === "CONFIRMED" || assignment.status === "PENDING_AVAILABILITY") {
+    if (input.mode === "DIRECT" || assignment.status === "CONFIRMED") {
       nextAssignments = expireJobInvitesIfHeadcountMet(nextAssignments, job.jobId, job.headcountNeeded, now);
     }
     const next = withEarliestArrival(
@@ -1464,7 +1463,6 @@ export function HubProvider({
         let nextItem: JobAssignment = {
           ...item,
           proposedCrewSize: input.proposedCrewSize,
-          pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
           confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
           arrivalWindowStart: arrivalTimes.arrivalWindowStart,
           arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
@@ -1570,10 +1568,7 @@ export function HubProvider({
       nextAssignments,
     );
     let assignments = nextAssignments;
-    if (
-      savedAssignment.status === "CONFIRMED" ||
-      savedAssignment.status === "PENDING_AVAILABILITY"
-    ) {
+    if (savedAssignment.status === "CONFIRMED") {
       assignments = expireJobInvitesIfHeadcountMet(assignments, job.jobId, job.headcountNeeded, now);
     }
     if (
@@ -1982,7 +1977,6 @@ export function HubProvider({
       let nextItem: JobAssignment = {
         ...item,
         proposedCrewSize: input.proposedCrewSize,
-        pendingCrewSize: item.status === "PENDING_AVAILABILITY" ? input.proposedCrewSize : item.pendingCrewSize,
         confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
         arrivalWindowStart: arrivalTimes.arrivalWindowStart,
         arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
