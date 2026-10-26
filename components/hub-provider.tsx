@@ -34,7 +34,14 @@ import {
   withAssignmentConfirmed,
   withAssignmentDeclined,
 } from "@/lib/domain/invitations";
-import { dateMatchesRule, mergeRecurringHorizon, planOccurrenceStaffing, validateRecurrenceRule } from "@/lib/domain/recurrence";
+import {
+  dateMatchesRule,
+  mergeRecurringHorizon,
+  planOccurrenceStaffing,
+  removeStaleSeriesOccurrences,
+  seriesScheduleChanged,
+  validateRecurrenceRule,
+} from "@/lib/domain/recurrence";
 import {
   availabilityCoversBlockedRange,
   calculateBlockedRange,
@@ -1074,7 +1081,20 @@ export function HubProvider({
           }
         : item,
     );
-    const base = { ...data, series: nextSeries };
+    const updated = nextSeries.find((item) => item.seriesId === seriesId)!;
+    let jobs = data.jobs;
+    let assignments = data.assignments;
+    if (seriesScheduleChanged(series, updated)) {
+      const pruned = removeStaleSeriesOccurrences({
+        today: data.today,
+        series: updated,
+        jobs,
+        assignments,
+      });
+      jobs = pruned.jobs;
+      assignments = pruned.assignments;
+    }
+    const base = { ...data, series: nextSeries, jobs, assignments };
     const generated = mergeRecurringHorizon({
       ...base,
       today: data.today,

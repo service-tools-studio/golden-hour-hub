@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { calculateConfirmedHeadcount, calculateRemainingHeadcount } from "./scheduling.ts";
-import { addDays } from "./time.ts";
+import { addDays, dayOfWeek } from "./time.ts";
 import {
   calculateNextOccurrence,
   copyStaffingTemplateToOccurrence,
@@ -10,6 +10,7 @@ import {
   occurrenceAnchor,
   mergeRecurringHorizon,
   planOccurrenceStaffing,
+  removeStaleSeriesOccurrences,
   RECURRING_HORIZON_DAYS,
   recurrenceSummary,
   recurringHorizonThrough,
@@ -595,6 +596,41 @@ describe("rolling eight-week horizon", () => {
     assert.equal(result.jobs.some((job) => job.date === "2026-10-05"), false);
     assert.ok(result.jobs.some((job) => job.date === "2026-09-28"));
     assert.ok(result.jobs.some((job) => job.date === "2026-10-12"));
+  });
+
+  it("drops upcoming jobs on the old pattern when the series schedule changes", () => {
+    const today = "2026-09-28";
+    const current = series();
+    const futureMonday = { ...pastJob(), jobId: "job-mon", date: "2026-10-05" };
+    const updated = {
+      ...current,
+      recurrence: { frequency: "WEEK" as const, interval: 1, daysOfWeek: ["TUESDAY" as const] },
+      startDate: "2026-09-30",
+    };
+    const pruned = removeStaleSeriesOccurrences({
+      today,
+      series: updated,
+      jobs: [pastJob(), futureMonday],
+      assignments: [],
+    });
+    assert.equal(pruned.jobs.some((job) => job.jobId === "job-mon"), false);
+    assert.equal(pruned.jobs.some((job) => job.jobId === "job-past"), true);
+    const result = mergeRecurringHorizon({
+      today,
+      series: [updated],
+      jobs: pruned.jobs,
+      customers: [customer],
+      properties: [property],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availability: [],
+      submissions: [],
+      assignments: [],
+      nowIso: "2026-09-28T00:00:00.000Z",
+    });
+    assert.equal(result.jobs.some((job) => job.date === "2026-10-05"), false);
+    const upcoming = result.jobs.filter((job) => job.date >= today);
+    assert.ok(upcoming.length > 0);
+    assert.ok(upcoming.every((job) => dayOfWeek(job.date) === "TUESDAY"));
   });
 
   it("creates later cleanings on the weekday of the last one when no weekday is selected", () => {

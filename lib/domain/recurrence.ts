@@ -334,6 +334,52 @@ export function recurringHorizonThrough(today: string): string {
   return addDays(today, RECURRING_HORIZON_DAYS);
 }
 
+function recurrenceRuleSignature(rule: RecurrenceRule): string {
+  const days = rule.daysOfWeek ? [...rule.daysOfWeek].sort() : rule.daysOfWeek;
+  const ordinals = rule.weekOrdinals ? [...rule.weekOrdinals].sort() : rule.weekOrdinals;
+  return JSON.stringify({ ...rule, daysOfWeek: days, weekOrdinals: ordinals });
+}
+
+export function seriesScheduleChanged(
+  before: Pick<RecurringSeries, "recurrence" | "startDate" | "propertyId">,
+  after: Pick<RecurringSeries, "recurrence" | "startDate" | "propertyId">,
+): boolean {
+  return (
+    recurrenceRuleSignature(before.recurrence) !== recurrenceRuleSignature(after.recurrence) ||
+    before.startDate !== after.startDate ||
+    before.propertyId !== after.propertyId
+  );
+}
+
+/** Drop upcoming series jobs that no longer fit the schedule (before regenerating the horizon). */
+export function removeStaleSeriesOccurrences(input: {
+  today: string;
+  series: RecurringSeries;
+  jobs: Job[];
+  assignments: JobAssignment[];
+}): { jobs: Job[]; assignments: JobAssignment[] } {
+  const anchor = occurrenceAnchor(
+    input.series.startDate,
+    input.series.recurrence,
+    input.jobs
+      .filter((job) => job.seriesId === input.series.seriesId && job.status !== "CANCELED")
+      .map((job) => job.date),
+  );
+  const removedJobIds = new Set<string>();
+  const jobs = input.jobs.filter((job) => {
+    if (job.seriesId !== input.series.seriesId) return true;
+    if (job.status === "CANCELED") return true;
+    if (job.date < input.today) return true;
+    const matches =
+      job.propertyId === input.series.propertyId &&
+      dateMatchesRule(input.series.recurrence, job.date, anchor);
+    if (!matches) removedJobIds.add(job.jobId);
+    return matches;
+  });
+  const assignments = input.assignments.filter((assignment) => !removedJobIds.has(assignment.jobId));
+  return { jobs, assignments };
+}
+
 export function mergeRecurringHorizon(input: {
   today: string;
   series: RecurringSeries[];
