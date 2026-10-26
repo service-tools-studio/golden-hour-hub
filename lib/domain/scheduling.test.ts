@@ -689,8 +689,8 @@ describe("customers", () => {
 });
 
 describe("availability against a cleaning span", () => {
-  it("extends an 8–9 AM arrival by a 4-hour length from window start through noon", () => {
-    const span = cleaningTimeSpan("08:00", "09:00", 240);
+  it("extends an 8 AM start by a 4-hour length through noon", () => {
+    const span = cleaningTimeSpan("08:00", "08:00", 240);
     assert.deepEqual(span, { start: "08:00", end: "12:00" });
     assert.deepEqual(availabilityAgainstSpan([{ start: "08:00", end: "23:00" }], span), [
       { start: "08:00", end: "12:00", fits: true },

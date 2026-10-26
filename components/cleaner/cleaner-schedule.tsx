@@ -45,7 +45,7 @@ function ScheduleDayCard({
               <p className="font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
               <p className="text-sm text-cream/80">{cleanerServiceLabel(job.serviceType)}</p>
               <p className="text-sm text-cream/80">
-                Arrival window:{" "}
+                Start time:{" "}
                 <span className="whitespace-nowrap">
                   {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
                 </span>

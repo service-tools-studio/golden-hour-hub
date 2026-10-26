@@ -16,7 +16,7 @@ export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): Cale
     expectedDurationMinutes: assignment.expectedDurationMinutes,
   });
   const notes = [
-    `Arrival window: ${formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}`,
+    `Start time: ${formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}`,
     job.snapshot.preferences ? `Preferences: ${job.snapshot.preferences}` : "",
     job.specialInstructions ? `Instructions: ${job.specialInstructions}` : "",
   ].filter(Boolean);

@@ -100,7 +100,7 @@ export function InvitationCard({
       ) : null}
       <dl className="mt-4 space-y-2 text-base">
         <div className="flex justify-between gap-3">
-          <dt className="text-ink/60">Arrival window</dt>
+          <dt className="text-ink/60">Start time</dt>
           <dd>{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</dd>
         </div>
         <div className="flex justify-between gap-3">

@@ -55,16 +55,15 @@ export function mergeAdjacentWindows(windows: AvailabilityWindow[]): Availabilit
   return merged.sort((a, b) => (a.date === b.date ? a.start.localeCompare(b.start) : a.date.localeCompare(b.date)));
 }
 
-/** On-site span from arrival-window start through the cleaning length. 8–9 AM and 3 hours is 8 AM–11 AM. */
+/** On-site span from scheduled start through the cleaning length. */
 export function cleaningTimeSpan(
   arrivalStart: string,
-  arrivalEnd: string,
+  _arrivalEnd: string,
   durationMinutes: number,
 ): { start: string; end: string } | null {
   if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) return null;
   const start = minutesFromTime(arrivalStart);
-  const windowEnd = minutesFromTime(arrivalEnd);
-  if (!(windowEnd > start)) return null;
+  if (!Number.isFinite(start)) return null;
   const end = Math.min(start + durationMinutes, 24 * 60);
   if (!(end > start)) return null;
   return { start: timeFromMinutes(start), end: timeFromMinutes(end) };

@@ -154,7 +154,7 @@ Typical path: **New cleaning** or **Edit cleaning** → **Save cleaning**.
 | **Choose an active cleaner.** | Draft cleaner inactive. |
 | **Enter a valid price per visit.** | Hub price validation. |
 | Recurring on create/edit: **Recurring schedule applies only to recurring cleans.** / **Choose headcount before creating a recurring schedule.** / **This cleaning already belongs to a recurring schedule.** / **This schedule already has a cleaning on that date.** | Recurring toggle + save. |
-| **The headcount is smaller than a cleaner's crew on this cleaning.** / **…people already confirmed.** | Lower headcount below crew/confirmed. |
+| **The headcount is smaller than a cleaner's crew on this cleaning.** | Headcount below a cleaner's crew size on this visit. |
 | **That cleaning could not be edited.** | Canceled or missing job. |
 
 ---

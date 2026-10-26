@@ -142,7 +142,7 @@ export function CleaningForm({
   const [customerId, setCustomerId] = useState(initial.customerId);
   const [propertyId, setPropertyId] = useState(initial.propertyId);
   const [serviceType, setServiceType] = useState<ServiceType>(initial.serviceType);
-  const opening = oneHourWindow(initial.arrivalWindowStart);
+  const opening = hardStartTime(initial.arrivalWindowStart);
   const [arrivalStart, setArrivalStart] = useState(opening.start);
   const [arrivalEnd, setArrivalEnd] = useState(opening.end);
   const [picker, setPicker] = useState<"date" | "time" | null>(null);
@@ -241,7 +241,7 @@ export function CleaningForm({
       if (!person) return current;
       const windows = hub.availability.filter((window) => window.cleanerId === id && window.date === date);
       const opening = firstOpenStart(windows, arrivalStart);
-      const arrival = opening === arrivalStart ? { start: arrivalStart, end: arrivalEnd } : oneHourWindow(opening);
+      const arrival = opening === arrivalStart ? { start: arrivalStart, end: arrivalEnd } : hardStartTime(opening);
       return [
         ...current.filter((item) => item.cleanerId !== id),
         {
@@ -255,7 +255,7 @@ export function CleaningForm({
   }
 
   function chooseStart(start: string) {
-    const window = oneHourWindow(start);
+    const window = hardStartTime(start);
     setArrivalStart(window.start);
     setArrivalEnd(window.end);
     setCleanerArrivals((current) =>
@@ -794,15 +794,14 @@ function CleanerTimeWheel({
   onChange: (start: string, end: string) => void;
 }) {
   const clock = clockParts(start);
-  const length = Math.max(minutesFromTime(end) - minutesFromTime(start), 15);
   const minuteChoices = MINUTES.includes(clock.minute) ? MINUTES : [clock.minute, ...MINUTES].sort((a, b) => a - b);
 
   function choose(patch: Partial<{ hour: number; minute: number; suffix: "AM" | "PM" }>) {
     const parts = { ...clock, ...patch };
     const nextStart = clockTime(parts.hour, parts.minute, parts.suffix);
-    const latest = Math.max(0, 24 * 60 - length);
-    const startMin = Math.min(Math.max(minutesFromTime(nextStart), 0), latest);
-    onChange(timeFromMinutes(startMin), timeFromMinutes(startMin + length));
+    const startMin = Math.min(Math.max(minutesFromTime(nextStart), 0), 23 * 60 + 55);
+    const time = timeFromMinutes(startMin);
+    onChange(time, time);
   }
 
   return (
@@ -859,10 +858,11 @@ function firstOpenStart(windows: { start: string; end: string }[], jobStart: str
   return open.length > 0 ? timeFromMinutes(Math.min(...open)) : jobStart;
 }
 
-function oneHourWindow(start: string): { start: string; end: string } {
+function hardStartTime(start: string): { start: string; end: string } {
   const parsed = minutesFromTime(start);
-  const minutes = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 23 * 60) : 8 * 60;
-  return { start: timeFromMinutes(minutes), end: timeFromMinutes(minutes + 60) };
+  const minutes = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 23 * 60 + 55) : 8 * 60;
+  const time = timeFromMinutes(minutes);
+  return { start: time, end: time };
 }
 
 function datePillLabel(date: string): string {
@@ -875,7 +875,7 @@ function datePillLabel(date: string): string {
 }
 
 function clockParts(time: string): { hour: number; minute: number; suffix: "AM" | "PM" } {
-  const total = minutesFromTime(oneHourWindow(time).start);
+  const total = minutesFromTime(hardStartTime(time).start);
   const hour24 = Math.floor(total / 60);
   return {
     hour: hour24 % 12 === 0 ? 12 : hour24 % 12,

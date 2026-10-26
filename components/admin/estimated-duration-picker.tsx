@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { fieldClass } from "@/components/ui";
 import {
   ESTIMATED_ON_SITE_DURATION_MINUTES,
+  ESTIMATED_ON_SITE_FIELD_HINT,
   formatDurationSelectLabel,
 } from "@/lib/format";
 
@@ -60,7 +61,7 @@ export function EstimatedDurationPicker({
               >
                 <div className="shrink-0 border-b border-ink/10 px-5 py-4">
                   <h2 id={titleId} className="text-lg font-semibold">Estimated cleaning time</h2>
-                  <p className="mt-1 text-sm text-ink/60">Counted from the start of the arrival window.</p>
+                  <p className="mt-1 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
                 </div>
                 <ul className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2" role="listbox" aria-activedescendant={`duration-${value}`}>
                   {options.map((minutes) => {

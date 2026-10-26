@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { minutesFromTime, timeFromMinutes } from "@/lib/domain/time";
-import { formatTimeLabel, hourWindowLabel } from "@/lib/format";
+import { formatTimeLabel } from "@/lib/format";
 
 const WHEEL_ITEM = 36;
 const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
@@ -24,11 +24,6 @@ function clockTime(hour: number, minute: number, suffix: "AM" | "PM"): string {
   return timeFromMinutes(Math.min(hour24 * 60 + minute, 23 * 60 + 55));
 }
 
-function windowLengthMinutes(start: string, end: string): number {
-  const span = minutesFromTime(end) - minutesFromTime(start);
-  return span >= 15 ? span : 60;
-}
-
 export function ArrivalWindowPicker({
   start,
   end,
@@ -41,21 +36,20 @@ export function ArrivalWindowPicker({
   const [open, setOpen] = useState(false);
   const clock = clockParts(start);
   const minuteChoices = clock.suffix === "PM" && clock.hour === 11 ? [0] : MINUTES;
-  const length = windowLengthMinutes(start, end);
 
   function choose(patch: Partial<{ hour: number; minute: number; suffix: "AM" | "PM" }>) {
     const parts = { ...clock, ...patch };
     const minute = parts.suffix === "PM" && parts.hour === 11 ? 0 : parts.minute;
     const nextStart = clockTime(parts.hour, minute, parts.suffix);
-    const latest = Math.max(0, 24 * 60 - length);
-    const startMin = Math.min(Math.max(minutesFromTime(nextStart), 0), latest);
-    onChange(timeFromMinutes(startMin), timeFromMinutes(startMin + length));
+    const startMin = Math.min(Math.max(minutesFromTime(nextStart), 0), 23 * 60 + 55);
+    const time = timeFromMinutes(startMin);
+    onChange(time, time);
   }
 
   return (
     <div className="rounded-3xl bg-white px-4 py-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0 text-sm text-ink/70">{hourWindowLabel(start, end)}</span>
+        <span className="min-w-0 text-sm text-ink/70">Start time</span>
         <button
           type="button"
           aria-expanded={open}

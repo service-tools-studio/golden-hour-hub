@@ -52,6 +52,7 @@ import {
   reinviteFlagText,
   serviceEmoji,
   cleanerAssignmentChangeSms,
+  cleanerCleaningSmsDetails,
   cleanerRemovedFromJobSms,
   customerFirstNameForCleaner,
   manualCleanerSmsBody,
@@ -323,11 +324,13 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                               manualCleanerSmsBody(
                                 cleanerAssignmentChangeSms({
                                   cleanerFirstName: cleaner.firstName,
-                                  customerFirstName: customerFirstNameForCleaner(visit),
-                                  date: assignment.serviceDate,
-                                  arrivalWindowStart: assignment.arrivalWindowStart,
-                                  arrivalWindowEnd: assignment.arrivalWindowEnd,
                                   expectedDurationMinutes: assignment.expectedDurationMinutes,
+                                  details: cleanerCleaningSmsDetails({
+                                    date: assignment.serviceDate,
+                                    arrivalWindowStart: assignment.arrivalWindowStart,
+                                    serviceType: job.serviceType,
+                                    snapshot: visit,
+                                  }),
                                 }),
                               ),
                             )
@@ -744,7 +747,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
         ) : null}
         <Card>
           <ServiceLine serviceType={job.serviceType} forCleaner />
-          <p className="mt-3 text-sm text-ink/60">Arrival window</p>
+          <p className="mt-3 text-sm text-ink/60">Start time</p>
           <p className="text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
           <p className="mt-1 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_LABEL}</p>
           <p className="text-sm text-ink/70">{formatDuration(assignment.expectedDurationMinutes)}</p>
@@ -843,7 +846,7 @@ function ScheduleFacts({
 }) {
   const facts = formatScheduleFacts(input);
   const items = [
-    ["Arrive", facts.arrive],
+    ["Start", facts.arrive],
     ["Est. on site", facts.length],
     ["Est. end", facts.ends],
   ] as const;

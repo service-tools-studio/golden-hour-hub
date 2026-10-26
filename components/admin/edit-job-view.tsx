@@ -12,6 +12,7 @@ import {
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
+import { normalizeArrivalWindow } from "@/lib/domain/arrival";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import {
@@ -41,6 +42,7 @@ import {
   ESTIMATED_ON_SITE_FIELD_HINT,
   ESTIMATED_ON_SITE_FIELD_LABEL,
   customerFirstNameForCleaner,
+  cleanerCleaningSmsDetailsFromJob,
   directAssignmentSms,
   formatLongDate,
   formatTimeLabel,
@@ -68,11 +70,7 @@ async function notifyDirectAssignment(
 ) {
   const body = directAssignmentSms({
     cleanerFirstName: cleaner.firstName,
-    customerFirstName: customerFirstNameForCleaner(job.snapshot),
-    streetAddress: job.snapshot.streetAddress,
-    date: job.date,
-    arrivalWindowStart,
-    arrivalWindowEnd,
+    details: cleanerCleaningSmsDetailsFromJob(job, arrivalWindowStart),
   });
   return deliverSchedulingCleanerSms({
     cleaner,
@@ -91,10 +89,7 @@ async function notifyInviteAssignment(
 ) {
   const body = inviteAssignmentSms({
     cleanerFirstName: cleaner.firstName,
-    customerFirstName: customerFirstNameForCleaner(job.snapshot),
-    date: job.date,
-    arrivalWindowStart,
-    arrivalWindowEnd,
+    details: cleanerCleaningSmsDetailsFromJob(job, arrivalWindowStart),
   });
   return deliverSchedulingCleanerSms({
     cleaner,
@@ -474,7 +469,7 @@ export function EditJobView({
           scheduleWarning={scheduleWarning}
           reinviteWarning={dateReinviteWarning}
         />
-        <Field label="Arrival window">
+        <Field label="Start time">
           <ArrivalWindowPicker
             start={arrivalStart}
             end={arrivalEnd}
@@ -703,18 +698,21 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
           propertyId: startingPropertyId,
           serviceType: job.serviceType,
           arrivalWindowStart: savedArrival?.start ?? "08:00",
-          arrivalWindowEnd: savedArrival?.end ?? "09:00",
+          arrivalWindowEnd: savedArrival?.start ?? "08:00",
           expectedDurationMinutes: job.expectedDurationMinutes ?? 240,
           headcountNeeded: job.headcountNeeded,
           specialInstructions: job.specialInstructions,
           pricePerVisitCents: job.pricePerVisitCents,
           cleanerIds,
-          cleanerArrivals: cleanerArrivals(job, hub.assignments, hub.cleaners).map((arrival) => ({
-            cleanerId: arrival.cleanerId,
-            firstName: arrival.firstName,
-            arrivalWindowStart: arrival.start,
-            arrivalWindowEnd: arrival.end,
-          })),
+          cleanerArrivals: cleanerArrivals(job, hub.assignments, hub.cleaners).map((arrival) => {
+            const times = normalizeArrivalWindow(arrival.start);
+            return {
+              cleanerId: arrival.cleanerId,
+              firstName: arrival.firstName,
+              arrivalWindowStart: times.arrivalWindowStart,
+              arrivalWindowEnd: times.arrivalWindowEnd,
+            };
+          }),
         }}
         leadCleanerId={leadCleanerId}
         canClearCleaners
@@ -892,7 +890,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       >
         {message ? <Notice>{message}</Notice> : null}
         <AssignmentStatus label="Draft assignment" flag={null} />
-        <Field label="Arrival window">
+        <Field label="Start time">
           <ArrivalWindowPicker
             start={arrivalStart}
             end={arrivalEnd}

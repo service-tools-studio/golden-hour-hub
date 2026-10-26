@@ -1,16 +1,34 @@
 # Text message bodies
 
-Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}`, `{arrivalWindow}`, `{duration}`, `{scheduledTime}`, `{arrivalTime}`, `{weekRange}`, `{link}`.
+Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}`, `{startTime}`, `{duration}`, `{scheduledTime}`, `{arrivalTime}`, `{weekRange}`, `{link}`.
 
 ## To cleaners
 
 **Direct assignment**
 
-> Hi {cleanerFirstName}! Golden Hour Hub here. You're assigned to {customerName} at {streetAddress} on {date}, arriving {arrivalWindow}. Details are in the Golden Hour Hub app: {link}
+> Hi {cleanerFirstName}! Golden Hour Hub here.
+> You have been assigned to this cleaning:
+>
+> {date} at {startTime}
+>
+> {customerName} - {serviceType}
+>
+> {address}
+>
+> Details are in the Golden Hour Hub app: {link}
 
 **Invitation**
 
-> Hi {cleanerFirstName}! Golden Hour Hub here. You have a cleaning invitation for {customerName} on {date}, arriving {arrivalWindow}. Open the Golden Hour Hub app to accept or decline as soon as you can: {link}
+> Hi {cleanerFirstName}! Golden Hour Hub here.
+> You have been invited to this cleaning:
+>
+> {date} at {startTime}
+>
+> {customerName} - {serviceType}
+>
+> {address}
+>
+> Open the Golden Hour Hub app to accept or decline as soon as you can: {link}
 
 **Invitation follow-up**
 
@@ -22,11 +40,27 @@ Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}
 
 **Assignment details changed**
 
-> Hi {cleanerFirstName}! Golden Hour Hub here. The arrival window for your cleaning for {customerName} on {date} is now {arrivalWindow} · this is an approximately {duration} cleaning.
+> Hi {cleanerFirstName}! Golden Hour Hub here.
+> This cleaning has been updated:
+>
+> {date} at {startTime}
+>
+> Approximately {duration} on site
+>
+> {customerName} - {serviceType}
+>
+> {address}
 
 **Arrival time changed**
 
-> Hi {cleanerFirstName}! Golden Hour Hub here. Your arrival time for {customerName} on {date} is now {arrivalWindow}.
+> Hi {cleanerFirstName}! Golden Hour Hub here.
+> This cleaning has been updated:
+>
+> {date} at {startTime}
+>
+> {customerName} - {serviceType}
+>
+> {address}
 
 **Availability reminder (next week)**
 
