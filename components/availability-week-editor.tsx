@@ -27,8 +27,10 @@ import {
   dayOfWeek,
   eachDate,
   editableAvailabilityWeeks,
-  formatHm,
+  applyAvailabilityTimeWheelPatch,
   formatTimeLabel,
+  timeFromWheelClock,
+  wheelClockFromTime,
   formatMonthDay,
   formatWeekRange,
   isValidLocalTime,
@@ -45,20 +47,6 @@ function windowSignature(windows: AvailabilityWindow[]): string {
     .map((window) => `${window.date}|${window.start}|${window.end}`)
     .sort()
     .join("\n");
-}
-
-function clockParts(time: string): { hour: number; minute: number; suffix: "AM" | "PM" } {
-  const normalized = time === "24:00" ? "00:00" : time;
-  const [hourValue, minute] = normalized.split(":").map(Number);
-  return {
-    hour: hourValue % 12 === 0 ? 12 : hourValue % 12,
-    minute,
-    suffix: hourValue >= 12 ? "PM" : "AM",
-  };
-}
-
-function clockValue(hour: number, minute: number, suffix: "AM" | "PM"): string {
-  return formatHm((hour % 12) + (suffix === "PM" ? 12 : 0), minute);
 }
 
 function minuteChoices(minute: number): number[] {
@@ -255,12 +243,12 @@ function WindowTimes({
 }
 
 function ClockWheel({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const clock = clockParts(value);
+  const clock = wheelClockFromTime(value);
   const minutes = minuteChoices(clock.minute);
 
   function choose(patch: Partial<{ hour: number; minute: number; suffix: "AM" | "PM" }>) {
-    const next = { ...clock, ...patch };
-    onChange(clockValue(next.hour, next.minute, next.suffix));
+    const next = applyAvailabilityTimeWheelPatch(clock, patch);
+    onChange(timeFromWheelClock(next.hour, next.minute, next.suffix));
   }
 
   return (
@@ -487,7 +475,7 @@ export function AvailabilityWeekEditor({
   }
 
   function applyDraft(next: AvailabilityWindow[]) {
-    setDraft(mergeAdjacentWindows(next));
+    setDraft(next);
   }
 
   function setDay(date: string, available: boolean) {
@@ -527,7 +515,7 @@ export function AvailabilityWeekEditor({
     const last = dayWindows.at(-1);
     let defaultStart = "";
     if (last?.end && isValidLocalTime(last.end) && last.end !== OPEN_DAY_END) {
-      const nextStartMin = minutesFromTime(last.end) + 5;
+      const nextStartMin = minutesFromTime(last.end) + 60;
       if (nextStartMin < 24 * 60) {
         defaultStart = timeFromMinutes(nextStartMin);
       }
@@ -719,12 +707,7 @@ export function AvailabilityWeekEditor({
           Copy Last Week
         </button>
         {days.map((date) => {
-          const windows = draft.filter((window) => window.date === date).sort((a, b) => {
-            if (!a.start && !b.start) return 0;
-            if (!a.start) return 1;
-            if (!b.start) return -1;
-            return a.start.localeCompare(b.start);
-          });
+          const windows = draft.filter((window) => window.date === date);
           const available = windows.length > 0;
           const allDay = windows.some((window) => window.start === OPEN_DAY_START && window.end === OPEN_DAY_END);
           return (

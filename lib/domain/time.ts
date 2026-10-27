@@ -26,6 +26,34 @@ export function formatHm(hour: number, minute: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+export type WheelClock = { hour: number; minute: number; suffix: "AM" | "PM" };
+
+export function wheelClockFromTime(time: string): WheelClock {
+  const normalized = time === "24:00" ? "00:00" : time;
+  const [hourValue, minute] = normalized.split(":").map(Number);
+  return {
+    hour: hourValue % 12 === 0 ? 12 : hourValue % 12,
+    minute,
+    suffix: hourValue >= 12 ? "PM" : "AM",
+  };
+}
+
+export function timeFromWheelClock(hour: number, minute: number, suffix: "AM" | "PM"): string {
+  return formatHm((hour % 12) + (suffix === "PM" ? 12 : 0), minute);
+}
+
+/** Hour 12 on the wheel means noon unless the user explicitly picks AM. */
+export function applyAvailabilityTimeWheelPatch(
+  current: WheelClock,
+  patch: Partial<WheelClock>,
+): WheelClock {
+  const next = { ...current, ...patch };
+  if (patch.hour === 12 && patch.suffix === undefined && next.suffix === "AM") {
+    return { ...next, suffix: "PM" };
+  }
+  return next;
+}
+
 export function parseYmd(date: string): { year: number; month: number; day: number } {
   const [year, month, day] = date.split("-").map(Number);
   return { year, month, day };
