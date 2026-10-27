@@ -363,7 +363,7 @@ function TimeWheel({
 
 export type AvailabilityWeekEditorHandle = {
   isDirty: () => boolean;
-  save: () => Promise<boolean>;
+  save: (options?: { quiet?: boolean }) => Promise<boolean>;
 };
 
 export function AvailabilityWeekEditor({
@@ -641,7 +641,7 @@ export function AvailabilityWeekEditor({
 
   useImperativeHandle(ref, () => ({
     isDirty: () => dirty,
-    save: () => submit(),
+    save: (options) => submit(options),
   }));
 
   function submitAndLeave() {

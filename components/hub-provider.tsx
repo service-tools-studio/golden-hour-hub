@@ -850,10 +850,11 @@ export function HubProvider({
       if (!options?.quiet) setToast(toastMessage);
       return { ok: true, message: remote.message };
     }
+    const snapshot = stateRef.current ?? data;
     const weekEnd = addDays(weekStart, 6);
     const weekWindows = stripAllDayWhenSpecificExists(mergeAdjacentWindows(windows));
     const combined = [
-      ...data.availability.filter(
+      ...snapshot.availability.filter(
         (window) => window.cleanerId !== cleanerId || window.date < weekStart || window.date > weekEnd,
       ),
       ...weekWindows,
@@ -862,45 +863,54 @@ export function HubProvider({
       newWindows: combined
         .filter((window) => window.cleanerId === cleanerId)
         .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-      confirmedAssignments: data.assignments
+      confirmedAssignments: snapshot.assignments
         .filter((item) => item.cleanerId === cleanerId && item.status === "CONFIRMED")
         .map(toAssignmentSchedule),
     });
     if (!decision.ok) return decision;
     const now = new Date().toISOString();
-    const existing = data.submissions.find(
-      (submission) => submission.cleanerId === cleanerId && submission.weekStart === weekStart,
-    );
-    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
-    const assignments = cleaner
-      ? revalidatePendingAssignments({
-          assignments: data.assignments,
-          cleaner,
-          weekStart,
-          weekEnd,
-          windows: combined
-            .filter((window) => window.cleanerId === cleanerId)
-            .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-          jobs: data.jobs,
-          nowIso: now,
-        })
-      : data.assignments;
-    setState({
-      ...data,
-      availability: combined,
-      assignments,
-      submissions: [
-        ...data.submissions.filter(
-          (submission) => !(submission.cleanerId === cleanerId && submission.weekStart === weekStart),
+    setState((prev) => {
+      if (!prev) return prev;
+      const mergedAvailability = [
+        ...prev.availability.filter(
+          (window) => window.cleanerId !== cleanerId || window.date < weekStart || window.date > weekEnd,
         ),
-        {
-          submissionId: existing?.submissionId ?? `sub-${cleanerId}-${weekStart}`,
-          cleanerId,
-          weekStart,
-          submittedAt: existing?.submittedAt ?? now,
-          updatedAt: now,
-        },
-      ],
+        ...weekWindows,
+      ];
+      const existing = prev.submissions.find(
+        (submission) => submission.cleanerId === cleanerId && submission.weekStart === weekStart,
+      );
+      const cleaner = prev.cleaners.find((item) => item.cleanerId === cleanerId);
+      const assignments = cleaner
+        ? revalidatePendingAssignments({
+            assignments: prev.assignments,
+            cleaner,
+            weekStart,
+            weekEnd,
+            windows: mergedAvailability
+              .filter((window) => window.cleanerId === cleanerId)
+              .map((window) => ({ date: window.date, start: window.start, end: window.end })),
+            jobs: prev.jobs,
+            nowIso: now,
+          })
+        : prev.assignments;
+      return {
+        ...prev,
+        availability: mergedAvailability,
+        assignments,
+        submissions: [
+          ...prev.submissions.filter(
+            (submission) => !(submission.cleanerId === cleanerId && submission.weekStart === weekStart),
+          ),
+          {
+            submissionId: existing?.submissionId ?? `sub-${cleanerId}-${weekStart}`,
+            cleanerId,
+            weekStart,
+            submittedAt: existing?.submittedAt ?? now,
+            updatedAt: now,
+          },
+        ],
+      };
     });
     if (!options?.quiet) setToast(toastMessage);
     return { ok: true, message: toastMessage };
@@ -1135,21 +1145,24 @@ export function HubProvider({
       return { ok: false, message: "Enter a valid hourly rate." };
     }
     const now = new Date().toISOString();
-    setState({
-      ...data,
-      cleaners: data.cleaners.map((cleaner) =>
-        cleaner.cleanerId === cleanerId
-          ? {
-              ...cleaner,
-              status: input.status,
-              typicalHelperCount: crew.typicalHelperCount,
-              maxHelperCount: crew.maxHelperCount,
-              typicalHourlyRateCents: input.typicalHourlyRateCents,
-              updatedAt: now,
-              updatedBy: "kelsey",
-            }
-          : cleaner,
-      ),
+    setState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        cleaners: prev.cleaners.map((cleaner) =>
+          cleaner.cleanerId === cleanerId
+            ? {
+                ...cleaner,
+                status: input.status,
+                typicalHelperCount: crew.typicalHelperCount,
+                maxHelperCount: crew.maxHelperCount,
+                typicalHourlyRateCents: input.typicalHourlyRateCents,
+                updatedAt: now,
+                updatedBy: "kelsey",
+              }
+            : cleaner,
+        ),
+      };
     });
     return { ok: true };
   }
