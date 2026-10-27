@@ -35,7 +35,12 @@ import {
   withAssignmentConfirmed,
   withAssignmentDeclined,
 } from "@/lib/domain/invitations";
-import { normalizeArrivalWindow, validateArrivalWindow, validateOptionalVisitArrival } from "@/lib/domain/arrival";
+import {
+  assignmentScheduleNoticeInSync,
+  normalizeArrivalWindow,
+  validateArrivalWindow,
+  validateOptionalVisitArrival,
+} from "@/lib/domain/arrival";
 import {
   dateMatchesRule,
   effectiveWeekRecurrence,
@@ -1480,7 +1485,26 @@ export function HubProvider({
           payPerPersonCents: input.payPerPersonCents,
           proposedTotalPayCents: pay,
           confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
-          lastNotified: item.lastNotified ?? assignmentNotice(item),
+          lastNotified: (() => {
+            const notice = assignmentNotice({
+              arrivalWindowStart: arrivalTimes.arrivalWindowStart,
+              arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
+              expectedDurationMinutes: input.expectedDurationMinutes,
+              proposedCrewSize: input.proposedCrewSize,
+              payType: input.payType,
+              payPerPersonCents: input.payPerPersonCents,
+            });
+            if (!item.lastNotified) return notice;
+            if (assignmentScheduleNoticeInSync(item.lastNotified, notice)) {
+              return {
+                ...item.lastNotified,
+                payType: input.payType,
+                payPerPersonCents: input.payPerPersonCents,
+                proposedCrewSize: input.proposedCrewSize,
+              };
+            }
+            return item.lastNotified;
+          })(),
           updatedAt: now,
         };
         if (item.status === "CONFIRMED" || item.status === "NEEDS_ATTENTION") {
@@ -1508,7 +1532,14 @@ export function HubProvider({
         jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
         assignments: nextAssignments,
       });
-      return { ok: true, jobId: job.jobId, message: "Draft saved." };
+      const savedMessage =
+        existing.status === "INVITED" ||
+        existing.status === "CONFIRMED" ||
+        existing.status === "PENDING_AVAILABILITY" ||
+        existing.status === "NEEDS_ATTENTION"
+          ? "Changes saved."
+          : "Draft saved.";
+      return { ok: true, jobId: job.jobId, message: savedMessage };
     }
     const weekStart = mondayOf(job.date);
     const availabilityByCleaner: Record<string, { submitted: boolean; windows: { date: string; start: string; end: string }[] }> = {};

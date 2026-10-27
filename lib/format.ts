@@ -17,7 +17,7 @@ import {
   assignmentPaySummaryLine,
   cleanerInvitationPayLines,
 } from "./domain/pay-copy";
-import { assignmentNoticeInSync } from "./domain/arrival";
+import { assignmentScheduleNoticeInSync } from "./domain/arrival";
 import { cleaningTimeSpan } from "./domain/availability";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import {
@@ -348,7 +348,7 @@ export function cleanerCrewSummary(cleaner: CleanerProfile): string {
 export function noticeGap(draft: boolean, current: AssignmentNotice, lastNotified?: AssignmentNotice): "assignment" | "changes" | null {
   if (draft) return "assignment";
   if (!lastNotified) return null;
-  return assignmentNoticeInSync(lastNotified, current) ? null : "changes";
+  return assignmentScheduleNoticeInSync(lastNotified, current) ? null : "changes";
 }
 
 export function dateReinviteNeeded(

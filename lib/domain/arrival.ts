@@ -41,11 +41,18 @@ export function validateOptionalVisitArrival(
   };
 }
 
+/** Whether schedule details (time and duration) match what the cleaner was last told. */
+export function assignmentScheduleNoticeInSync(lastNotified: AssignmentNotice, current: AssignmentNotice): boolean {
+  return (
+    lastNotified.arrivalWindowStart === current.arrivalWindowStart &&
+    lastNotified.expectedDurationMinutes === current.expectedDurationMinutes
+  );
+}
+
 /** Whether the cleaner-facing assignment details match what they were last told. */
 export function assignmentNoticeInSync(lastNotified: AssignmentNotice, current: AssignmentNotice): boolean {
   return (
-    lastNotified.arrivalWindowStart === current.arrivalWindowStart &&
-    lastNotified.expectedDurationMinutes === current.expectedDurationMinutes &&
+    assignmentScheduleNoticeInSync(lastNotified, current) &&
     lastNotified.proposedCrewSize === current.proposedCrewSize &&
     lastNotified.payType === current.payType &&
     lastNotified.payPerPersonCents === current.payPerPersonCents

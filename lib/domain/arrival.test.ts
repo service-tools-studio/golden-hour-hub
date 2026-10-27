@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { assignmentNoticeInSync, normalizeArrivalWindow, validateArrivalWindow } from "./arrival.ts";
+import {
+  assignmentNoticeInSync,
+  assignmentScheduleNoticeInSync,
+  normalizeArrivalWindow,
+  validateArrivalWindow,
+} from "./arrival.ts";
 import type { AssignmentNotice } from "./types.ts";
 
 describe("arrival times", () => {
@@ -9,6 +14,24 @@ describe("arrival times", () => {
       arrivalWindowStart: "14:30",
       arrivalWindowEnd: "14:30",
     });
+  });
+
+  it("ignores pay and crew when comparing schedule notice", () => {
+    const last: AssignmentNotice = {
+      arrivalWindowStart: "11:00",
+      expectedDurationMinutes: 120,
+      proposedCrewSize: 1,
+      payType: "FLAT",
+      payPerPersonCents: 5000,
+    };
+    const current: AssignmentNotice = {
+      ...last,
+      proposedCrewSize: 2,
+      payPerPersonCents: 8000,
+      payType: "HOURLY",
+    };
+    assert.equal(assignmentScheduleNoticeInSync(last, current), true);
+    assert.equal(assignmentNoticeInSync(last, current), false);
   });
 
   it("treats legacy window end as in sync when the start time matches", () => {

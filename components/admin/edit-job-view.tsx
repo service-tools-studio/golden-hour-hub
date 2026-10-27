@@ -12,7 +12,7 @@ import {
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
-import { isUnsetArrival, normalizeArrivalWindow } from "@/lib/domain/arrival";
+import { assignmentNoticeInSync, isUnsetArrival, normalizeArrivalWindow } from "@/lib/domain/arrival";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import {
@@ -154,6 +154,24 @@ function cleaningStart(
     .map((arrival) => arrival.start)
     .sort();
   return others[0];
+}
+
+function assignmentCompensationOnlyDirty(baselineJson: string, currentJson: string): boolean {
+  const baseline = JSON.parse(baselineJson) as {
+    arrivalStartTbd: boolean;
+    arrivalStart: string;
+    arrivalEnd: string;
+    duration: number;
+    crew: number;
+  };
+  const current = JSON.parse(currentJson) as typeof baseline;
+  return (
+    baseline.arrivalStartTbd === current.arrivalStartTbd &&
+    baseline.arrivalStart === current.arrivalStart &&
+    baseline.arrivalEnd === current.arrivalEnd &&
+    baseline.duration === current.duration &&
+    baseline.crew === current.crew
+  );
 }
 
 function dollarsToCents(value: string): number | null {
@@ -368,8 +386,8 @@ export function EditJobView({
       assignment.status === "INVITED" &&
       assignment.lastNotified &&
       payPerPersonCentsPreview !== null &&
-      noticeGap(
-        false,
+      assignmentNoticeInSync(
+        assignment.lastNotified,
         assignmentNoticeFrom({
           arrivalWindowStart: arrivalStartTbd ? undefined : arrivalStart,
           arrivalWindowEnd: arrivalStartTbd ? undefined : arrivalEnd,
@@ -378,12 +396,16 @@ export function EditJobView({
           payType,
           payPerPersonCents: payPerPersonCentsPreview,
         }),
-        assignment.lastNotified,
-      ) === null,
+      ),
   );
   const dayAvailability = hub.availability
     .filter((window) => window.cleanerId === cleaner?.cleanerId && window.date === job?.date)
     .map((window) => ({ start: window.start, end: window.end }));
+  const compensationOnlyDirty =
+    assignmentDirty &&
+    assignmentBaseline.current !== null &&
+    assignmentCompensationOnlyDirty(assignmentBaseline.current, assignmentSnapshot);
+  const showInviteOnSave = showAssignmentActions && !compensationOnlyDirty;
 
   async function submit(mode: "DRAFT" | "INVITE" | "DIRECT", nextHref?: string) {
     if (!job || !cleaner || assigning) return false;
@@ -430,12 +452,18 @@ export function EditJobView({
         notifyInviteAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
         result.message,
       );
-    } else if (result.message) {
-      hub.flash(result.message);
     }
     setAssigning(null);
-    if (mode === "DRAFT" && nextHref) setAssigning(null);
-    router.push(nextHref ?? cleaningHref(jobId, from));
+    assignmentBaseline.current = assignmentSnapshot;
+    if (nextHref) {
+      router.push(nextHref);
+      return true;
+    }
+    if (mode !== "DRAFT") {
+      router.push(cleaningHref(jobId, from));
+      return true;
+    }
+    if (result.message) hub.flash(result.message);
     return true;
   }
 
@@ -552,6 +580,13 @@ export function EditJobView({
           <AssignmentSaveChoices
             assigning={assigning}
             showDraftAndInvite={showAssignmentActions || showSettledNotificationActions}
+            showInviteButton={showInviteOnSave || showSettledNotificationActions}
+            saveLabel={assignmentSettled ? "Save changes" : "Save draft"}
+            saveHint={
+              compensationOnlyDirty
+                ? "Updates pay on this assignment without texting the cleaner."
+                : undefined
+            }
             directAssignNote={
               weekSubmitted
                 ? null
@@ -1086,6 +1121,9 @@ type AssigningMode = "DRAFT" | "INVITE" | "DIRECT" | "FOLLOW_UP";
 function AssignmentSaveChoices({
   assigning = null,
   showDraftAndInvite = true,
+  showInviteButton = true,
+  saveLabel = "Save draft",
+  saveHint,
   directAssignNote,
   inviteLabel = "Save and send invite",
   onInvite,
@@ -1093,6 +1131,9 @@ function AssignmentSaveChoices({
 }: {
   assigning?: AssigningMode | null;
   showDraftAndInvite?: boolean;
+  showInviteButton?: boolean;
+  saveLabel?: string;
+  saveHint?: string;
   directAssignNote: string | null;
   inviteLabel?: string;
   onInvite: () => void;
@@ -1100,22 +1141,32 @@ function AssignmentSaveChoices({
 }) {
   const busy = assigning !== null;
   const inviteBusy = assigning === "INVITE" || assigning === "FOLLOW_UP";
+  const saveOnly = showDraftAndInvite && !showInviteButton;
   return (
     <div className="space-y-2" aria-busy={busy}>
       {showDraftAndInvite ? (
         <>
-          <SecondaryButton type="submit" disabled={busy} loading={assigning === "DRAFT"} loadingLabel="Saving…">
-            Save draft
-          </SecondaryButton>
-          <PrimaryButton
-            type="button"
-            onClick={onInvite}
-            disabled={busy}
-            loading={inviteBusy}
-            loadingLabel={assigning === "FOLLOW_UP" ? "Sending…" : "Sending invite…"}
-          >
-            {inviteLabel}
-          </PrimaryButton>
+          {saveOnly ? (
+            <PrimaryButton type="submit" disabled={busy} loading={assigning === "DRAFT"} loadingLabel="Saving…">
+              {saveLabel}
+            </PrimaryButton>
+          ) : (
+            <SecondaryButton type="submit" disabled={busy} loading={assigning === "DRAFT"} loadingLabel="Saving…">
+              {saveLabel}
+            </SecondaryButton>
+          )}
+          {saveHint ? <p className="text-sm text-ink/60">{saveHint}</p> : null}
+          {showInviteButton ? (
+            <PrimaryButton
+              type="button"
+              onClick={onInvite}
+              disabled={busy}
+              loading={inviteBusy}
+              loadingLabel={assigning === "FOLLOW_UP" ? "Sending…" : "Sending invite…"}
+            >
+              {inviteLabel}
+            </PrimaryButton>
+          ) : null}
         </>
       ) : null}
       <div className="space-y-2">
