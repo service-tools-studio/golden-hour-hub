@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
 import { AddToCalendarButton } from "@/components/add-to-calendar";
-import { AddressLink, fullAddress } from "@/components/address-link";
+import { AddressLink, JobAddressText, fullAddress } from "@/components/address-link";
 import {
   type CleaningOrigin,
   customerCleaningsOnDate,
@@ -747,9 +747,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           <div className="mt-4 flex items-start gap-2 text-base">
             <span aria-hidden="true">📍</span>
             <AddressLink address={fullAddress(job.snapshot)}>
-              {job.snapshot.streetAddress}
-              <br />
-              {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
+              <JobAddressText place={job.snapshot} />
             </AddressLink>
           </div>
           {snapshotSizeLine ? <p className="mt-3 text-sm">{snapshotSizeLine}</p> : null}

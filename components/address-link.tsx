@@ -5,16 +5,62 @@ import { ActionSheet } from "@/components/action-sheet";
 
 const ADDRESS_UNDERLINE = "underline decoration-ink/25 decoration-1 underline-offset-2";
 
-export function fullAddress(place: {
+export type AddressPlace = {
   streetAddress: string;
   unit?: string;
   city?: string;
   state?: string;
   zip?: string;
-}): string {
-  const region = [place.state, place.zip].filter(Boolean).join(" ");
-  const street = [place.streetAddress, place.unit?.trim()].filter(Boolean).join(", ");
-  return [street, place.city, region].filter(Boolean).join(", ");
+};
+
+export function fullAddress(place: AddressPlace): string {
+  const { streetLine, cityLine } = jobAddressDisplay(place);
+  return cityLine ? `${streetLine}, ${cityLine}` : streetLine;
+}
+
+/**
+ * Street is meant to be just the street line; city/state/zip are separate fields.
+ * When street already contains a formatted address (common if the full suggestion was pasted
+ * into Street), avoid a second line that repeats a different city.
+ */
+export function jobAddressDisplay(place: AddressPlace): { streetLine: string; cityLine: string | null } {
+  const unit = place.unit?.trim();
+  const streetLine = [place.streetAddress.trim(), unit].filter(Boolean).join(", ");
+  const city = place.city?.trim();
+  const state = place.state?.trim();
+  const zip = place.zip?.trim();
+  const cityLine = city
+    ? [city, [state, zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")
+    : [state, zip].filter(Boolean).join(" ") || null;
+
+  const commaParts = place.streetAddress.split(",").map((part) => part.trim()).filter(Boolean);
+  const streetLooksFormatted =
+    commaParts.length >= 2 &&
+    Boolean(state) &&
+    commaParts.some((part) => part === state || part.startsWith(`${state} `));
+
+  if (streetLooksFormatted) {
+    return { streetLine, cityLine: null };
+  }
+  if (city && streetLine.toLowerCase().includes(city.toLowerCase())) {
+    return { streetLine, cityLine: null };
+  }
+  return { streetLine, cityLine: cityLine || null };
+}
+
+export function JobAddressText({ place }: { place: AddressPlace }) {
+  const { streetLine, cityLine } = jobAddressDisplay(place);
+  return (
+    <>
+      {streetLine}
+      {cityLine ? (
+        <>
+          <br />
+          {cityLine}
+        </>
+      ) : null}
+    </>
+  );
 }
 
 export function AddressLink({

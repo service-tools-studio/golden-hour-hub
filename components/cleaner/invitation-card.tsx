@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AddressLink, fullAddress } from "@/components/address-link";
+import { AddressLink, JobAddressText, fullAddress } from "@/components/address-link";
 import { useHub } from "@/components/hub-provider";
 import { Card, Notice, PrimaryButton, SecondaryButton } from "@/components/ui";
 import { helpersApproved } from "@/lib/domain/cleaners";
@@ -146,9 +146,7 @@ function InvitationCardContent({
       <div className="mt-3 flex items-start gap-2 text-base">
         <span aria-hidden="true">📍</span>
         <AddressLink address={fullAddress(job.snapshot)}>
-          {job.snapshot.streetAddress}
-          <br />
-          {job.snapshot.city}, {job.snapshot.state} {job.snapshot.zip}
+          <JobAddressText place={job.snapshot} />
         </AddressLink>
       </div>
       {job.seriesId ? (
