@@ -15,10 +15,11 @@ import {
   type ManualCleanerTextPrompt as ManualCleanerTextOffer,
 } from "@/lib/cleaner/deliver-scheduling-sms";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
+import { updateCleanerAdminOnHub } from "@/lib/hub/admin-mutations";
+import { submitAvailabilityOnHub } from "@/lib/hub/cleaner-mutations";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import { SIGNED_OUT_STORAGE_KEY } from "@/lib/auth/signed-out-guard";
-import { mergeAdjacentWindows, stripAllDayWhenSpecificExists } from "@/lib/domain/availability";
 import { confirmedCompensationCents } from "@/lib/domain/compensation";
 import { deriveCrewSettings, validateProposedCrewSize } from "@/lib/domain/cleaners";
 import {
@@ -60,8 +61,6 @@ import {
   detectConfirmedAssignmentConflict,
   isConfirmedScheduleConflictReason,
   reconcileScheduleConflictWarnings,
-  toAssignmentSchedule,
-  validateAvailabilityEdit,
 } from "@/lib/domain/scheduling";
 import { addDays, dayOfWeek, isValidDate, isValidLocalTime, minutesFromTime, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
 import { emptyHub, type HubData } from "@/lib/mock/seed";
@@ -851,66 +850,12 @@ export function HubProvider({
       return { ok: true, message: remote.message };
     }
     const snapshot = stateRef.current ?? data;
-    const weekEnd = addDays(weekStart, 6);
-    const weekWindows = stripAllDayWhenSpecificExists(mergeAdjacentWindows(windows));
-    const combined = [
-      ...snapshot.availability.filter(
-        (window) => window.cleanerId !== cleanerId || window.date < weekStart || window.date > weekEnd,
-      ),
-      ...weekWindows,
-    ];
-    const decision = validateAvailabilityEdit({
-      newWindows: combined
-        .filter((window) => window.cleanerId === cleanerId)
-        .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-      confirmedAssignments: snapshot.assignments
-        .filter((item) => item.cleanerId === cleanerId && item.status === "CONFIRMED")
-        .map(toAssignmentSchedule),
-    });
-    if (!decision.ok) return decision;
-    const now = new Date().toISOString();
+    const preview = submitAvailabilityOnHub(snapshot, cleanerId, weekStart, windows);
+    if (!preview.result.ok) return preview.result;
     setState((prev) => {
       if (!prev) return prev;
-      const mergedAvailability = [
-        ...prev.availability.filter(
-          (window) => window.cleanerId !== cleanerId || window.date < weekStart || window.date > weekEnd,
-        ),
-        ...weekWindows,
-      ];
-      const existing = prev.submissions.find(
-        (submission) => submission.cleanerId === cleanerId && submission.weekStart === weekStart,
-      );
-      const cleaner = prev.cleaners.find((item) => item.cleanerId === cleanerId);
-      const assignments = cleaner
-        ? revalidatePendingAssignments({
-            assignments: prev.assignments,
-            cleaner,
-            weekStart,
-            weekEnd,
-            windows: mergedAvailability
-              .filter((window) => window.cleanerId === cleanerId)
-              .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-            jobs: prev.jobs,
-            nowIso: now,
-          })
-        : prev.assignments;
-      return {
-        ...prev,
-        availability: mergedAvailability,
-        assignments,
-        submissions: [
-          ...prev.submissions.filter(
-            (submission) => !(submission.cleanerId === cleanerId && submission.weekStart === weekStart),
-          ),
-          {
-            submissionId: existing?.submissionId ?? `sub-${cleanerId}-${weekStart}`,
-            cleanerId,
-            weekStart,
-            submittedAt: existing?.submittedAt ?? now,
-            updatedAt: now,
-          },
-        ],
-      };
+      const { hub } = submitAvailabilityOnHub(prev, cleanerId, weekStart, windows);
+      return { ...hub, role: prev.role, cleanerId: prev.cleanerId };
     });
     if (!options?.quiet) setToast(toastMessage);
     return { ok: true, message: toastMessage };
@@ -1144,25 +1089,10 @@ export function HubProvider({
     if (!Number.isInteger(input.typicalHourlyRateCents) || input.typicalHourlyRateCents < 0) {
       return { ok: false, message: "Enter a valid hourly rate." };
     }
-    const now = new Date().toISOString();
     setState((prev) => {
       if (!prev) return prev;
-      return {
-        ...prev,
-        cleaners: prev.cleaners.map((cleaner) =>
-          cleaner.cleanerId === cleanerId
-            ? {
-                ...cleaner,
-                status: input.status,
-                typicalHelperCount: crew.typicalHelperCount,
-                maxHelperCount: crew.maxHelperCount,
-                typicalHourlyRateCents: input.typicalHourlyRateCents,
-                updatedAt: now,
-                updatedBy: "kelsey",
-              }
-            : cleaner,
-        ),
-      };
+      const outcome = updateCleanerAdminOnHub(prev, cleanerId, input);
+      return { ...outcome.hub, role: prev.role, cleanerId: prev.cleanerId };
     });
     return { ok: true };
   }

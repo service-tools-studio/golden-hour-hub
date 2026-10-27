@@ -1,15 +1,15 @@
-import { mergeAdjacentWindows, stripAllDayWhenSpecificExists } from "@/lib/domain/availability";
+import { mergeAdjacentWindows, stripAllDayWhenSpecificExists } from "../domain/availability.ts";
 import {
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
   validateInvitationAcceptance,
   withAssignmentConfirmed,
   withAssignmentDeclined,
-} from "@/lib/domain/invitations";
-import { toAssignmentSchedule, validateAvailabilityEdit } from "@/lib/domain/scheduling";
-import { addDays, mondayOf } from "@/lib/domain/time";
-import type { AvailabilityWindow } from "@/lib/domain/types";
-import type { HubData } from "@/lib/mock/seed";
+} from "../domain/invitations.ts";
+import { toAssignmentSchedule, validateAvailabilityEdit } from "../domain/scheduling.ts";
+import { addDays, mondayOf } from "../domain/time.ts";
+import type { AvailabilityWindow } from "../domain/types.ts";
+import type { HubData } from "../mock/seed.ts";
 
 type ActionResult = { ok: true; message?: string } | { ok: false; message: string };
 

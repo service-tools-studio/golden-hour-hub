@@ -1,13 +1,13 @@
-import { applySchedulingSmsEnrollment } from "@/lib/cleaner/sms-consent-record";
-import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
+import { applySchedulingSmsEnrollment } from "./sms-consent-record.ts";
+import { cleanerAllowsSchedulingSms } from "./sms-consent.ts";
 import {
   parseInboundSmsKeyword,
   smsConsentMethodForOptInKeyword,
   type InboundSmsKeyword,
-} from "@/lib/cleaner/sms-inbound-keywords";
-import { normalizePhone } from "@/lib/domain/customers";
-import type { CleanerProfile } from "@/lib/domain/types";
-import type { HubData } from "@/lib/mock/seed";
+} from "./sms-inbound-keywords.ts";
+import { normalizePhone } from "../domain/customers.ts";
+import type { CleanerProfile } from "../domain/types.ts";
+import type { HubData } from "../mock/seed.ts";
 
 export function phoneDigits10FromE164(from: string): string | null {
   const digits = from.replace(/\D/g, "");

@@ -1,7 +1,7 @@
-import { cleanerWithMobilePhone } from "@/lib/cleaner/sms-consent";
-import { SMS_SCHEDULING_DISCLOSURE_VERSION } from "@/lib/cleaner/sms-disclosure";
-import { normalizePhone } from "@/lib/domain/customers";
-import type { CleanerProfile } from "@/lib/domain/types";
+import { cleanerWithMobilePhone } from "./sms-consent.ts";
+import { SMS_SCHEDULING_DISCLOSURE_VERSION } from "./sms-disclosure.ts";
+import { normalizePhone } from "../domain/customers.ts";
+import type { CleanerProfile } from "../domain/types.ts";
 
 export function applySchedulingSmsEnrollment(
   cleaner: CleanerProfile,

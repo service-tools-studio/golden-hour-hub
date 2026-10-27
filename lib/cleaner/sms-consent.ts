@@ -1,6 +1,6 @@
-import { normalizePhone } from "@/lib/domain/customers";
-import type { CleanerProfile } from "@/lib/domain/types";
-import { SMS_SCHEDULING_DISCLOSURE_VERSION } from "@/lib/cleaner/sms-disclosure";
+import { normalizePhone } from "../domain/customers.ts";
+import type { CleanerProfile } from "../domain/types.ts";
+import { SMS_SCHEDULING_DISCLOSURE_VERSION } from "./sms-disclosure.ts";
 
 function normalizedProfilePhone(cleaner: CleanerProfile): string | null {
   return normalizePhone(cleaner.mobilePhone);
