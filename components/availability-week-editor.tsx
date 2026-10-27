@@ -70,30 +70,29 @@ function minuteChoices(minute: number): number[] {
 const WHEEL_ITEM = 36;
 const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
 
-function TimeButton({
+function TimePhraseButton({
   label,
-  value,
+  phrase,
   open,
   onClick,
 }: {
   label: string;
-  value: string;
+  phrase: string;
   open: boolean;
   onClick: () => void;
 }) {
-  const short = label.startsWith("End") ? "End" : "Start";
-  const text = value ? formatTimeLabel(value) : short;
   return (
     <button
       type="button"
-      aria-label={value ? `${label} ${text}` : `Choose ${label}`}
+      aria-label={`${label} ${phrase}`}
       aria-expanded={open}
       onClick={onClick}
-      className={`flex min-h-14 w-full items-center justify-center whitespace-nowrap rounded-2xl px-2 text-base font-semibold ${
-        open ? "bg-gold text-ink" : `border border-ink/15 bg-cream ${value ? "text-ink" : "text-ink/40"}`
+      className={`flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-2 text-center ${
+        open ? "bg-gold text-ink" : "border border-ink/15 bg-cream text-ink"
       }`}
     >
-      {text}
+      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink/50">{label}</span>
+      <span className="text-base font-semibold leading-tight">{phrase}</span>
     </button>
   );
 }
@@ -112,38 +111,59 @@ function WindowTimes({
   onRemove: () => void;
 }) {
   const [open, setOpen] = useState<"start" | "end" | null>(null);
-  const [settingHours, setSettingHours] = useState(false);
-  const allDay = start === OPEN_DAY_START && end === OPEN_DAY_END;
+  const [customizingAllDay, setCustomizingAllDay] = useState(false);
+  const startOpen = start === OPEN_DAY_START;
+  const endOpen = end === OPEN_DAY_END;
+  const allDay = startOpen && endOpen;
 
-  function toggle(field: "start" | "end") {
-    if (open === field) {
-      setOpen(null);
-      return;
-    }
-    if (field === "start" && !start) onStart("08:00");
-    if (field === "end" && !end) onEnd("17:00");
-    setOpen(field);
+  function openStartEditor() {
+    setOpen((current) => (current === "start" ? null : "start"));
   }
 
-  function setHours() {
-    setSettingHours(true);
+  function openEndEditor() {
+    setOpen((current) => (current === "end" ? null : "end"));
+  }
+
+  function useStartOfDay() {
+    onStart(OPEN_DAY_START);
+    setOpen(null);
+  }
+
+  function useEndOfDay() {
+    onEnd(OPEN_DAY_END);
+    setOpen(null);
+  }
+
+  function useSpecificStart() {
+    if (startOpen || !start) onStart("08:00");
+    setOpen("start");
+  }
+
+  function useSpecificEnd() {
+    if (endOpen || !end) onEnd("17:00");
+    setOpen("end");
+  }
+
+  function beginCustomHours() {
+    setCustomizingAllDay(true);
     onStart("08:00");
-    onEnd("23:55");
+    onEnd("17:00");
+    setOpen(null);
   }
 
-  if (allDay && !settingHours) {
+  if (allDay && !customizingAllDay) {
     return (
       <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
-          onClick={setHours}
+          onClick={beginCustomHours}
           className="flex min-h-12 min-w-0 flex-1 items-center whitespace-nowrap rounded-2xl bg-mint/60 px-4 text-left text-base font-semibold"
         >
           All day
         </button>
         <button
           type="button"
-          onClick={setHours}
+          onClick={beginCustomHours}
           className="min-h-12 shrink-0 whitespace-nowrap px-1 text-sm font-semibold text-ink underline decoration-gold decoration-2 underline-offset-4"
         >
           Set hours
@@ -155,19 +175,80 @@ function WindowTimes({
     );
   }
 
-  const value = open === "end" ? end || "17:00" : start || "08:00";
+  const startPhrase = startOpen ? "Start of day" : start ? formatTimeLabel(start) : "Choose";
+  const endPhrase = endOpen ? "End of day" : end ? formatTimeLabel(end) : "Choose";
+  const endFieldLabel = endOpen ? "Through" : "Until";
+  const wheelValue =
+    open === "end"
+      ? endOpen || !end
+        ? "17:00"
+        : end
+      : startOpen || !start
+        ? "08:00"
+        : start;
 
   return (
     <div className="mt-3">
       <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
-        <TimeButton label="Start time" value={start} open={open === "start"} onClick={() => toggle("start")} />
-        <TimeButton label="End time" value={end} open={open === "end"} onClick={() => toggle("end")} />
+        <TimePhraseButton label="From" phrase={startPhrase} open={open === "start"} onClick={openStartEditor} />
+        <TimePhraseButton label={endFieldLabel} phrase={endPhrase} open={open === "end"} onClick={openEndEditor} />
         <button type="button" className="min-h-12 px-2 text-sm font-semibold text-ink/60" onClick={onRemove}>
           Remove
         </button>
       </div>
-      {open ? (
-        <ClockWheel value={value} onChange={(next) => (open === "start" ? onStart(next) : onEnd(next))} />
+      {open === "start" ? (
+        <div className="mt-3 space-y-2 rounded-2xl border border-ink/15 bg-cream p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              aria-pressed={startOpen}
+              onClick={useStartOfDay}
+              className={`min-h-11 rounded-2xl px-2 text-sm font-semibold ${startOpen ? "bg-ink text-cream" : "bg-white text-ink ring-1 ring-ink/10"}`}
+            >
+              Start of day
+            </button>
+            <button
+              type="button"
+              aria-pressed={!startOpen}
+              onClick={useSpecificStart}
+              className={`min-h-11 rounded-2xl px-2 text-sm font-semibold ${!startOpen ? "bg-ink text-cream" : "bg-white text-ink ring-1 ring-ink/10"}`}
+            >
+              Specific time
+            </button>
+          </div>
+          {!startOpen ? (
+            <ClockWheel value={wheelValue} onChange={(next) => onStart(next)} />
+          ) : (
+            <p className="text-sm text-ink/60">Scheduling uses 7:00 AM as the start of the business day.</p>
+          )}
+        </div>
+      ) : null}
+      {open === "end" ? (
+        <div className="mt-3 space-y-2 rounded-2xl border border-ink/15 bg-cream p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              aria-pressed={endOpen}
+              onClick={useEndOfDay}
+              className={`min-h-11 rounded-2xl px-2 text-sm font-semibold ${endOpen ? "bg-ink text-cream" : "bg-white text-ink ring-1 ring-ink/10"}`}
+            >
+              End of day
+            </button>
+            <button
+              type="button"
+              aria-pressed={!endOpen}
+              onClick={useSpecificEnd}
+              className={`min-h-11 rounded-2xl px-2 text-sm font-semibold ${!endOpen ? "bg-ink text-cream" : "bg-white text-ink ring-1 ring-ink/10"}`}
+            >
+              Specific time
+            </button>
+          </div>
+          {!endOpen ? (
+            <ClockWheel value={wheelValue} onChange={(next) => onEnd(next)} />
+          ) : (
+            <p className="text-sm text-ink/60">Open through the end of the business day.</p>
+          )}
+        </div>
       ) : null}
     </div>
   );
