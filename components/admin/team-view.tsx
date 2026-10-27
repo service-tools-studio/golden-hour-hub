@@ -248,28 +248,20 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
 
   async function saveAndLeave() {
     const href = leaveHref ?? undefined;
-    if (availabilityRef.current?.isDirty()) {
-      const saved = await availabilityRef.current.save();
-      if (!saved) {
-        setLeaveHref(null);
-        return false;
-      }
-    }
-    if (cleanerDirty) {
-      if (!runSave(href)) {
-        setLeaveHref(null);
-        return false;
-      }
-      return true;
-    }
-    if (href) router.push(href);
-    return true;
+    const ok = await runSave(href);
+    if (!ok) setLeaveHref(null);
+    return ok;
   }
 
-  function runSave(nextHref?: string) {
+  async function runSave(nextHref?: string) {
     if (saving) return false;
     setSaving(true);
+    setMessage(null);
     try {
+      if (availabilityRef.current?.isDirty()) {
+        const availabilitySaved = await availabilityRef.current.save();
+        if (!availabilitySaved) return false;
+      }
       return save(nextHref);
     } finally {
       setSaving(false);
@@ -384,7 +376,7 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
         {message ? (
           <Notice tone={message === "Saved." ? "ok" : "error"}>{message}</Notice>
         ) : null}
-        <PrimaryButton type="button" loading={saving} loadingLabel="Saving…" onClick={() => runSave()}>
+        <PrimaryButton type="button" loading={saving} loadingLabel="Saving…" onClick={() => void runSave()}>
           Save
         </PrimaryButton>
       </div>

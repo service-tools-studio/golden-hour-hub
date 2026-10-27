@@ -1,4 +1,4 @@
-import { mergeAdjacentWindows } from "@/lib/domain/availability";
+import { mergeAdjacentWindows, stripAllDayWhenSpecificExists } from "@/lib/domain/availability";
 import {
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
@@ -94,11 +94,12 @@ export function submitAvailabilityOnHub(
   windows: AvailabilityWindow[],
 ): { hub: HubData; result: ActionResult } {
   const weekEnd = addDays(weekStart, 6);
+  const weekWindows = stripAllDayWhenSpecificExists(mergeAdjacentWindows(windows));
   const combined = [
     ...hub.availability.filter(
       (window) => window.cleanerId !== cleanerId || window.date < weekStart || window.date > weekEnd,
     ),
-    ...mergeAdjacentWindows(windows),
+    ...weekWindows,
   ];
   const decision = validateAvailabilityEdit({
     newWindows: combined

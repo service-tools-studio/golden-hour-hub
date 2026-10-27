@@ -7,6 +7,7 @@ import {
   copyWeekWindows,
   listSubmissionStatus,
   mergeAdjacentWindows,
+  stripAllDayWhenSpecificExists,
 } from "./availability.ts";
 import {
   calculateConfirmedFlatPay,
@@ -572,6 +573,17 @@ describe("weekly submission", () => {
     );
     assert.equal(status.find((item) => item.cleanerId === "maria")?.submitted, true);
     assert.equal(status.find((item) => item.cleanerId === "manuel")?.submitted, false);
+  });
+
+  it("drops all-day placeholder when the same day has specific hours", () => {
+    const windows: AvailabilityWindow[] = [
+      { availabilityId: "all-day", cleanerId: "claudia", date: "2026-11-05", start: "07:00", end: "24:00" },
+      { availabilityId: "morning", cleanerId: "claudia", date: "2026-11-05", start: "09:00", end: "12:00" },
+      { availabilityId: "afternoon", cleanerId: "claudia", date: "2026-11-05", start: "12:05", end: "15:00" },
+    ];
+    const stripped = stripAllDayWhenSpecificExists(windows);
+    assert.equal(stripped.length, 2);
+    assert.equal(stripped.some((window) => window.availabilityId === "all-day"), false);
   });
 
   it("consolidates adjacent windows on the same day into one block", () => {

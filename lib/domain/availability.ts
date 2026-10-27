@@ -6,6 +6,20 @@ import { addDays, daysBetween, isValidLocalTime, minutesFromTime, timeFromMinute
 export const OPEN_DAY_START = "07:00";
 export const OPEN_DAY_END = "24:00";
 
+export function isAllDayAvailabilityWindow(window: Pick<AvailabilityWindow, "start" | "end">): boolean {
+  return window.start === OPEN_DAY_START && window.end === OPEN_DAY_END;
+}
+
+/** Drop placeholder all-day rows when the same day also has specific hours. */
+export function stripAllDayWhenSpecificExists(windows: AvailabilityWindow[]): AvailabilityWindow[] {
+  const datesWithSpecific = new Set(
+    windows.filter((window) => !isAllDayAvailabilityWindow(window)).map((window) => window.date),
+  );
+  return windows.filter(
+    (window) => !datesWithSpecific.has(window.date) || !isAllDayAvailabilityWindow(window),
+  );
+}
+
 export function listSubmissionStatus(
   cleaners: Array<Pick<CleanerProfile, "cleanerId" | "firstName" | "lastName" | "status">>,
   submissions: Array<Pick<AvailabilitySubmission, "cleanerId" | "weekStart">>,

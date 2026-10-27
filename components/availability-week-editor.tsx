@@ -11,7 +11,9 @@ import {
   OPEN_DAY_END,
   OPEN_DAY_START,
   copyWeekWindows,
+  isAllDayAvailabilityWindow,
   mergeAdjacentWindows,
+  stripAllDayWhenSpecificExists,
   windowsInWeek,
 } from "@/lib/domain/availability";
 import {
@@ -30,8 +32,10 @@ import {
   formatMonthDay,
   formatWeekRange,
   isValidLocalTime,
+  minutesFromTime,
   nextAvailabilityWeek,
   normalizeAvailabilityWeekStart,
+  timeFromMinutes,
 } from "@/lib/domain/time";
 import { customerFirstNameForCleaner, formatArrival, formatLongDate } from "@/lib/format";
 import type { AvailabilityWindow } from "@/lib/domain/types";
@@ -315,6 +319,7 @@ export function AvailabilityWeekEditor({
   const [submitting, setSubmitting] = useState(false);
   const conflictTitleId = useId();
   const editBaselineRef = useRef<AvailabilityWindow[]>([]);
+  const loadedWeekStartRef = useRef<string | null>(null);
   const savedWeekWindows = useMemo(
     () =>
       cleaner ? mergeAdjacentWindows(windowsInWeek(hub.availability, cleaner.cleanerId, week.weekStart)) : [],
@@ -330,6 +335,10 @@ export function AvailabilityWeekEditor({
 
   useEffect(() => {
     if (!cleaner) return;
+    const weekChanged = loadedWeekStartRef.current !== week.weekStart;
+    const hasLocalEdits = windowSignature(draft) !== savedWeekSignature;
+    if (!weekChanged && hasLocalEdits) return;
+    loadedWeekStartRef.current = week.weekStart;
     editBaselineRef.current = savedWeekWindows;
     setDraft(savedWeekWindows);
     setMessage(null);
@@ -423,7 +432,10 @@ export function AvailabilityWeekEditor({
   }
 
   function addWindow(date: string) {
-    const dayWindows = draft
+    const withoutAllDay = draft.filter(
+      (window) => !(window.date === date && isAllDayAvailabilityWindow(window)),
+    );
+    const dayWindows = withoutAllDay
       .filter((window) => window.date === date)
       .sort((a, b) => {
         if (!a.start && !b.start) return 0;
@@ -434,12 +446,15 @@ export function AvailabilityWeekEditor({
     const last = dayWindows.at(-1);
     let defaultStart = "";
     if (last?.end && isValidLocalTime(last.end) && last.end !== OPEN_DAY_END) {
-      defaultStart = last.end;
+      const nextStartMin = minutesFromTime(last.end) + 5;
+      if (nextStartMin < 24 * 60) {
+        defaultStart = timeFromMinutes(nextStartMin);
+      }
     } else if (last?.start && isValidLocalTime(last.start)) {
       defaultStart = last.start;
     }
     applyDraft([
-      ...draft,
+      ...withoutAllDay,
       {
         availabilityId: `draft-${date}-${draft.length}`,
         cleanerId: profile.cleanerId,
@@ -487,8 +502,9 @@ export function AvailabilityWeekEditor({
   }
 
   async function submit(options?: { quiet?: boolean; skipConflictCheck?: boolean }): Promise<boolean> {
+    const toSave = stripAllDayWhenSpecificExists(mergeAdjacentWindows(draft));
     const check = validateAvailabilityWindows(
-      draft.map((window) => ({ date: window.date, start: window.start, end: window.end })),
+      toSave.map((window) => ({ date: window.date, start: window.start, end: window.end })),
     );
     if (!check.ok) {
       setTone("error");
@@ -496,7 +512,7 @@ export function AvailabilityWeekEditor({
       return false;
     }
     if (!options?.skipConflictCheck) {
-      const detail = conflictDetailForNewlyUncovered(editBaselineRef.current, draft);
+      const detail = conflictDetailForNewlyUncovered(editBaselineRef.current, toSave);
       if (detail) {
         setConflictPrompt({
           detail,
@@ -510,7 +526,7 @@ export function AvailabilityWeekEditor({
     }
     setSubmitting(true);
     try {
-      const result = await hub.submitAvailability(profile.cleanerId, week.weekStart, draft, {
+      const result = await hub.submitAvailability(profile.cleanerId, week.weekStart, toSave, {
         quiet: options?.quiet,
       });
       if (!result.ok) {
@@ -518,8 +534,8 @@ export function AvailabilityWeekEditor({
         setMessage(result.message);
         return false;
       }
-      const submitted = mergeAdjacentWindows(draft);
-      editBaselineRef.current = submitted;
+      editBaselineRef.current = toSave;
+      setDraft(toSave);
       setTone("ok");
       setMessage(null);
       return true;
@@ -676,9 +692,11 @@ export function AvailabilityWeekEditor({
           );
         })}
         {message ? <Notice tone={tone}>{message}</Notice> : null}
-        <PrimaryButton type="button" loading={submitting} loadingLabel="Saving…" onClick={() => void submit()}>
-          {submitLabel}
-        </PrimaryButton>
+        {embedded ? null : (
+          <PrimaryButton type="button" loading={submitting} loadingLabel="Saving…" onClick={() => void submit()}>
+            {submitLabel}
+          </PrimaryButton>
+        )}
       {!embedded ? (
       <UnsavedChangesDialog
         open={leaveHref !== null}

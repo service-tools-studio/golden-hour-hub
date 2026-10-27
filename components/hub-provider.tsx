@@ -18,7 +18,7 @@ import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import { SIGNED_OUT_STORAGE_KEY } from "@/lib/auth/signed-out-guard";
-import { mergeAdjacentWindows } from "@/lib/domain/availability";
+import { mergeAdjacentWindows, stripAllDayWhenSpecificExists } from "@/lib/domain/availability";
 import { confirmedCompensationCents } from "@/lib/domain/compensation";
 import { deriveCrewSettings, validateProposedCrewSize } from "@/lib/domain/cleaners";
 import {
@@ -846,11 +846,12 @@ export function HubProvider({
       return { ok: true, message: remote.message };
     }
     const weekEnd = addDays(weekStart, 6);
+    const weekWindows = stripAllDayWhenSpecificExists(mergeAdjacentWindows(windows));
     const combined = [
       ...data.availability.filter(
         (window) => window.cleanerId !== cleanerId || window.date < weekStart || window.date > weekEnd,
       ),
-      ...mergeAdjacentWindows(windows),
+      ...weekWindows,
     ];
     const decision = validateAvailabilityEdit({
       newWindows: combined
