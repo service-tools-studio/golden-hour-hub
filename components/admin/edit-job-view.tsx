@@ -8,7 +8,9 @@ import { CleanerAvailabilityPreview } from "@/components/admin/cleaner-availabil
 import {
   deliverSchedulingCleanerSms,
   deliverSchedulingFollowUpSms,
+  type AssignmentSmsLogContext,
 } from "@/lib/cleaner/deliver-scheduling-sms";
+import { AssignmentSmsLogList } from "@/components/admin/assignment-sms-log-list";
 import { CleaningForm, type CleaningValues } from "@/components/admin/cleaning-form";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
@@ -61,11 +63,20 @@ function cleaningHref(jobId: string, from: CleaningOrigin | undefined) {
   return withOrigin(`/admin/jobs/${jobId}`, from);
 }
 
+function assignmentSmsLog(
+  assignmentId: string,
+  jobId: string,
+  kind: AssignmentSmsLogContext["kind"],
+): AssignmentSmsLogContext {
+  return { assignmentId, jobId, kind };
+}
+
 async function notifyDirectAssignment(
   cleaner: CleanerProfile,
   job: Job,
   arrivalWindowStart: string | undefined,
   assignmentMessage: string | undefined,
+  log: AssignmentSmsLogContext,
 ) {
   const body = directAssignmentSms({
     cleanerFirstName: cleaner.firstName,
@@ -76,6 +87,7 @@ async function notifyDirectAssignment(
     body,
     assignmentMessage,
     manualDetail: "assignment notice",
+    assignmentLog: log,
   });
 }
 
@@ -84,6 +96,7 @@ async function notifyInviteAssignment(
   job: Job,
   arrivalWindowStart: string | undefined,
   assignmentMessage: string | undefined,
+  log: AssignmentSmsLogContext,
 ) {
   const body = inviteAssignmentSms({
     cleanerFirstName: cleaner.firstName,
@@ -94,16 +107,17 @@ async function notifyInviteAssignment(
     body,
     assignmentMessage,
     manualDetail: "invitation",
+    assignmentLog: log,
   });
 }
 
-async function notifyInviteFollowUp(cleaner: CleanerProfile, job: Job) {
+async function notifyInviteFollowUp(cleaner: CleanerProfile, job: Job, log: AssignmentSmsLogContext) {
   const body = inviteFollowUpSms({
     cleanerFirstName: cleaner.firstName,
     customerFirstName: customerFirstNameForCleaner(job.snapshot),
     date: job.date,
   });
-  return deliverSchedulingFollowUpSms({ cleaner, body, manualDetail: "reminder" });
+  return deliverSchedulingFollowUpSms({ cleaner, body, manualDetail: "reminder", assignmentLog: log });
 }
 
 function cleaningSubtitle(job: Job, start: string | undefined): string {
@@ -398,6 +412,9 @@ export function EditJobView({
         }),
       ),
   );
+  const showInviteFollowUpButton = Boolean(
+    assignment && assignment.status === "INVITED" && assignment.lastNotified,
+  );
   const dayAvailability = hub.availability
     .filter((window) => window.cleanerId === cleaner?.cleanerId && window.date === job?.date)
     .map((window) => ({ start: window.start, end: window.end }));
@@ -443,13 +460,27 @@ export function EditJobView({
       return false;
     }
     if (mode === "DIRECT") {
+      const logId = result.assignmentId ?? assignmentId;
       hub.queueSchedulingSms(
-        notifyDirectAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
+        notifyDirectAssignment(
+          cleaner,
+          job,
+          arrival.arrivalWindowStart,
+          result.message,
+          assignmentSmsLog(logId, jobId, "direct_assign"),
+        ),
         result.message,
       );
     } else if (mode === "INVITE") {
+      const logId = result.assignmentId ?? assignmentId;
       hub.queueSchedulingSms(
-        notifyInviteAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
+        notifyInviteAssignment(
+          cleaner,
+          job,
+          arrival.arrivalWindowStart,
+          result.message,
+          assignmentSmsLog(logId, jobId, "invite"),
+        ),
         result.message,
       );
     }
@@ -468,10 +499,15 @@ export function EditJobView({
   }
 
   function sendInviteFollowUp() {
-    if (!job || !cleaner || !followUpReady || assigning) return;
+    if (!job || !cleaner || !assignment || assigning) return;
+    if (assignment.status !== "INVITED" || !assignment.lastNotified) return;
     setAssigning("FOLLOW_UP");
-    hub.queueSchedulingSms(notifyInviteFollowUp(cleaner, job));
-    setAssigning(null);
+    const promise = notifyInviteFollowUp(
+      cleaner,
+      job,
+      assignmentSmsLog(assignment.assignmentId, job.jobId, "follow_up"),
+    ).finally(() => setAssigning(null));
+    hub.queueSchedulingSms(promise);
   }
 
   async function saveAndLeave() {
@@ -576,6 +612,22 @@ export function EditJobView({
             setMessage(null);
           }}
         />
+        {showInviteFollowUpButton ? (
+          <div className="space-y-2">
+            <PrimaryButton
+              type="button"
+              disabled={assigning !== null}
+              loading={assigning === "FOLLOW_UP"}
+              loadingLabel="Sending…"
+              onClick={() => sendInviteFollowUp()}
+            >
+              Send follow-up reminder
+            </PrimaryButton>
+            <p className="text-sm text-ink/60">
+              Text {cleaner.firstName} to accept or decline this invitation in the app as soon as they can.
+            </p>
+          </div>
+        ) : null}
         {showAssignmentActions || showDirectAssignForInvite || showSettledNotificationActions ? (
           <AssignmentSaveChoices
             assigning={assigning}
@@ -605,6 +657,7 @@ export function EditJobView({
             onSave={submit}
           />
         ) : null}
+        <AssignmentSmsLogList assignmentId={assignment.assignmentId} />
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}
@@ -912,15 +965,33 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       return true;
     }
     if (mode === "DIRECT") {
-      hub.queueSchedulingSms(
-        notifyDirectAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
-        result.message,
-      );
+      const logId = result.assignmentId ?? "";
+      if (logId) {
+        hub.queueSchedulingSms(
+          notifyDirectAssignment(
+            cleaner,
+            job,
+            arrival.arrivalWindowStart,
+            result.message,
+            assignmentSmsLog(logId, job.jobId, "direct_assign"),
+          ),
+          result.message,
+        );
+      }
     } else if (mode === "INVITE") {
-      hub.queueSchedulingSms(
-        notifyInviteAssignment(cleaner, job, arrival.arrivalWindowStart, result.message),
-        result.message,
-      );
+      const logId = result.assignmentId ?? "";
+      if (logId) {
+        hub.queueSchedulingSms(
+          notifyInviteAssignment(
+            cleaner,
+            job,
+            arrival.arrivalWindowStart,
+            result.message,
+            assignmentSmsLog(logId, job.jobId, "invite"),
+          ),
+          result.message,
+        );
+      }
     } else if (result.message) {
       hub.flash(result.message);
     }

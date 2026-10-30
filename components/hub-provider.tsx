@@ -15,6 +15,7 @@ import {
   type ManualCleanerTextPrompt as ManualCleanerTextOffer,
 } from "@/lib/cleaner/deliver-scheduling-sms";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
+import { purgeAssignmentSmsLogsOnCleanerRemoval } from "@/app/actions/assignment-sms-log-cleanup";
 import { updateCleanerAdminOnHub } from "@/lib/hub/admin-mutations";
 import { submitAvailabilityOnHub } from "@/lib/hub/cleaner-mutations";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
@@ -92,7 +93,7 @@ type HubState = HubData & {
 };
 
 type ActionResult =
-  | { ok: true; message?: string; customerId?: string; jobId?: string }
+  | { ok: true; message?: string; customerId?: string; jobId?: string; assignmentId?: string }
   | { ok: false; message: string };
 type AsyncActionResult = Promise<ActionResult>;
 
@@ -1584,7 +1585,7 @@ export function HubProvider({
     });
     const assignMode = input.mode === "INVITE" ? "INVITE" : "DIRECT";
     const message = assignmentSavedMessage(cleaner, savedAssignment, assignMode);
-    return { ok: true, jobId: job.jobId, message };
+    return { ok: true, jobId: job.jobId, assignmentId: savedAssignment.assignmentId, message };
   }
 
   function addJobCleaner(jobId: string, cleanerId: string): ActionResult {
@@ -1618,10 +1619,25 @@ export function HubProvider({
     return { ok: true, message: `${cleaner.firstName} added.` };
   }
 
+  function scheduleAssignmentSmsLogPurge(assignmentId: string) {
+    if (sourceRef.current !== "dynamodb") return;
+    void purgeAssignmentSmsLogsOnCleanerRemoval(assignmentId).then((result) => {
+      if (!result.ok) console.error(result.message ?? "Could not clear assignment text history.");
+    });
+  }
+
   function removeJobCleaner(jobId: string, cleanerId: string): ActionResult {
     const job = data.jobs.find((item) => item.jobId === jobId);
     if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
     const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
+    const assignment = data.assignments.find(
+      (item) =>
+        item.jobId === job.jobId &&
+        item.cleanerId === cleanerId &&
+        item.status !== "CANCELED" &&
+        item.status !== "EXPIRED_JOB_FILLED",
+    );
+    if (assignment) scheduleAssignmentSmsLogPurge(assignment.assignmentId);
     const now = new Date().toISOString();
     const nextAssignments = data.assignments.map((assignment) =>
       assignment.jobId === job.jobId &&
@@ -1736,7 +1752,10 @@ export function HubProvider({
       if (item.jobId !== job.jobId) return item;
       const removed =
         !selected.has(item.cleanerId) && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED";
-      if (removed) return { ...item, status: "CANCELED" as const, updatedAt: now };
+      if (removed) {
+        scheduleAssignmentSmsLogPurge(item.assignmentId);
+        return { ...item, status: "CANCELED" as const, updatedAt: now };
+      }
       const tracksDate = item.status === "INVITED" || item.status === "CONFIRMED";
       const baseline = item.notifiedServiceDate ?? item.serviceDate;
       const needsReinvite = tracksDate && input.date !== baseline;

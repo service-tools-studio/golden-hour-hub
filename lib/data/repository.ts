@@ -106,7 +106,11 @@ export async function saveHub(data: HubData): Promise<number> {
   const existing = await scanAll();
   const nextKeys = new Set(next.map(itemKey));
   const stale = existing.filter(
-    (item) => item.entity && !isHubMetaItem(item) && !nextKeys.has(itemKey(item)),
+    (item) =>
+      item.entity &&
+      !isHubMetaItem(item) &&
+      item.entity !== "assignment_sms_log" &&
+      !nextKeys.has(itemKey(item)),
   );
   await writeBatches([
     ...stale.map((item) => ({ DeleteRequest: { Key: { pk: item.pk, sk: item.sk } } })),

@@ -297,6 +297,34 @@ export type RecurringSeries = {
   updatedBy: string;
 };
 
+export type AssignmentSmsKind = "invite" | "direct_assign" | "follow_up" | "removal";
+
+export type AssignmentSmsDeliveryStatus =
+  | "mock"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "undelivered"
+  | "failed"
+  | "unknown";
+
+/** Outbound scheduling text tied to a job assignment (stored outside the hub snapshot). */
+export type AssignmentSmsLog = {
+  smsLogId: string;
+  assignmentId: string;
+  jobId: string;
+  cleanerId: string;
+  kind: AssignmentSmsKind;
+  toPhone: string;
+  bodyPreview: string;
+  provider: "mock" | "twilio";
+  twilioMessageSid?: string;
+  status: AssignmentSmsDeliveryStatus;
+  errorMessage?: string;
+  sentAt: string;
+  updatedAt: string;
+};
+
 export type EditScope = "THIS_ONLY" | "THIS_AND_FUTURE";
 
 export type Result<T extends object = { ok: true }> =

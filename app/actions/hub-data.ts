@@ -4,6 +4,7 @@ import { AuthError, requireAdmin } from "@/lib/auth/guards";
 import { previewAuthEnabled } from "@/lib/auth/config";
 import { loadRemoteHub, type BootstrapResult, type HubVersionResult } from "@/lib/hub/bootstrap-remote";
 import { dynamoConfigured, saveHub } from "@/lib/data/repository";
+import { purgeStaleAssignmentSmsLogs } from "@/lib/cleaner/assignment-sms-log-retention";
 import type { HubData } from "@/lib/mock/seed";
 
 export type { BootstrapResult, HubVersionResult };
@@ -22,6 +23,11 @@ export async function persistAdminHub(
       await requireAdmin();
     }
     const revision = await saveHub(data);
+    try {
+      await purgeStaleAssignmentSmsLogs(data);
+    } catch (error) {
+      console.error("purgeStaleAssignmentSmsLogs failed after persistAdminHub.", error);
+    }
     return { ok: true, revision };
   } catch (error) {
     if (error instanceof AuthError) {

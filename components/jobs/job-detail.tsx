@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
+import { AssignmentSmsLogList } from "@/components/admin/assignment-sms-log-list";
 import { AddToCalendarButton } from "@/components/add-to-calendar";
 import { AddressLink, JobAddressText, fullAddress } from "@/components/address-link";
 import {
@@ -223,46 +224,48 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               {full ? <span className="rounded-full bg-mint px-3 py-1 text-sm font-semibold">Fully Staffed</span> : null}
             </div>
           </NavigatingLink>
-          <div className="mt-4 space-y-4 border-t border-ink/10 pt-4">
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Cleaners</p>
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink/45">Cleaners</p>
+            <div className="mt-3 space-y-3">
             {pendingCleanerIds.length === 0 && assignments.length === 0 ? (
-              <p className="text-sm text-ink/70">No cleaners assigned yet.</p>
+              <p className="text-sm text-ink/60">No cleaners assigned yet.</p>
             ) : null}
             {pendingCleanerIds.map((cleanerId) => {
               const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
               if (!cleaner) return null;
               const detail = job.draftCleanerDetails?.find((item) => item.cleanerId === cleanerId);
               return (
-                <div key={cleanerId} className="flex items-start justify-between gap-3">
-                  <NavigatingLink href={editPath(job.jobId, from, { cleaner: cleanerId })} className="block min-w-0 flex-1">
-                    {detail ? (
-                      <>
-                        <p className="text-base font-semibold">
-                          {cleaner.firstName} {cleaner.lastName}
-                        </p>
-                        <p className="mt-0.5 text-sm text-ink/55">
-                          Draft assignment{detail.proposedCrewSize > 1 ? ` · crew of ${detail.proposedCrewSize}` : ""}
-                        </p>
-                        <ScheduleFacts
-                          date={job.date}
-                          arrivalWindowStart={detail.arrivalWindowStart}
-                          arrivalWindowEnd={detail.arrivalWindowEnd}
-                          expectedDurationMinutes={detail.expectedDurationMinutes}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-base font-semibold">
-                          {cleaner.firstName} {cleaner.lastName}
-                        </p>
-                        <p className="flex items-center gap-1.5 text-sm text-ink/55">
+                <div
+                  key={cleanerId}
+                  className="rounded-2xl ring-1 ring-ink/10 bg-cream/30 p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <NavigatingLink href={editPath(job.jobId, from, { cleaner: cleanerId })} className="min-w-0 flex-1">
+                      <p className="text-base font-semibold leading-snug">
+                        {cleaner.firstName} {cleaner.lastName}
+                      </p>
+                      {detail ? (
+                        <>
+                          <p className="mt-0.5 text-sm text-ink/55">
+                            Draft{detail.proposedCrewSize > 1 ? ` · crew of ${detail.proposedCrewSize}` : ""}
+                          </p>
+                          <ScheduleFacts
+                            compact
+                            date={job.date}
+                            arrivalWindowStart={detail.arrivalWindowStart}
+                            arrivalWindowEnd={detail.arrivalWindowEnd}
+                            expectedDurationMinutes={detail.expectedDurationMinutes}
+                          />
+                        </>
+                      ) : (
+                        <p className="mt-1 flex items-center gap-1.5 text-sm text-ink/55">
                           <WarningIcon />
                           Details not set
                         </p>
-                      </>
-                    )}
-                  </NavigatingLink>
-                  <RemoveCleaner jobId={job.jobId} cleanerId={cleanerId} />
+                      )}
+                    </NavigatingLink>
+                    <RemoveCleaner jobId={job.jobId} cleanerId={cleanerId} />
+                  </div>
                 </div>
               );
             })}
@@ -290,31 +293,41 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                   : null) ??
                 (isConfirmedScheduleConflictReason(assignment.attentionReason) ? null : assignment.attentionReason);
               return (
-                <div key={assignment.assignmentId} className={`flex items-start justify-between gap-3 ${declined ? "text-ink/45" : ""}`}>
-                  <div className="min-w-0 flex-1">
-                    <NavigatingLink href={editPath(job.jobId, from, { assignment: assignment.assignmentId })} className="block">
-                      <p className="text-base font-semibold">
-                        {cleaner.firstName} {cleaner.lastName}
-                      </p>
-                      <p className={`mt-0.5 text-sm ${declined ? "" : "text-ink/55"}`}>{assignmentSubtitle(assignment)}</p>
+                <div
+                  key={assignment.assignmentId}
+                  className={`rounded-2xl ring-1 ring-ink/10 p-3 ${declined ? "bg-cream/20 text-ink/45" : "bg-cream/30"}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <NavigatingLink href={editPath(job.jobId, from, { assignment: assignment.assignmentId })} className="block">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                          <p className="text-base font-semibold leading-snug">
+                            {cleaner.firstName} {cleaner.lastName}
+                          </p>
+                          <span className={`text-sm font-medium ${declined ? "text-ink/45" : "text-ink/55"}`}>
+                            {assignmentSubtitle(assignment)}
+                          </span>
+                        </div>
+                        {showNotice ? (
+                          <p className="mt-2 text-sm font-semibold text-red-700">{noticeFlagText(cleaner.firstName, gap!)}</p>
+                        ) : null}
+                        {dateReinviteNeeded(assignment, job.date) ? (
+                          <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
+                        ) : null}
+                        {attentionMessage ? (
+                          <p className="mt-2 text-sm font-semibold text-red-700">{attentionMessage}</p>
+                        ) : null}
+                        <ScheduleFacts
+                          compact
+                          muted={declined}
+                          date={assignment.serviceDate}
+                          arrivalWindowStart={assignment.arrivalWindowStart}
+                          arrivalWindowEnd={assignment.arrivalWindowEnd}
+                          expectedDurationMinutes={assignment.expectedDurationMinutes}
+                        />
+                      </NavigatingLink>
+                      {!declined ? <AssignmentSmsLogList assignmentId={assignment.assignmentId} /> : null}
                       {showNotice ? (
-                        <p className="mt-1 text-sm font-semibold text-red-700">{noticeFlagText(cleaner.firstName, gap!)}</p>
-                      ) : null}
-                      {dateReinviteNeeded(assignment, job.date) ? (
-                        <p className="mt-1 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
-                      ) : null}
-                      {attentionMessage ? (
-                        <p className="mt-1 text-sm font-semibold text-red-700">{attentionMessage}</p>
-                      ) : null}
-                      <ScheduleFacts
-                        muted={declined}
-                        date={assignment.serviceDate}
-                        arrivalWindowStart={assignment.arrivalWindowStart}
-                        arrivalWindowEnd={assignment.arrivalWindowEnd}
-                        expectedDurationMinutes={assignment.expectedDurationMinutes}
-                      />
-                    </NavigatingLink>
-                    {showNotice ? (
                       <NotifyCleanerNotice
                         firstName={cleaner.firstName}
                         phone={cleaner.mobilePhone}
@@ -348,11 +361,13 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         }
                       />
                     ) : null}
-                  </div>
+                    </div>
                   <RemoveCleaner jobId={job.jobId} cleanerId={cleaner.cleanerId} />
+                  </div>
                 </div>
               );
             })}
+            </div>
           </div>
         </Card>
         <Link
@@ -636,7 +651,7 @@ function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string 
       if (result.message) hub.flash(result.message);
       return;
     }
-    if (!notify || !job || !cleaner) {
+    if (!notify || !job || !cleaner || !assignment) {
       if (result.message) hub.flash(result.message);
       return;
     }
@@ -651,6 +666,11 @@ function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string 
         body,
         assignmentMessage: result.message,
         manualDetail: "removal notice",
+        assignmentLog: {
+          assignmentId: assignment.assignmentId,
+          jobId,
+          kind: "removal",
+        },
       }),
       result.message,
     );
@@ -820,15 +840,28 @@ function ServiceLine({
 
 function ScheduleFacts({
   muted = false,
+  compact = false,
   ...input
 }: {
   muted?: boolean;
+  compact?: boolean;
   date: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
   expectedDurationMinutes: number;
 }) {
   const facts = formatScheduleFacts(input);
+  if (compact) {
+    return (
+      <p className={`mt-2 text-sm ${muted ? "text-ink/40" : "text-ink/65"}`}>
+        <span className="font-semibold text-ink/80">{facts.arrive}</span>
+        <span className="text-ink/35"> · </span>
+        {facts.length}
+        <span className="text-ink/35"> · </span>
+        ends {facts.ends}
+      </p>
+    );
+  }
   const items = [
     ["Start", facts.arrive],
     ["Est. on site", facts.length],

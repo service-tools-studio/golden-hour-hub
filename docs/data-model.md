@@ -213,6 +213,21 @@ There is no recurring-assignment record. A series template is copied into a new 
 
 The blocked range is not stored. It starts at `arrivalWindowStart`. It ends at `arrivalWindowEnd` plus `expectedDurationMinutes`. If the arrival window ends at or before it starts, the window end is the next calendar day. A job’s displayed cleaning span is the earliest of those starts through the latest of those ends, counting only `INVITED` and `CONFIRMED` assignments.
 
+### Assignment SMS log (outbound scheduling texts)
+
+Not part of the hub snapshot. Written when the app sends invite, direct assign, follow-up, or removal texts tied to an assignment.
+
+```
+pk     ASSIGNMENT#as-claudia-johnson
+sk     SMS#2026-10-29T20:15:00.000Z#sms-1730…
+gsi1pk SMS_SID#SM…   (when Twilio returns a Message SID)
+entity assignment_sms_log
+```
+
+Fields include `assignmentId`, `jobId`, `cleanerId`, `kind` (`invite`, `direct_assign`, `follow_up`, `removal`), `toPhone`, `bodyPreview`, `provider`, optional `twilioMessageSid`, `status` (`mock`, `queued`, `sent`, `delivered`, `undelivered`, `failed`, `unknown`), optional `errorMessage`, `sentAt`, `updatedAt`. Delivery status updates via `POST /api/twilio/sms/status` when Twilio callbacks are configured.
+
+Retention: rows are deleted when a cleaner is removed from a job (all logs for that `assignmentId`). Rows for jobs whose service date is **15 or more days** in the past are deleted on each admin hub save and by the daily cron at `GET /api/cron/assignment-sms-log-retention` (set `CRON_SECRET` in production; Vercel cron is configured in `vercel.json`).
+
 ## Access patterns
 
 

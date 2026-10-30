@@ -95,6 +95,23 @@ async function fetchTwilioMessageStatus(
   return { status: payload.status ?? "unknown", errorMessage: payload.error_message };
 }
 
+function twilioCredentials(): { accountSid: string; authToken: string } | null {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim();
+  const authToken = process.env.TWILIO_AUTH_TOKEN?.trim();
+  if (!accountSid || !authToken) return null;
+  return { accountSid, authToken };
+}
+
+/** Live Message resource status from Twilio (for log refresh). */
+export async function lookupTwilioMessageStatus(
+  messageSid: string,
+): Promise<{ status: string; errorMessage?: string } | null> {
+  const creds = twilioCredentials();
+  if (!creds) return null;
+  if ((process.env.SMS_PROVIDER ?? "mock").trim().toLowerCase() !== "twilio") return null;
+  return fetchTwilioMessageStatus(creds.accountSid, creds.authToken, messageSid);
+}
+
 function twilioDeliveryFailureMessage(errorMessage?: string): string {
   if (errorMessage?.trim()) {
     if (/compliance profile|trust hub|kyc|campaign|a2p|10dlc/i.test(errorMessage)) {
@@ -105,7 +122,7 @@ function twilioDeliveryFailureMessage(errorMessage?: string): string {
   return "Twilio could not deliver this text. US A2P / Trust Hub registration may still be pending.";
 }
 
-async function sendTwilio(message: SmsMessage): Promise<{ confirmed: boolean }> {
+async function sendTwilio(message: SmsMessage): Promise<{ confirmed: boolean; messageSid?: string; twilioStatus?: string }> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim();
   const authToken = process.env.TWILIO_AUTH_TOKEN?.trim();
   const from = process.env.TWILIO_FROM_NUMBER?.trim();
@@ -116,14 +133,20 @@ async function sendTwilio(message: SmsMessage): Promise<{ confirmed: boolean }> 
   }
 
   const to = smsToE164(message.to);
+  const statusCallback = twilioStatusCallbackUrl();
   const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  const params: Record<string, string> = { To: to, From: from, Body: message.body };
+  if (statusCallback) {
+    params.StatusCallback = statusCallback;
+    params.StatusCallbackMethod = "POST";
+  }
   const response = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: twilioAuthHeader(accountSid, authToken),
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams({ To: to, From: from, Body: message.body }),
+    body: new URLSearchParams(params),
   });
 
   const detail = await response.text();
@@ -139,30 +162,49 @@ async function sendTwilio(message: SmsMessage): Promise<{ confirmed: boolean }> 
     return { confirmed: false };
   }
 
+  const initialStatus = created.status;
+
   if (created.status && TWILIO_FAIL_STATUSES.has(created.status)) {
     throw new SmsDeliveryError(twilioDeliveryFailureMessage(created.error_message), detail);
   }
 
   const sid = created.sid;
-  if (!sid) return { confirmed: false };
+  if (!sid) return { confirmed: false, twilioStatus: initialStatus };
 
-  const pollDelaysMs = [0, 500, 1000, 2000];
+  let latestStatus = initialStatus ?? "unknown";
+  let sawSent = false;
+  const pollDelaysMs = [0, 500, 1000, 2000, 3000, 5000, 8000];
   for (const delay of pollDelaysMs) {
     if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     const { status, errorMessage } = await fetchTwilioMessageStatus(accountSid, authToken, sid);
+    latestStatus = status;
     if (TWILIO_FAIL_STATUSES.has(status)) {
       throw new SmsDeliveryError(twilioDeliveryFailureMessage(errorMessage), detail);
     }
-    if (TWILIO_SENT_STATUSES.has(status)) return { confirmed: true };
+    if (status === "delivered" || status === "read") {
+      return { confirmed: true, messageSid: sid, twilioStatus: status };
+    }
+    if (TWILIO_SENT_STATUSES.has(status)) sawSent = true;
   }
 
-  return { confirmed: false };
+  if (sawSent) return { confirmed: true, messageSid: sid, twilioStatus: latestStatus };
+  return { confirmed: false, messageSid: sid, twilioStatus: latestStatus };
+}
+
+function twilioStatusCallbackUrl(): string | null {
+  const configured = process.env.TWILIO_STATUS_CALLBACK_URL?.trim();
+  if (configured) return configured;
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (!base) return null;
+  return `${base}/api/twilio/sms/status`;
 }
 
 export type SmsSendResult = {
   provider: "mock" | "twilio";
   /** True only when Twilio reports the message as sent/delivered (not merely queued). */
   confirmed?: boolean;
+  messageSid?: string;
+  twilioStatus?: string;
 };
 
 /**
@@ -185,7 +227,12 @@ export async function sendSms(message: SmsMessage, options?: SendSmsOptions): Pr
   }
   if (provider === "twilio") {
     const outcome = await sendTwilio(message);
-    return { provider: "twilio", confirmed: outcome.confirmed };
+    return {
+      provider: "twilio",
+      confirmed: outcome.confirmed,
+      messageSid: outcome.messageSid,
+      twilioStatus: outcome.twilioStatus,
+    };
   }
   throw new SmsDeliveryError(`Unknown SMS_PROVIDER: ${provider}`);
 }

@@ -858,32 +858,9 @@ function layoutDayEvents(
   const homeColumn = new Map(orderedCleanerIds.map((id, index) => [id, index]));
   const columns = Math.max(1, orderedCleanerIds.length + (hasUnassigned ? 1 : 0));
 
-  const jobPeers = new Map<string, string[]>();
-  for (const event of events) {
-    if (!event.jobId || event.tone === "open" || event.tone === "unassigned" || !event.cleanerId) continue;
-    const peers = jobPeers.get(event.jobId) ?? [];
-    if (!peers.includes(event.cleanerId)) peers.push(event.cleanerId);
-    jobPeers.set(event.jobId, peers);
-  }
-  for (const [jobId, peers] of jobPeers) {
-    if (peers.length < 2) {
-      jobPeers.delete(jobId);
-      continue;
-    }
-    peers.sort((a, b) => (homeColumn.get(a) ?? 0) - (homeColumn.get(b) ?? 0));
-    jobPeers.set(jobId, peers);
-  }
-
   function columnFor(event: DayEvent): number {
     if (event.tone === "unassigned") return orderedCleanerIds.length > 0 ? orderedCleanerIds.length : 0;
-    const home = homeColumn.get(event.cleanerId) ?? 0;
-    if (!event.jobId) return home;
-    const peers = jobPeers.get(event.jobId);
-    if (!peers) return home;
-    const rank = peers.indexOf(event.cleanerId);
-    if (rank < 0) return home;
-    const startCol = homeColumn.get(peers[0]) ?? 0;
-    return startCol + rank;
+    return homeColumn.get(event.cleanerId) ?? 0;
   }
 
   return events.map((event) => ({

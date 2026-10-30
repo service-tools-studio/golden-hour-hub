@@ -86,6 +86,8 @@ See [.env.example](.env.example).
 | `TWILIO_AUTH_TOKEN` | Twilio auth token (server only) |
 | `TWILIO_FROM_NUMBER` | Twilio sender in E.164, e.g. `+15035551234` |
 | `TWILIO_INBOUND_WEBHOOK_URL` | Optional. Full public URL for inbound SMS (e.g. `https://hub.example.com/api/twilio/sms/inbound`). Set this if your app sits behind a proxy so Twilio signature validation uses the same URL configured in the console. |
+| `TWILIO_STATUS_CALLBACK_URL` | Optional. Delivery status webhook (defaults to `{NEXT_PUBLIC_APP_URL}/api/twilio/sms/status`). Used to update assignment text logs when Twilio reports delivered/failed. |
+| `CRON_SECRET` | Optional. Bearer token for `/api/cron/assignment-sms-log-retention` (required in production unless you rely only on admin saves). Vercel Cron sends `Authorization: Bearer …` when this is set. |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
 | `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links and invite-accept admin texts |
 | `JASMIN_PHONE` | Same format as `KELSEY_PHONE`; both receive the same text when a cleaner accepts an invite (set on Vercel/hosting too, not only `.env.local`) |
