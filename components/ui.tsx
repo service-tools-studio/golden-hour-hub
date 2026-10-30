@@ -181,6 +181,18 @@ export function Notice({ children, tone = "error" }: { children: React.ReactNode
   );
 }
 
+/** Inline validation or save errors shown directly above form submit actions. */
+export function FormSubmitNotice({
+  message,
+  tone = "error",
+}: {
+  message: string | null;
+  tone?: "error" | "ok";
+}) {
+  if (!message) return null;
+  return <Notice tone={tone}>{message}</Notice>;
+}
+
 export function PrimaryButton({
   children,
   type = "button",

@@ -297,9 +297,18 @@ export function planOccurrenceStaffing(input: {
     }
 
     if (entry.arrivalWindowStart === undefined || entry.arrivalWindowEnd === undefined) {
-      const reason = "Choose a start time before assigning directly.";
-      attention.push({ cleanerId: cleaner.cleanerId, reason });
-      assignments.push(flaggedAssignment(input, entry, reason));
+      assignments.push(
+        buildAssignment(
+          {
+            jobId: input.jobId,
+            serviceDate: input.serviceDate,
+            mode: "DIRECT",
+            nowIso: input.nowIso,
+            newId: input.newId,
+          },
+          entry,
+        ),
+      );
       continue;
     }
 

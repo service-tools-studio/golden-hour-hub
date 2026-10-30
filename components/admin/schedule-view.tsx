@@ -603,7 +603,7 @@ function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] 
           className="mx-2 mt-2 flex min-h-11 items-center justify-between gap-3 rounded-xl bg-red-50 px-3 text-sm ring-1 ring-inset ring-[#e15b64]/40"
         >
           <span className="font-semibold">{job.title}</span>
-          <span className="text-ink/70">No cleaner assigned · No time set</span>
+          <span className="text-ink/70">{job.note}</span>
         </Link>
       ))}
     </div>
@@ -670,14 +670,17 @@ function buildDayEvents(input: {
   assignments: JobAssignment[];
   availability: AvailabilityWindow[];
   series: RecurringSeries[];
-}): { events: DayEvent[]; quiet: string[]; untimed: Array<{ jobId: string; title: string; href: string }> } {
+}): { events: DayEvent[]; quiet: string[]; untimed: Array<{ jobId: string; title: string; href: string; note: string }> } {
   const events: DayEvent[] = [];
   const quiet: string[] = [];
+  const untimed: Array<{ jobId: string; title: string; href: string; note: string }> = [];
+  const untimedJobIds = new Set<string>();
   const several = input.cleanerIds.length > 1;
   input.cleanerIds.forEach((cleanerId, cleanerIndex) => {
     const cleaner = input.cleaners.find((item) => item.cleanerId === cleanerId);
     if (!cleaner) return;
     const before = events.length;
+    let addedForCleaner = false;
     const own = input.assignments.filter((assignment) => assignment.cleanerId === cleanerId);
     const windows = input.availability
       .filter((window) => window.cleanerId === cleanerId)
@@ -703,8 +706,11 @@ function buildDayEvents(input: {
         time: rangeLabel(startMin, endMin),
         tone: "open",
       });
+      addedForCleaner = true;
     }
-    for (const assignment of own.filter((item) => item.serviceDate === input.date)) {
+    for (const assignment of own) {
+      const job = input.jobs.find((item) => item.jobId === assignment.jobId);
+      if (!job || job.date !== input.date) continue;
       if (
         assignment.status !== "CONFIRMED" &&
         assignment.status !== "INVITED" &&
@@ -713,15 +719,30 @@ function buildDayEvents(input: {
       ) {
         continue;
       }
-      const job = input.jobs.find((item) => item.jobId === assignment.jobId);
-      if (!assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) continue;
+      const href = `/admin/jobs/${job.jobId}?from=schedule`;
+      if (!assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) {
+        if (untimedJobIds.has(job.jobId)) {
+          addedForCleaner = true;
+          continue;
+        }
+        const who = several ? `${cleaner.firstName} · ` : "";
+        untimed.push({
+          jobId: job.jobId,
+          title: job.snapshot.customerDisplayName,
+          href,
+          note: `${who}${pendingLabel(assignment)} · Time not set`,
+        });
+        untimedJobIds.add(job.jobId);
+        addedForCleaner = true;
+        continue;
+      }
       const span = calculateBlockedRange({
-        date: assignment.serviceDate,
+        date: job.date,
         arrivalWindowStart: assignment.arrivalWindowStart,
         arrivalWindowEnd: assignment.arrivalWindowEnd,
         expectedDurationMinutes: assignment.expectedDurationMinutes,
       }).spans.find((item) => item.date === input.date);
-      if (!job || !span || span.endMin <= span.startMin) continue;
+      if (!span || span.endMin <= span.startMin) continue;
       const pending = assignment.status !== "CONFIRMED";
       const who = several ? `${cleaner.firstName} · ` : "";
       const windowMinutes = minutesFromTime(assignment.arrivalWindowEnd) - minutesFromTime(assignment.arrivalWindowStart);
@@ -743,12 +764,13 @@ function buildDayEvents(input: {
         assignmentId: windowMinutes > 0 ? assignment.assignmentId : undefined,
         windowMinutes: windowMinutes > 0 ? windowMinutes : undefined,
       });
+      addedForCleaner = true;
     }
-    if (events.length === before) quiet.push(personName(cleaner.firstName, cleaner.lastName));
+    if (!addedForCleaner && events.length === before) quiet.push(personName(cleaner.firstName, cleaner.lastName));
   });
-  const untimed: Array<{ jobId: string; title: string; href: string }> = [];
   for (const job of input.jobs) {
     if (job.date !== input.date || job.status === "CANCELED") continue;
+    if (untimedJobIds.has(job.jobId)) continue;
     if (input.assignments.some((assignment) => assignment.jobId === job.jobId && STAFFED_STATUSES.has(assignment.status))) {
       continue;
     }
@@ -767,7 +789,7 @@ function buildDayEvents(input: {
         }).spans.find((item) => item.date === input.date)
         : undefined;
     if (!span || span.endMin <= span.startMin) {
-      untimed.push({ jobId: job.jobId, title, href });
+      untimed.push({ jobId: job.jobId, title, href, note: "No cleaner assigned · Time not set" });
       continue;
     }
     events.push({
@@ -796,10 +818,12 @@ const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
 ]);
 
 function pendingLabel(assignment: JobAssignment): string {
+  if (assignment.status === "CONFIRMED") return "Confirmed";
   if (assignment.attentionReason) return assignment.attentionReason;
   if (assignment.status === "PENDING_AVAILABILITY") return "Confirmed";
   if (assignment.status === "NEEDS_ATTENTION") return "Needs attention";
-  return "Invitation pending";
+  if (assignment.status === "INVITED") return "Invitation pending";
+  return "Assigned";
 }
 
 function shortClock(minutes: number): { clock: string; suffix: string } {

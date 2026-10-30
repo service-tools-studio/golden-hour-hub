@@ -11,7 +11,7 @@ import { sendAvailabilityReminders } from "@/app/actions/reminders";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
-import { ButtonLoadingLabel, Card, Notice, PageHeader, PrimaryButton, Screen } from "@/components/ui";
+import { ButtonLoadingLabel, Card, FormSubmitNotice, Notice, PageHeader, PrimaryButton, Screen } from "@/components/ui";
 import { listSubmissionStatus } from "@/lib/domain/availability";
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
 import { editableAvailabilityWeeks, formatWeekRange, nextAvailabilityWeek } from "@/lib/domain/time";
@@ -375,7 +375,7 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
           </div>
         </Card>
         {message ? (
-          <Notice tone={message === "Saved." ? "ok" : "error"}>{message}</Notice>
+          <FormSubmitNotice message={message} tone={message === "Saved." ? "ok" : "error"} />
         ) : null}
         <PrimaryButton type="button" loading={saving} loadingLabel="Saving…" onClick={() => void runSave()}>
           Save

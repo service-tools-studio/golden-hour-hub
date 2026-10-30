@@ -22,7 +22,7 @@ import { formatMoney } from "@/lib/domain/compensation";
 import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
 import { kelseyContactLinks } from "@/lib/contact";
 import type { Job, JobAssignment } from "@/lib/domain/types";
-import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
+import { liveAvailabilityAttentionMessage, assignmentAttentionReasonForAdmin } from "@/lib/domain/invitations";
 import {
   CLEANING_DELETE_BLOCKED_MESSAGE,
   calculateConfirmedHeadcount,
@@ -45,18 +45,16 @@ import {
   formatScheduleFacts,
   assignmentNotifiesOnRemoval,
   assignmentTracksCleanerNotification,
-  noticeFlagText,
-  noticeGap,
+  startTimeNoticeFlagText,
+  startTimeNoticeGap,
+  cleanerStartTimeUpdateSms,
   assignmentPayPerPersonDetail,
   payLine,
   propertySizeLabel,
   reinviteFlagText,
   serviceEmoji,
-  cleanerAssignmentChangeSms,
-  cleanerCleaningSmsDetails,
   cleanerRemovedFromJobSms,
   customerFirstNameForCleaner,
-  manualCleanerSmsBody,
   cleanerServiceLabel,
   cleanerTextKelseyAboutJobBody,
   serviceLabel,
@@ -100,16 +98,12 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
   );
 }
 
-function assignmentNoticeDismissKey(assignment: JobAssignment): string {
-  return `${assignment.assignmentId}:${assignment.updatedAt}`;
-}
-
 function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [navigatingAway, setNavigatingAway] = useState(false);
-  const [dismissedNotices, setDismissedNotices] = useState<Set<string>>(() => new Set());
+  const [notifyingAssignmentId, setNotifyingAssignmentId] = useState<string | null>(null);
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
   const assignments = hub.assignments.filter(
     (item) => item.jobId === job.jobId && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED",
@@ -274,10 +268,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               if (!cleaner) return null;
               const declined = assignment.status === "DECLINED";
               const gap = assignmentTracksCleanerNotification(assignment.status)
-                ? noticeGap(false, assignment, assignment.lastNotified)
-                : null;
-              const noticeKey = assignmentNoticeDismissKey(assignment);
-              const showNotice = Boolean(gap) && !dismissedNotices.has(noticeKey);
+                ? startTimeNoticeGap(assignment, assignment.lastNotified)
+                : false;
+              const showNotice = gap;
               const attentionMessage =
                 (assignment.arrivalWindowStart && assignment.arrivalWindowEnd
                   ? liveAvailabilityAttentionMessage({
@@ -291,7 +284,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                       expectedDurationMinutes: assignment.expectedDurationMinutes,
                     })
                   : null) ??
-                (isConfirmedScheduleConflictReason(assignment.attentionReason) ? null : assignment.attentionReason);
+                (isConfirmedScheduleConflictReason(assignment.attentionReason)
+                  ? null
+                  : assignmentAttentionReasonForAdmin({ job, assignment }));
               return (
                 <div
                   key={assignment.assignmentId}
@@ -309,7 +304,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                           </span>
                         </div>
                         {showNotice ? (
-                          <p className="mt-2 text-sm font-semibold text-red-700">{noticeFlagText(cleaner.firstName, gap!)}</p>
+                          <p className="mt-2 text-sm font-semibold text-red-700">{startTimeNoticeFlagText(cleaner.firstName)}</p>
                         ) : null}
                         {dateReinviteNeeded(assignment, job.date) ? (
                           <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
@@ -326,41 +321,47 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                           expectedDurationMinutes={assignment.expectedDurationMinutes}
                         />
                       </NavigatingLink>
-                      {!declined ? <AssignmentSmsLogList assignmentId={assignment.assignmentId} /> : null}
                       {showNotice ? (
                       <NotifyCleanerNotice
-                        firstName={cleaner.firstName}
-                        phone={cleaner.mobilePhone}
-                        textHref={
-                          cleaner.mobilePhone
-                            ? smsHref(
-                              cleaner.mobilePhone,
-                              manualCleanerSmsBody(
-                                cleanerAssignmentChangeSms({
-                                  cleanerFirstName: cleaner.firstName,
-                                  expectedDurationMinutes: assignment.expectedDurationMinutes,
-                                  details: cleanerCleaningSmsDetails({
-                                    date: assignment.serviceDate,
-                                    arrivalWindowStart: assignment.arrivalWindowStart,
-                                    serviceType: job.serviceType,
-                                    snapshot: visit,
-                                    specialInstructions: job.specialInstructions,
-                                  }),
-                                }),
-                              ),
-                            )
-                            : null
-                        }
-                        onContacted={() => hub.markAssignmentNotified(assignment.assignmentId)}
-                        onDismiss={() =>
-                          setDismissedNotices((current) => {
-                            const next = new Set(current);
-                            next.add(noticeKey);
-                            return next;
-                          })
-                        }
+                        loading={notifyingAssignmentId === assignment.assignmentId}
+                        disabled={!cleaner.mobilePhone}
+                        onNotify={() => {
+                          if (!cleaner.mobilePhone) return;
+                          setNotifyingAssignmentId(assignment.assignmentId);
+                          const body = cleanerStartTimeUpdateSms({
+                            cleanerFirstName: cleaner.firstName,
+                            customerFirstName: customerFirstNameForCleaner(job.snapshot),
+                            date: assignment.serviceDate,
+                            arrivalWindowStart: assignment.arrivalWindowStart,
+                            jobId: job.jobId,
+                          });
+                          hub.queueSchedulingSms(
+                            deliverSchedulingCleanerSms({
+                              cleaner,
+                              body,
+                              manualDetail: "start time update",
+                              assignmentLog: {
+                                assignmentId: assignment.assignmentId,
+                                jobId: job.jobId,
+                                kind: "start_time_update",
+                              },
+                            })
+                              .then((outcome) => {
+                                if (!outcome.manual) {
+                                  hub.markAssignmentNotified(assignment.assignmentId);
+                                }
+                                return outcome;
+                              })
+                              .finally(() => setNotifyingAssignmentId(null)),
+                          );
+                        }}
+                        onDismiss={() => {
+                          const result = hub.markAssignmentNotified(assignment.assignmentId);
+                          if (!result.ok && result.message) hub.flash(result.message);
+                        }}
                       />
                     ) : null}
+                      {!declined ? <AssignmentSmsLogList assignmentId={assignment.assignmentId} /> : null}
                     </div>
                   <RemoveCleaner jobId={job.jobId} cleanerId={cleaner.cleanerId} />
                   </div>
@@ -431,46 +432,30 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
 }
 
 function NotifyCleanerNotice({
-  firstName,
-  phone,
-  textHref,
-  onContacted,
+  loading = false,
+  disabled = false,
+  onNotify,
   onDismiss,
 }: {
-  firstName: string;
-  phone: string;
-  textHref: string | null;
-  onContacted: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  onNotify: () => void;
   onDismiss: () => void;
 }) {
-  const pillClass =
-    "flex min-h-10 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-full px-1 text-sm font-semibold";
   return (
-    <div className="mt-2 flex flex-nowrap items-center gap-2">
-      {phone && textHref ? (
-        <>
-          <a
-            href={textHref}
-            onClick={onContacted}
-            aria-label={`Text ${firstName}`}
-            className={`${pillClass} bg-ink text-white`}
-          >
-            Text
-          </a>
-          <a
-            href={`tel:+1${phone}`}
-            onClick={onContacted}
-            aria-label={`Call ${firstName}`}
-            className={`${pillClass} border border-ink/20 bg-white text-ink`}
-          >
-            Call
-          </a>
-        </>
-      ) : null}
+    <div className="mt-2 flex flex-col gap-2">
+      <button
+        type="button"
+        disabled={disabled || loading}
+        onClick={onNotify}
+        className="flex min-h-10 w-full items-center justify-center whitespace-nowrap rounded-full px-3 text-sm font-semibold bg-ink text-white disabled:bg-ink/40"
+      >
+        {loading ? "Sending…" : "Notify by text"}
+      </button>
       <button
         type="button"
         onClick={onDismiss}
-        className="shrink-0 px-1 text-sm font-semibold text-ink/70 underline decoration-ink/40 decoration-2 underline-offset-4"
+        className="self-start px-1 text-sm font-semibold text-ink/70 underline decoration-ink/40 decoration-2 underline-offset-4"
       >
         Dismiss
       </button>

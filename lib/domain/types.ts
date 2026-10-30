@@ -297,7 +297,7 @@ export type RecurringSeries = {
   updatedBy: string;
 };
 
-export type AssignmentSmsKind = "invite" | "direct_assign" | "follow_up" | "removal";
+export type AssignmentSmsKind = "invite" | "direct_assign" | "follow_up" | "removal" | "start_time_update";
 
 export type AssignmentSmsDeliveryStatus =
   | "mock"

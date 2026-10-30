@@ -7,7 +7,7 @@ import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { EstimatedDurationPicker } from "@/components/admin/estimated-duration-picker";
-import { Field, Notice, PrimaryButton, fieldClass } from "@/components/ui";
+import { Field, FormSubmitNotice, Notice, PrimaryButton, fieldClass } from "@/components/ui";
 import {
   availabilityAgainstSpan,
   availabilityStaffingSortRank,
@@ -646,7 +646,7 @@ export function CleaningForm({
               />
             </Field>
 
-            {message ? <Notice>{message}</Notice> : null}
+            <FormSubmitNotice message={message} />
             <PrimaryButton type="submit" loading={saving} loadingLabel="Saving…">
               Save cleaning
             </PrimaryButton>

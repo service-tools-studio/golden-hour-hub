@@ -21,6 +21,7 @@ import {
   ButtonLoadingLabel,
   Field,
   Notice,
+  FormSubmitNotice,
   PageHeader,
   PrimaryButton,
   Screen,
@@ -431,10 +432,6 @@ export function EditJobView({
       setMessage("Enter the crew pay, like 350 or 350.00.");
       return false;
     }
-    if (arrivalStartTbd && mode === "DIRECT") {
-      setMessage("Choose a start time before assigning directly.");
-      return false;
-    }
     if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
     else if (mode === "DRAFT" && nextHref) setAssigning("DRAFT");
 
@@ -490,11 +487,7 @@ export function EditJobView({
       router.push(nextHref);
       return true;
     }
-    if (mode !== "DRAFT") {
-      router.push(cleaningHref(jobId, from));
-      return true;
-    }
-    if (result.message) hub.flash(result.message);
+    router.push(cleaningHref(jobId, from));
     return true;
   }
 
@@ -549,7 +542,6 @@ export function EditJobView({
           submit("DRAFT");
         }}
       >
-        {message ? <Notice>{message}</Notice> : null}
         <AssignmentStatus
           label={statusLabel}
           flag={flag}
@@ -612,50 +604,59 @@ export function EditJobView({
             setMessage(null);
           }}
         />
-        {showInviteFollowUpButton ? (
+        {message ||
+        showInviteFollowUpButton ||
+        showAssignmentActions ||
+        showDirectAssignForInvite ||
+        showSettledNotificationActions ? (
           <div className="space-y-2">
-            <PrimaryButton
-              type="button"
-              disabled={assigning !== null}
-              loading={assigning === "FOLLOW_UP"}
-              loadingLabel="Sending…"
-              onClick={() => sendInviteFollowUp()}
-            >
-              Send follow-up reminder
-            </PrimaryButton>
-            <p className="text-sm text-ink/60">
-              Text {cleaner.firstName} to accept or decline this invitation in the app as soon as they can.
-            </p>
+            <FormSubmitNotice message={message} />
+            {showInviteFollowUpButton ? (
+              <div className="space-y-2">
+                <PrimaryButton
+                  type="button"
+                  disabled={assigning !== null}
+                  loading={assigning === "FOLLOW_UP"}
+                  loadingLabel="Sending…"
+                  onClick={() => sendInviteFollowUp()}
+                >
+                  Send follow-up reminder
+                </PrimaryButton>
+                <p className="text-sm text-ink/60">
+                  Text {cleaner.firstName} to accept or decline this invitation in the app as soon as they can.
+                </p>
+              </div>
+            ) : null}
+            {showAssignmentActions || showDirectAssignForInvite || showSettledNotificationActions ? (
+              <AssignmentSaveChoices
+                assigning={assigning}
+                showDraftAndInvite={showAssignmentActions || showSettledNotificationActions}
+                showInviteButton={showInviteOnSave || showSettledNotificationActions}
+                saveLabel={assignmentSettled ? "Save changes" : "Save draft"}
+                saveHint={
+                  compensationOnlyDirty
+                    ? "Updates pay on this assignment without texting the cleaner."
+                    : undefined
+                }
+                directAssignNote={
+                  weekSubmitted
+                    ? null
+                    : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
+                }
+                inviteLabel={
+                  showSettledNotificationActions
+                    ? "Resend invite"
+                    : followUpReady
+                      ? "Send follow up"
+                      : "Save and send invite"
+                }
+                onInvite={() =>
+                  followUpReady && !showSettledNotificationActions ? sendInviteFollowUp() : submit("INVITE")
+                }
+                onSave={submit}
+              />
+            ) : null}
           </div>
-        ) : null}
-        {showAssignmentActions || showDirectAssignForInvite || showSettledNotificationActions ? (
-          <AssignmentSaveChoices
-            assigning={assigning}
-            showDraftAndInvite={showAssignmentActions || showSettledNotificationActions}
-            showInviteButton={showInviteOnSave || showSettledNotificationActions}
-            saveLabel={assignmentSettled ? "Save changes" : "Save draft"}
-            saveHint={
-              compensationOnlyDirty
-                ? "Updates pay on this assignment without texting the cleaner."
-                : undefined
-            }
-            directAssignNote={
-              weekSubmitted
-                ? null
-                : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
-            }
-            inviteLabel={
-              showSettledNotificationActions
-                ? "Resend invite"
-                : followUpReady
-                  ? "Send follow up"
-                  : "Save and send invite"
-            }
-            onInvite={() =>
-              followUpReady && !showSettledNotificationActions ? sendInviteFollowUp() : submit("INVITE")
-            }
-            onSave={submit}
-          />
         ) : null}
         <AssignmentSmsLogList assignmentId={assignment.assignmentId} />
       </form>
@@ -928,10 +929,6 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       setMessage("Enter the crew pay, like 350 or 350.00.");
       return false;
     }
-    if (arrivalStartTbd && mode === "DIRECT") {
-      setMessage("Choose a start time before assigning directly.");
-      return false;
-    }
     if (mode === "DIRECT" || mode === "INVITE") setAssigning(mode);
     else if (mode === "DRAFT" && nextHref) setAssigning("DRAFT");
 
@@ -956,12 +953,9 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       return false;
     }
     if (mode === "DRAFT") {
-      if (result.message) hub.flash(result.message);
-      if (nextHref) {
-        setAssigning(null);
-        setNavigatingAway(true);
-        router.push(nextHref);
-      }
+      setAssigning(null);
+      setNavigatingAway(true);
+      router.push(nextHref ?? cleaningHref(job.jobId, from));
       return true;
     }
     if (mode === "DIRECT") {
@@ -1034,7 +1028,6 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
           submit("DRAFT");
         }}
       >
-        {message ? <Notice>{message}</Notice> : null}
         <AssignmentStatus label="Draft assignment" flag={null} />
         <Field label="Start time">
           <ArrivalWindowPicker
@@ -1089,16 +1082,19 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
             setMessage(null);
           }}
         />
-        <AssignmentSaveChoices
-          assigning={assigning}
-          directAssignNote={
-            weekSubmitted
-              ? null
-              : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
-          }
-          onInvite={() => submit("INVITE")}
-          onSave={submit}
-        />
+        <div className="space-y-2">
+          <FormSubmitNotice message={message} />
+          <AssignmentSaveChoices
+            assigning={assigning}
+            directAssignNote={
+              weekSubmitted
+                ? null
+                : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
+            }
+            onInvite={() => submit("INVITE")}
+            onSave={submit}
+          />
+        </div>
       </form>
       <UnsavedChangesDialog
         open={leaveHref !== null}

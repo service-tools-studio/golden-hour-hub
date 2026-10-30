@@ -17,7 +17,7 @@ import {
   assignmentPaySummaryLine,
   cleanerInvitationPayLines,
 } from "./domain/pay-copy";
-import { assignmentScheduleNoticeInSync } from "./domain/arrival";
+import { assignmentScheduleNoticeInSync, assignmentStartTimeOutOfSync } from "./domain/arrival";
 import { cleaningTimeSpan } from "./domain/availability";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import {
@@ -349,6 +349,30 @@ export function noticeGap(draft: boolean, current: AssignmentNotice, lastNotifie
   if (draft) return "assignment";
   if (!lastNotified) return null;
   return assignmentScheduleNoticeInSync(lastNotified, current) ? null : "changes";
+}
+
+/** Job detail: warn only when the assignment start time changed since the last text. */
+export function startTimeNoticeGap(current: AssignmentNotice, lastNotified?: AssignmentNotice): boolean {
+  if (!lastNotified) return false;
+  return assignmentStartTimeOutOfSync(lastNotified, current);
+}
+
+export function startTimeNoticeFlagText(firstName: string): string {
+  return `${firstName} has not been notified of the updated start time.`;
+}
+
+/** Twilio text when only the assignment start time changed. */
+export function cleanerStartTimeUpdateSms(input: {
+  cleanerFirstName: string;
+  customerFirstName: string;
+  date: string;
+  arrivalWindowStart?: string;
+  jobId?: string;
+  appUrl?: string;
+}): string {
+  const timeLabel = input.arrivalWindowStart ? formatTimeLabel(input.arrivalWindowStart) : "TBD";
+  const link = input.appUrl ?? cleanerHubAppUrl(input.jobId ? `/cleaner/jobs/${input.jobId}` : "/cleaner");
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here.\n\nYour cleaning for ${input.customerFirstName} on ${formatLongDate(input.date)} has an updated start time of ${timeLabel}.\n\nDetails for this cleaning are in the Hub: ${link}`;
 }
 
 export function dateReinviteNeeded(

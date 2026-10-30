@@ -49,6 +49,11 @@ export function assignmentScheduleNoticeInSync(lastNotified: AssignmentNotice, c
   );
 }
 
+/** Whether the start time alone differs from what the cleaner was last told. */
+export function assignmentStartTimeOutOfSync(lastNotified: AssignmentNotice, current: AssignmentNotice): boolean {
+  return lastNotified.arrivalWindowStart !== current.arrivalWindowStart;
+}
+
 /** Whether the cleaner-facing assignment details match what they were last told. */
 export function assignmentNoticeInSync(lastNotified: AssignmentNotice, current: AssignmentNotice): boolean {
   return (

@@ -1,6 +1,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { BatchWriteCommand, DynamoDBDocumentClient, GetCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mergeRecurringHorizon } from "../domain/recurrence.ts";
+import { clearStaleNotScheduledAttention } from "../domain/invitations.ts";
 import { reconcileScheduleConflictWarnings } from "../domain/scheduling.ts";
 import { todayInBusinessZone } from "../domain/time.ts";
 import { emptyHub, type HubData } from "../mock/seed.ts";
@@ -74,13 +75,18 @@ export async function loadHub(): Promise<HubData> {
   }
   const data = itemsToHub(items, today);
   const generated = mergeRecurringHorizon({ ...data, today, nowIso: new Date().toISOString() });
-  const assignments = reconcileScheduleConflictWarnings(generated.assignments, data.cleaners);
+  const nowIso = new Date().toISOString();
+  const reconciled = reconcileScheduleConflictWarnings(generated.assignments, data.cleaners);
+  const assignments = clearStaleNotScheduledAttention(generated.jobs, reconciled, nowIso);
   const next = { ...data, today, series: generated.series, jobs: generated.jobs, assignments };
   const beforeById = new Map(generated.assignments.map((assignment) => [assignment.assignmentId, assignment]));
   const assignmentsReconciled = assignments.some((assignment) => {
     const before = beforeById.get(assignment.assignmentId);
     if (!before) return true;
-    return before.status !== assignment.status || before.attentionReason !== assignment.attentionReason;
+    return (
+      before.status !== assignment.status ||
+      before.attentionReason !== assignment.attentionReason
+    );
   });
   if (next.jobs.length !== data.jobs.length || next.assignments.length !== data.assignments.length || assignmentsReconciled) {
     await saveHub(next);

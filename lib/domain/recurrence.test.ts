@@ -287,6 +287,30 @@ describe("recurring edits and staffing", () => {
     assert.equal(plan.assignments[0].proposedTotalPayCents, 10000);
   });
 
+  it("direct-assigns without a start time", () => {
+    const plan = planOccurrenceStaffing({
+      jobId: "job-oct-6",
+      serviceDate: "2026-10-06",
+      headcountNeeded: 2,
+      mode: "DIRECT",
+      template: [
+        template({
+          arrivalWindowStart: undefined,
+          arrivalWindowEnd: undefined,
+        }),
+      ],
+      cleaners: [{ cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 2 }],
+      availabilityByCleaner: { claudia: { submitted: true, windows: [] } },
+      confirmedAssignments: [],
+      nowIso: "2026-09-26T00:00:00.000Z",
+      newId: () => "new",
+    });
+    assert.equal(plan.assignments.length, 1);
+    assert.equal(plan.assignments[0].status, "CONFIRMED");
+    assert.equal(plan.assignments[0].arrivalWindowStart, undefined);
+    assert.equal(plan.attention.length, 0);
+  });
+
   it("does not directly assign a cleaner onto a conflicting confirmed job", () => {
     const conflict: JobAssignment = {
       assignmentId: "existing",

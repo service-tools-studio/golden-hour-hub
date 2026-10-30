@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  assignmentNoticeInSync,
   assignmentScheduleNoticeInSync,
+  assignmentStartTimeOutOfSync,
+  assignmentNoticeInSync,
   normalizeArrivalWindow,
   validateArrivalWindow,
 } from "./arrival.ts";
@@ -32,6 +33,39 @@ describe("arrival times", () => {
     };
     assert.equal(assignmentScheduleNoticeInSync(last, current), true);
     assert.equal(assignmentNoticeInSync(last, current), false);
+    assert.equal(assignmentStartTimeOutOfSync(last, current), false);
+  });
+
+  it("detects start time drift without duration changes", () => {
+    const last: AssignmentNotice = {
+      arrivalWindowStart: "11:00",
+      expectedDurationMinutes: 120,
+      proposedCrewSize: 1,
+      payType: "FLAT",
+      payPerPersonCents: 5000,
+    };
+    const current: AssignmentNotice = {
+      ...last,
+      arrivalWindowStart: "13:00",
+    };
+    assert.equal(assignmentStartTimeOutOfSync(last, current), true);
+    assert.equal(assignmentScheduleNoticeInSync(last, current), false);
+  });
+
+  it("does not flag duration-only drift as start time change", () => {
+    const last: AssignmentNotice = {
+      arrivalWindowStart: "11:00",
+      expectedDurationMinutes: 120,
+      proposedCrewSize: 1,
+      payType: "FLAT",
+      payPerPersonCents: 5000,
+    };
+    const current: AssignmentNotice = {
+      ...last,
+      expectedDurationMinutes: 90,
+    };
+    assert.equal(assignmentStartTimeOutOfSync(last, current), false);
+    assert.equal(assignmentScheduleNoticeInSync(last, current), false);
   });
 
   it("treats legacy window end as in sync when the start time matches", () => {

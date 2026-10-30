@@ -33,6 +33,7 @@ import {
   expireJobInvitesIfHeadcountMet,
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
+  clearStaleNotScheduledAttention,
   validateInvitationAcceptance,
   withAssignmentConfirmed,
   withAssignmentDeclined,
@@ -1388,12 +1389,6 @@ export function HubProvider({
     const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
     if (!arrivalTimes.ok) return arrivalTimes;
     if (
-      input.mode === "DIRECT" &&
-      (arrivalTimes.arrivalWindowStart === undefined || arrivalTimes.arrivalWindowEnd === undefined)
-    ) {
-      return { ok: false, message: "Choose a start time before assigning directly." };
-    }
-    if (
       !Number.isInteger(input.expectedDurationMinutes) ||
       input.expectedDurationMinutes < 30 ||
       input.expectedDurationMinutes > 12 * 60
@@ -1581,7 +1576,11 @@ export function HubProvider({
     setState({
       ...data,
       jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-      assignments,
+      assignments: clearStaleNotScheduledAttention(
+        data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
+        assignments,
+        now,
+      ),
     });
     const assignMode = input.mode === "INVITE" ? "INVITE" : "DIRECT";
     const message = assignmentSavedMessage(cleaner, savedAssignment, assignMode);

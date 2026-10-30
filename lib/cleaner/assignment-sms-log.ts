@@ -13,6 +13,8 @@ export function assignmentSmsKindLabel(kind: AssignmentSmsKind): string {
       return "Reminder";
     case "removal":
       return "Removal";
+    case "start_time_update":
+      return "Time update";
   }
 }
 

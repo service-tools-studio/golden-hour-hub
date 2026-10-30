@@ -224,7 +224,7 @@ gsi1pk SMS_SID#SM…   (when Twilio returns a Message SID)
 entity assignment_sms_log
 ```
 
-Fields include `assignmentId`, `jobId`, `cleanerId`, `kind` (`invite`, `direct_assign`, `follow_up`, `removal`), `toPhone`, `bodyPreview`, `provider`, optional `twilioMessageSid`, `status` (`mock`, `queued`, `sent`, `delivered`, `undelivered`, `failed`, `unknown`), optional `errorMessage`, `sentAt`, `updatedAt`. Delivery status updates via `POST /api/twilio/sms/status` when Twilio callbacks are configured.
+Fields include `assignmentId`, `jobId`, `cleanerId`, `kind` (`invite`, `direct_assign`, `follow_up`, `removal`, `start_time_update`), `toPhone`, `bodyPreview`, `provider`, optional `twilioMessageSid`, `status` (`mock`, `queued`, `sent`, `delivered`, `undelivered`, `failed`, `unknown`), optional `errorMessage`, `sentAt`, `updatedAt`. Delivery status updates via `POST /api/twilio/sms/status` when Twilio callbacks are configured.
 
 Retention: rows are deleted when a cleaner is removed from a job (all logs for that `assignmentId`). Rows for jobs whose service date is **15 or more days** in the past are deleted on each admin hub save and by the daily cron at `GET /api/cron/assignment-sms-log-retention` (set `CRON_SECRET` in production; Vercel cron is configured in `vercel.json`).
 

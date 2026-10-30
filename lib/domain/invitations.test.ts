@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  clearStaleNotScheduledAttention,
+  ASSIGNMENT_JOB_NOT_SCHEDULED_REASON,
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
   validateInvitationAcceptance,
@@ -269,6 +271,23 @@ describe("invitation acceptance", () => {
     assert.equal(kept?.status, "CONFIRMED");
     assert.equal(kept?.confirmedCrewSize, 1);
     assert.equal(untouched?.status, "CONFIRMED");
+  });
+
+  it("clears a stale not-scheduled flag after the job is booked", () => {
+    const flagged = invite({
+      assignmentId: "stale",
+      status: "NEEDS_ATTENTION",
+      attentionReason: ASSIGNMENT_JOB_NOT_SCHEDULED_REASON,
+      confirmedCrewSize: undefined,
+    });
+    const cleared = clearStaleNotScheduledAttention(
+      [{ jobId: "job-1", status: "SCHEDULED" }],
+      [flagged],
+      "2026-10-04T00:00:00.000Z",
+    );
+    assert.equal(cleared[0]?.status, "CONFIRMED");
+    assert.equal(cleared[0]?.attentionReason, undefined);
+    assert.equal(cleared[0]?.confirmedCrewSize, 2);
   });
 
   it("expires outstanding invites once headcount is met", () => {

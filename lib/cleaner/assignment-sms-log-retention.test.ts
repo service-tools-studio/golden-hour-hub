@@ -13,7 +13,7 @@ function job(jobId: string, date: string): Job {
     customerId: "c",
     propertyId: "p",
     status: "SCHEDULED",
-    serviceType: "ONE_TIME",
+    serviceType: "OTHER",
     headcountNeeded: 1,
     snapshot: {
       customerDisplayName: "Test",

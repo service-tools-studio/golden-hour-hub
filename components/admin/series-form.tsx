@@ -2,7 +2,7 @@
 
 import { useImperativeHandle, useRef, useState } from "react";
 import { useHub } from "@/components/hub-provider";
-import { Field, PrimaryButton, fieldClass } from "@/components/ui";
+import { Field, FormSubmitNotice, PrimaryButton, fieldClass } from "@/components/ui";
 import type { CustomerFormHandle } from "@/components/admin/customer-form";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { validateRecurrenceRule } from "@/lib/domain/recurrence";
@@ -236,11 +236,7 @@ export function SeriesForm({
           ))}
         </div>
       </div>
-      {message ? (
-        <p role="alert" className="text-sm font-semibold text-red-700">
-          {message}
-        </p>
-      ) : null}
+      <FormSubmitNotice message={message} />
       <PrimaryButton type="submit" loading={saving} loadingLabel="Saving…">
         Save recurring service
       </PrimaryButton>

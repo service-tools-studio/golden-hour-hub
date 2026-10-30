@@ -311,6 +311,59 @@ export function revalidatePendingAssignments(input: {
   return next;
 }
 
+export const ASSIGNMENT_JOB_NOT_SCHEDULED_REASON = "This cleaning is no longer scheduled." as const;
+
+/** Hide a stale availability flag after the visit was booked. */
+export function assignmentAttentionReasonForAdmin(input: {
+  job: Pick<Job, "status">;
+  assignment: Pick<JobAssignment, "attentionReason">;
+}): string | null {
+  const reason = input.assignment.attentionReason;
+  if (!reason) return null;
+  if (reason === ASSIGNMENT_JOB_NOT_SCHEDULED_REASON && input.job.status === "SCHEDULED") {
+    return null;
+  }
+  return reason;
+}
+
+/** Clears a draft-era flag once the parent job is `SCHEDULED`. */
+export function clearStaleNotScheduledAttention(
+  jobs: Array<Pick<Job, "jobId" | "status">>,
+  assignments: JobAssignment[],
+  nowIso: string,
+): JobAssignment[] {
+  const jobById = new Map(jobs.map((job) => [job.jobId, job]));
+  return assignments.map((assignment) => {
+    if (assignment.attentionReason !== ASSIGNMENT_JOB_NOT_SCHEDULED_REASON) return assignment;
+    const job = jobById.get(assignment.jobId);
+    if (!job || job.status !== "SCHEDULED") return assignment;
+    if (assignment.status === "NEEDS_ATTENTION") {
+      const crewSize = assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize;
+      const confirmedTotalPayCents = confirmedCompensationCents({
+        payType: assignment.payType,
+        payPerPersonCents: assignment.payPerPersonCents,
+        confirmedCrewSize: crewSize,
+      });
+      return {
+        ...assignment,
+        status: "CONFIRMED",
+        attentionReason: undefined,
+        availabilityConflictWeekStart: undefined,
+        confirmedCrewSize: crewSize,
+        confirmedTotalPayCents,
+        pendingCrewSize: undefined,
+        respondedAt: assignment.respondedAt ?? nowIso,
+        updatedAt: nowIso,
+      };
+    }
+    return {
+      ...assignment,
+      attentionReason: undefined,
+      updatedAt: nowIso,
+    };
+  });
+}
+
 function pendingFailureReason(input: {
   assignment: JobAssignment;
   job: Pick<Job, "jobId" | "status" | "headcountNeeded"> | undefined;
@@ -320,7 +373,7 @@ function pendingFailureReason(input: {
   assignments: JobAssignment[];
 }): { kind: "outside" | "conflict" | "other"; message: string } | null {
   if (!input.job || input.job.status !== "SCHEDULED") {
-    return { kind: "other", message: "This cleaning is no longer scheduled." };
+    return { kind: "other", message: ASSIGNMENT_JOB_NOT_SCHEDULED_REASON };
   }
   if (input.cleaner.status !== "ACTIVE") {
     return { kind: "other", message: "This cleaner is not active." };
