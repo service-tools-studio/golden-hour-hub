@@ -10,7 +10,10 @@ export async function notifyAdminsCleanerAcceptedInvite(input: {
   assignment: JobAssignment;
 }): Promise<void> {
   const phones = adminNotifyPhoneDigitsFromEnv();
-  if (phones.length === 0) return;
+  if (phones.length === 0) {
+    console.warn("[admin:invite-accept] no admin phones (set KELSEY_PHONE and/or JASMIN_PHONE)");
+    return;
+  }
 
   const arrivalStart = input.assignment.arrivalWindowStart ?? input.job.arrivalWindowStart;
   const details = cleanerCleaningSmsDetailsFromJob(
@@ -26,7 +29,8 @@ export async function notifyAdminsCleanerAcceptedInvite(input: {
 
   for (const to of phones) {
     try {
-      await sendSms({ to, body });
+      const result = await sendSms({ to, body }, { staff: true });
+      console.info("[admin:invite-accept] sent", { to, provider: result.provider, confirmed: result.confirmed });
     } catch (error) {
       const detail = error instanceof SmsDeliveryError ? error.userMessage : error;
       console.error("[admin:invite-accept] sms failed", { to, detail });

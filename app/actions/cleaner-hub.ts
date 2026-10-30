@@ -47,10 +47,12 @@ export async function acceptInvitationAction(assignmentId: string, crewSize: num
     const assignment = next.assignments.find((item) => item.assignmentId === assignmentId);
     const job = assignment ? next.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
     const cleaner = next.cleaners.find((item) => item.cleanerId === session.cleanerId);
-    if (assignment?.status === "CONFIRMED" && job && cleaner) {
-      void notifyAdminsCleanerAcceptedInvite({ cleaner, job, assignment }).catch((error) => {
+    if (assignment && job && cleaner && assignment.status !== "INVITED") {
+      try {
+        await notifyAdminsCleanerAcceptedInvite({ cleaner, job, assignment });
+      } catch (error) {
         console.error("[admin:invite-accept] notify failed", error);
-      });
+      }
     }
 
     return { ok: true, message: result.message, data: hubDataForCleaner(next, session.cleanerId) };

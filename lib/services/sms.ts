@@ -169,8 +169,15 @@ export type SmsSendResult = {
  * Server-only SMS to cleaners (scheduling). Use SMS_PROVIDER=mock to log without sending.
  * Never use for customers — use manual `sms:` links instead (`arrivalChangeSms` in lib/format.ts).
  */
-export async function sendSms(message: SmsMessage): Promise<SmsSendResult> {
-  await rejectIfCustomerPhone(message.to);
+export type SendSmsOptions = {
+  /** Staff / ops numbers (e.g. Kelsey, Jasmin). Skips the customer-phone guard. */
+  staff?: boolean;
+};
+
+export async function sendSms(message: SmsMessage, options?: SendSmsOptions): Promise<SmsSendResult> {
+  if (!options?.staff) {
+    await rejectIfCustomerPhone(message.to);
+  }
   const provider = (process.env.SMS_PROVIDER ?? "mock").trim().toLowerCase();
   if (provider === "mock") {
     console.info(`[sms:mock] to=${message.to} ${message.body}`);
