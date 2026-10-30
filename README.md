@@ -87,7 +87,8 @@ See [.env.example](.env.example).
 | `TWILIO_FROM_NUMBER` | Twilio sender in E.164, e.g. `+15035551234` |
 | `TWILIO_INBOUND_WEBHOOK_URL` | Optional. Full public URL for inbound SMS (e.g. `https://hub.example.com/api/twilio/sms/inbound`). Set this if your app sits behind a proxy so Twilio signature validation uses the same URL configured in the console. |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
-| `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links |
+| `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links and invite-accept admin texts |
+| `JASMIN_PHONE` | Same format as `KELSEY_PHONE`; both receive the same text when a cleaner accepts an invite |
 | `GOOGLE_MAPS_API_KEY` | Server-only key for address typeahead (**Places API (New)**; restrict by API, not HTTP referrer) |
 | `GOOGLE_CALENDAR_ENABLED` | Leave `false` until sync is built |
 | `GOOGLE_CALENDAR_ID` | Target calendar, later |
