@@ -100,7 +100,15 @@ export function planInboundSmsReply(hub: HubData, fromE164: string, body: string
     };
   }
 
-  return { action: "none" };
+  return {
+    action: "message",
+    body: inboundNonKeywordAutoReply(),
+  };
+}
+
+/** Auto-reply when someone texts the Hub number with anything other than START/STOP/HELP. */
+export function inboundNonKeywordAutoReply(): string {
+  return "Golden Hour Hub: This number is not monitored for replies. For scheduling help, contact Jasmin or Kelsey directly. Reply HELP for more info.";
 }
 
 export function mergeInboundCleanerUpdates(hub: HubData, updated: CleanerProfile[]): HubData {

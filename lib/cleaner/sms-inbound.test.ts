@@ -55,4 +55,12 @@ describe("planInboundSmsReply", () => {
     assert.equal(plan.cleaners[0].smsSchedulingOptIn, false);
     assert.equal(plan.cleaners[0].smsConsentPhone, undefined);
   });
+
+  it("auto-replies to non-keyword messages", () => {
+    const hub = { ...emptyHub("2026-10-21"), cleaners: [cleaner()] };
+    const plan = planInboundSmsReply(hub, "+15035550101", "Are we still on for Tuesday?");
+    assert.equal(plan.action, "message");
+    if (plan.action !== "message") return;
+    assert.match(plan.body, /not monitored for replies/);
+  });
 });
