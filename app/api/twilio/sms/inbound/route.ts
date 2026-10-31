@@ -3,9 +3,9 @@ import { mergeInboundCleanerUpdates, planInboundSmsReply } from "@/lib/cleaner/s
 import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
 import {
   formDataToParamRecord,
-  twilioInboundWebhookUrl,
+  inboundWebhookSignatureUrls,
+  twilioRequestSignatureValid,
   twimlMessage,
-  validateTwilioSignature,
 } from "@/lib/services/twilio-inbound";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +17,10 @@ export async function POST(request: Request) {
   const signature = request.headers.get("x-twilio-signature") ?? "";
 
   if (authToken) {
-    const url = twilioInboundWebhookUrl(request);
-    if (!validateTwilioSignature(authToken, signature, url, params)) {
-      console.error("[twilio:inbound] invalid signature");
+    if (!twilioRequestSignatureValid(authToken, signature, request, params)) {
+      console.error("[twilio:inbound] invalid signature", {
+        urls: inboundWebhookSignatureUrls(request),
+      });
       return new NextResponse("Forbidden", { status: 403 });
     }
   } else {
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
     }
 
     if (plan.action === "message" || plan.action === "opt_in" || plan.action === "opt_out") {
+      console.info(`[twilio:inbound] reply action=${plan.action} from=${from}`);
       return new NextResponse(twimlMessage(plan.body), {
         status: 200,
         headers: { "Content-Type": "text/xml" },
