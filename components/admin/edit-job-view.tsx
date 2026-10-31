@@ -581,7 +581,7 @@ export function EditJobView({
         ) : null}
         {maxCrew > 1 ? (
           <CountField
-            label="Crew size (including you)"
+            label="Your crew size"
             value={crew}
             min={1}
             max={maxCrew}
@@ -1059,7 +1059,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
         />
         {maxCrew > 1 ? (
           <CountField
-            label="Crew size (including you)"
+            label="Your crew size"
             value={crew}
             min={1}
             max={maxCrew}
