@@ -4,6 +4,7 @@ import { AuthError } from "@/lib/auth/guards";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { requireCleaner } from "@/lib/auth/guards";
 import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
+import { notifyAdminsCleanerAvailabilitySubmitted } from "@/lib/cleaner/admin-availability-notify";
 import { notifyAdminsCleanerAcceptedInvite } from "@/lib/cleaner/admin-invite-notify";
 import {
   acceptInvitationOnHub,
@@ -71,5 +72,33 @@ export async function submitAvailabilityAction(
   weekStart: string,
   windows: AvailabilityWindow[],
 ): Promise<MutationResult> {
-  return runCleanerMutation((hub, cleanerId) => submitAvailabilityOnHub(hub, cleanerId, weekStart, windows));
+  try {
+    const session = await requireCleaner();
+    if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
+    if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
+    const hub = await loadHub();
+    const wasSubmitted = hub.submissions.some(
+      (submission) => submission.cleanerId === session.cleanerId && submission.weekStart === weekStart,
+    );
+    const { hub: next, result } = submitAvailabilityOnHub(hub, session.cleanerId, weekStart, windows);
+    if (!result.ok) return result;
+    await saveHub(next);
+    const cleaner = next.cleaners.find((item) => item.cleanerId === session.cleanerId);
+    if (cleaner) {
+      try {
+        await notifyAdminsCleanerAvailabilitySubmitted({
+          cleaner,
+          weekStart,
+          kind: wasSubmitted ? "updated" : "submitted",
+        });
+      } catch (error) {
+        console.error("[admin:availability] notify failed", error);
+      }
+    }
+    return { ok: true, message: result.message, data: hubDataForCleaner(next, session.cleanerId) };
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
+    console.error("cleaner hub mutation failed.", error);
+    return { ok: false, message: "Could not update Hub." };
+  }
 }
