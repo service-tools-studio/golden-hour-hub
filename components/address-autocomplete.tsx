@@ -16,6 +16,13 @@ type AddressAutocompleteProps = {
   "aria-invalid"?: boolean;
 };
 
+function newPlacesSessionToken(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function AddressAutocomplete({
   value,
   onChange,
@@ -32,6 +39,9 @@ export function AddressAutocomplete({
   const requestId = useRef(0);
   const skipFetchForValue = useRef(false);
   const userIsEditing = useRef(false);
+  const sessionTokenRef = useRef(newPlacesSessionToken());
+  const choosingPlaceId = useRef<string | null>(null);
+  const resolvedPlaceCache = useRef(new Map<string, ParsedAddress>());
 
   useEffect(() => {
     if (!userIsEditing.current) return;
@@ -51,7 +61,11 @@ export function AddressAutocomplete({
     const timer = window.setTimeout(async () => {
       setLoading(true);
       try {
-        const response = await fetch(`/api/places/autocomplete?input=${encodeURIComponent(query)}`);
+        const params = new URLSearchParams({
+          input: query,
+          sessionToken: sessionTokenRef.current,
+        });
+        const response = await fetch(`/api/places/autocomplete?${params.toString()}`);
         if (id !== requestId.current) return;
         if (!response.ok) {
           setSuggestions([]);
@@ -66,7 +80,7 @@ export function AddressAutocomplete({
       } finally {
         if (id === requestId.current) setLoading(false);
       }
-    }, 250);
+    }, 300);
 
     return () => window.clearTimeout(timer);
   }, [value]);
@@ -80,24 +94,46 @@ export function AddressAutocomplete({
   }, []);
 
   async function choose(suggestion: PlaceSuggestion) {
+    if (choosingPlaceId.current === suggestion.placeId) return;
+    choosingPlaceId.current = suggestion.placeId;
     requestId.current += 1;
     skipFetchForValue.current = true;
     setOpen(false);
     setSuggestions([]);
     setLoading(false);
     setActiveIndex(-1);
-    const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(suggestion.placeId)}`);
-    if (!response.ok) {
+
+    const cached = resolvedPlaceCache.current.get(suggestion.placeId);
+    if (cached) {
+      onChange(cached.streetAddress);
+      onSelect?.(cached);
+      sessionTokenRef.current = newPlacesSessionToken();
+      choosingPlaceId.current = null;
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        placeId: suggestion.placeId,
+        sessionToken: sessionTokenRef.current,
+      });
+      const response = await fetch(`/api/places/details?${params.toString()}`);
+      if (!response.ok) {
+        onChange(suggestion.label.split(",")[0]?.trim() ?? suggestion.label);
+        return;
+      }
+      const payload = (await response.json()) as { address?: ParsedAddress };
+      if (payload.address) {
+        resolvedPlaceCache.current.set(suggestion.placeId, payload.address);
+        onChange(payload.address.streetAddress);
+        onSelect?.(payload.address);
+        return;
+      }
       onChange(suggestion.label.split(",")[0]?.trim() ?? suggestion.label);
-      return;
+    } finally {
+      sessionTokenRef.current = newPlacesSessionToken();
+      choosingPlaceId.current = null;
     }
-    const payload = (await response.json()) as { address?: ParsedAddress };
-    if (payload.address) {
-      onChange(payload.address.streetAddress);
-      onSelect?.(payload.address);
-      return;
-    }
-    onChange(suggestion.label.split(",")[0]?.trim() ?? suggestion.label);
   }
 
   return (

@@ -14,10 +14,11 @@ export async function GET(request: Request) {
   }
 
   const input = new URL(request.url).searchParams.get("input")?.trim() ?? "";
+  const sessionToken = new URL(request.url).searchParams.get("sessionToken")?.trim() ?? undefined;
   if (input.length < 3) {
     return Response.json({ suggestions: [] });
   }
 
-  const suggestions = await fetchPlaceSuggestions(input);
+  const suggestions = await fetchPlaceSuggestions(input, sessionToken);
   return Response.json({ suggestions });
 }

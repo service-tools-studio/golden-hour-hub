@@ -14,11 +14,12 @@ export async function GET(request: Request) {
   }
 
   const placeId = new URL(request.url).searchParams.get("placeId")?.trim() ?? "";
+  const sessionToken = new URL(request.url).searchParams.get("sessionToken")?.trim() ?? undefined;
   if (!placeId) {
     return Response.json({ error: "Missing placeId." }, { status: 400 });
   }
 
-  const address = await fetchPlaceAddress(placeId);
+  const address = await fetchPlaceAddress(placeId, sessionToken);
   if (!address) {
     return Response.json({ error: "Could not load that address." }, { status: 404 });
   }

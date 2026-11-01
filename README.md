@@ -91,6 +91,6 @@ See [.env.example](.env.example).
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
 | `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links and admin ops texts |
 | `JASMIN_PHONE` | Same format as `KELSEY_PHONE`; both receive the same admin ops texts (invite accepted, availability submitted/updated). Set on Vercel/hosting too, not only `.env.local` |
-| `GOOGLE_MAPS_API_KEY` | Server-only key for address typeahead (**Places API (New)**; restrict by API, not HTTP referrer) |
+| `GOOGLE_MAPS_API_KEY` | Server-only key for customer address typeahead (**Places API (New)** only). Hub calls Autocomplete on keystrokes and **Place Details once per selection** with an Essentials field mask (`addressComponents`, `formattedAddress` only—no reviews/ratings/`generativeSummary`). Use **session tokens** so Google bills autocomplete + details as one session. Restrict the key to Places API (New) + your server IPs/domains; disable unused Maps client SDKs so nothing else can trigger Enterprise SKUs. |
 | `GOOGLE_CALENDAR_ENABLED` | Leave `false` until sync is built |
 | `GOOGLE_CALENDAR_ID` | Target calendar, later |
