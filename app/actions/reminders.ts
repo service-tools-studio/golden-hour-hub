@@ -1,12 +1,11 @@
 "use server";
 
 import { AuthError, requireAdmin } from "@/lib/auth/guards";
-import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
+import { sendAvailabilityWeekSmsToCleaners } from "@/lib/cleaner/availability-week-reminders";
 import { dynamoConfigured, loadHub } from "@/lib/data/repository";
 import { emptyHub } from "@/lib/mock/seed";
-import { SmsDeliveryError, sendSms } from "@/lib/services/sms";
-import { formatWeekRange, nextAvailabilityWeek, todayInBusinessZone } from "@/lib/domain/time";
-import { cleanerHubSmsLink } from "@/lib/site-metadata";
+import { SmsDeliveryError } from "@/lib/services/sms";
+import { todayInBusinessZone } from "@/lib/domain/time";
 
 export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
   | { ok: true; message: string }
@@ -16,23 +15,11 @@ export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
     await requireAdmin();
     const today = todayInBusinessZone();
     const hub = dynamoConfigured() ? await loadHub() : emptyHub(today);
-    const week = nextAvailabilityWeek(today);
-    const sent: string[] = [];
-
-    for (const cleanerId of cleanerIds) {
-      const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId && item.status === "ACTIVE");
-      if (!cleaner || !cleanerAllowsSchedulingSms(cleaner)) continue;
-      const submitted = hub.submissions.some(
-        (submission) => submission.cleanerId === cleanerId && submission.weekStart === week.weekStart,
-      );
-      if (submitted) continue;
-      const link = cleanerHubSmsLink("/cleaner/availability");
-      await sendSms({
-        to: cleaner.mobilePhone,
-        body: `Hi ${cleaner.firstName}! Golden Hour reminder: please submit your availability for next week (${formatWeekRange(week.weekStart, week.weekEnd)}) by Sunday: ${link}`,
-      });
-      sent.push(cleaner.firstName);
-    }
+    const { sent } = await sendAvailabilityWeekSmsToCleaners({
+      hub: { ...hub, today },
+      cleanerIds,
+      kind: "manual_reminder",
+    });
 
     if (sent.length === 0) {
       return { ok: true, message: "No reminders were needed." };

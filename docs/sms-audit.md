@@ -68,12 +68,17 @@ Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}
 >
 > {address}
 
-**Availability reminder (next week)**
+**Availability reminder (next week)** — admin **Send Reminder** on Team, same copy as before.
 
 >
-> Instructions:
-> {specialInstructions}
-> Hi {cleanerFirstName}! Golden Hour Hub reminder: please submit your availability for next week ({weekRange}) by Sunday: {link}
+> Hi {cleanerFirstName}! Golden Hour reminder: please submit your availability for next week ({weekRange}) by Sunday: {link}
+
+**Availability week open (automated, Monday cron)**
+
+>
+> Hi {cleanerFirstName}! Golden Hour Hub: you can now submit your availability for the week of {weekRange}. Please submit by Sunday: {link}
+
+Sent once per cleaner per target week (`GET /api/cron/availability-week-open`, Monday in `America/Los_Angeles`) to active cleaners with scheduling SMS opt-in who have not submitted that week yet.
 
 ## To customers (manual only — no server send)
 
