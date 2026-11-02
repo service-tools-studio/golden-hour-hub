@@ -287,7 +287,15 @@ export function CustomerForm({
       return null;
     }
     setError(null);
+    captureBaseline();
     return result.customerId;
+  }
+
+  function captureBaseline() {
+    initial.current = {
+      form: liveForm(),
+      properties: latest.current.properties.map((item) => ({ ...item })),
+    };
   }
 
   useEffect(() => {

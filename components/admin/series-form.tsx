@@ -100,6 +100,7 @@ export function SeriesForm({
       return false;
     }
     setMessage(null);
+    initial.current = JSON.parse(JSON.stringify(latest.current)) as typeof form;
     return true;
   }
 

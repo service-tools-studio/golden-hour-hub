@@ -271,7 +271,7 @@ export function CustomerDetail({
       return false;
     }
     hub.flash("changes saved");
-    if (href) router.push(href);
+    finishLeave(href);
     return true;
   }
   if (!customer) {
