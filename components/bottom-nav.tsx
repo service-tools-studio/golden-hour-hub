@@ -22,7 +22,9 @@ export function BottomNav({ items }: { items: Item[] }) {
   }, [pathname]);
 
   function onNavigate(href: string, event: React.MouseEvent<HTMLAnchorElement>) {
-    if (tabActive(pathname, href)) {
+    const targetPath = href.split("?")[0] ?? href;
+    const currentPath = pathname.split("?")[0] ?? pathname;
+    if (currentPath === targetPath) {
       event.preventDefault();
       return;
     }
