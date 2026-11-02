@@ -6,7 +6,7 @@ import { dynamoConfigured, loadHub } from "@/lib/data/repository";
 import { emptyHub } from "@/lib/mock/seed";
 import { SmsDeliveryError, sendSms } from "@/lib/services/sms";
 import { formatWeekRange, nextAvailabilityWeek, todayInBusinessZone } from "@/lib/domain/time";
-import { cleanerHubAppUrl } from "@/lib/format";
+import { cleanerHubSmsLink } from "@/lib/site-metadata";
 
 export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
   | { ok: true; message: string }
@@ -26,7 +26,7 @@ export async function sendAvailabilityReminders(cleanerIds: string[]): Promise<
         (submission) => submission.cleanerId === cleanerId && submission.weekStart === week.weekStart,
       );
       if (submitted) continue;
-      const link = cleanerHubAppUrl("/cleaner/availability");
+      const link = cleanerHubSmsLink("/cleaner/availability");
       await sendSms({
         to: cleaner.mobilePhone,
         body: `Hi ${cleaner.firstName}! Golden Hour reminder: please submit your availability for next week (${formatWeekRange(week.weekStart, week.weekEnd)}) by Sunday: ${link}`,

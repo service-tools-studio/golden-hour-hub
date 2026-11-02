@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { HubProvider } from "@/components/hub-provider";
 import { previewAuthEnabled } from "@/lib/auth/config";
 import { getServerSession } from "@/lib/auth/session";
+import { hubSiteMetadata } from "@/lib/site-metadata";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -10,10 +11,7 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Golden Hour Hub",
-  description: "Scheduling and cleaner availability for Golden Hour Cleaning Co.",
-};
+export const metadata: Metadata = hubSiteMetadata();
 
 export const viewport: Viewport = {
   width: "device-width",

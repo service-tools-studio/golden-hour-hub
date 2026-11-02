@@ -19,6 +19,7 @@ import {
 } from "./domain/pay-copy";
 import { assignmentScheduleNoticeInSync, assignmentStartTimeOutOfSync } from "./domain/arrival";
 import { cleaningTimeSpan } from "./domain/availability";
+import { cleanerHubSmsLink } from "./site-metadata.ts";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
 import {
   addDays,
@@ -371,7 +372,7 @@ export function cleanerStartTimeUpdateSms(input: {
   appUrl?: string;
 }): string {
   const timeLabel = input.arrivalWindowStart ? formatTimeLabel(input.arrivalWindowStart) : "TBD";
-  const link = input.appUrl ?? cleanerHubAppUrl(input.jobId ? `/cleaner/jobs/${input.jobId}` : "/cleaner");
+  const link = input.appUrl ?? cleanerHubSmsLink(input.jobId ? `/cleaner/jobs/${input.jobId}` : "/cleaner");
   return `Hi ${input.cleanerFirstName}! Golden Hour Hub here.\n\nYour cleaning for ${input.customerFirstName} on ${formatLongDate(input.date)} has an updated start time of ${timeLabel}.\n\nDetails for this cleaning are in the Hub: ${link}`;
 }
 
@@ -435,7 +436,7 @@ export function directAssignmentSms(input: {
   details: CleanerCleaningSmsDetails;
   appUrl?: string;
 }): string {
-  const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
+  const link = input.appUrl ?? cleanerHubSmsLink("/cleaner");
   return cleanerCleaningSchedulingSmsBody({
     cleanerFirstName: input.cleanerFirstName,
     intro: "assigned",
@@ -450,7 +451,7 @@ export function inviteAssignmentSms(input: {
   details: CleanerCleaningSmsDetails;
   appUrl?: string;
 }): string {
-  const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
+  const link = input.appUrl ?? cleanerHubSmsLink("/cleaner");
   const extraLines = !input.details.arrivalWindowStart ? [CLEANER_INVITE_START_TIME_TBD_NOTE] : undefined;
   return cleanerCleaningSchedulingSmsBody({
     cleanerFirstName: input.cleanerFirstName,
@@ -513,7 +514,7 @@ export function inviteFollowUpSms(input: {
   date: string;
   appUrl?: string;
 }): string {
-  const link = input.appUrl ?? cleanerHubAppUrl("/cleaner");
+  const link = input.appUrl ?? cleanerHubSmsLink("/cleaner");
   return `Hi ${input.cleanerFirstName}! Golden Hour Hub reminder: please accept or decline your cleaning invitation for ${input.customerFirstName} on ${formatLongDate(input.date)} in the Golden Hour Hub app as soon as possible: ${link}`;
 }
 
