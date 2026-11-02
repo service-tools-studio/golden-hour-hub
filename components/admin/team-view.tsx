@@ -199,6 +199,7 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   );
   const availabilityRef = useRef<AvailabilityWeekEditorHandle>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<"general" | "availability">("general");
   const cleanerSnapshot = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status, hourlyRate });
   const cleanerBaseline = useRef<string | null>(null);
   if (cleaner && cleanerBaseline.current === null) cleanerBaseline.current = cleanerSnapshot;
@@ -277,6 +278,42 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
         crumb={{ href: "/admin/team", label: "Team" }}
       />
       <div className="space-y-3 px-5 pt-4">
+        <div className="flex border-b border-ink/12" role="tablist" aria-label="Cleaner profile sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={detailTab === "general"}
+            onClick={() => setDetailTab("general")}
+            className={`-mb-px flex-1 border-b-2 pb-3 pt-1 text-sm font-semibold transition-colors ${
+              detailTab === "general" ? "border-gold text-ink" : "border-transparent text-ink/45"
+            }`}
+          >
+            <span className="inline-flex items-center justify-center gap-1.5">
+              General
+              {cleanerDirty ? (
+                <span className="size-1.5 shrink-0 rounded-full bg-gold" aria-label="Unsaved changes" />
+              ) : null}
+            </span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={detailTab === "availability"}
+            onClick={() => setDetailTab("availability")}
+            className={`-mb-px flex-1 border-b-2 pb-3 pt-1 text-sm font-semibold transition-colors ${
+              detailTab === "availability" ? "border-gold text-ink" : "border-transparent text-ink/45"
+            }`}
+          >
+            <span className="inline-flex items-center justify-center gap-1.5">
+              Availability
+              {availabilityDirty ? (
+                <span className="size-1.5 shrink-0 rounded-full bg-gold" aria-label="Unsaved changes" />
+              ) : null}
+            </span>
+          </button>
+        </div>
+
+        <div role="tabpanel" hidden={detailTab !== "general"} className={detailTab === "general" ? "space-y-3 pt-1" : "hidden"}>
         <Card>
           <p className="text-sm text-ink/70">{cleaner.email}</p>
           <p className="mt-4 text-base font-medium">Status</p>
@@ -359,6 +396,13 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
           <p className="mt-1 text-base">Maximum approved crew size: {approvedCrew}</p>
           <p className="mt-1 text-sm text-ink/60">Crew size is the cleaner plus their helpers. Only admins can change these limits.</p>
         </Card>
+        </div>
+
+        <div
+          role="tabpanel"
+          hidden={detailTab !== "availability"}
+          className={detailTab === "availability" ? "space-y-3 pt-1" : "hidden"}
+        >
         <Card>
           <p className="text-base font-semibold">Availability</p>
           <p className="mt-1 text-sm text-ink/60">Current and next week. Saves apply the same rules as when the cleaner submits.</p>
@@ -374,6 +418,8 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
             />
           </div>
         </Card>
+        </div>
+
         {message ? (
           <FormSubmitNotice message={message} tone={message === "Saved." ? "ok" : "error"} />
         ) : null}
