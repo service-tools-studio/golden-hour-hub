@@ -160,6 +160,7 @@ export const ContractorBusinessQuestionnaireForm = forwardRef<
     ) => Promise<SubmitResult>;
     onSubmitted?: () => void;
     onSavingChange?: (saving: boolean) => void;
+    onDraftSaveError?: (message: string) => void;
     profileMobilePhone?: string;
     profileEmail?: string;
   }
@@ -172,6 +173,7 @@ export const ContractorBusinessQuestionnaireForm = forwardRef<
     onSubmit,
     onSubmitted,
     onSavingChange,
+    onDraftSaveError,
     profileMobilePhone,
     profileEmail,
   },
@@ -241,7 +243,10 @@ export const ContractorBusinessQuestionnaireForm = forwardRef<
     setSavingState(true);
     try {
       const result = await onSaveDraft(current);
-      if (!result.ok) return false;
+      if (!result.ok) {
+        onDraftSaveError?.(result.message);
+        return false;
+      }
       const normalized = normalizeQuestionnaireInput(current);
       const savedSnapshot = snapshotInput(normalized);
       baselineRef.current = savedSnapshot;

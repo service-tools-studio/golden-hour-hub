@@ -2,7 +2,16 @@
 
 import { AuthError, requireAdmin, requireCleaner } from "@/lib/auth/guards";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
-import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
+import {
+  dynamoConfigured,
+  loadCleanerProfile,
+  loadHub,
+  persistCleanerProfile,
+  persistCleanerQuestionnaireSubmit,
+  saveHub,
+} from "@/lib/data/repository";
+import { emptyHub } from "@/lib/mock/seed";
+import { todayInBusinessZone } from "@/lib/domain/time";
 import type { ContractorQuestionnaireInput } from "@/lib/domain/contractor-questionnaire";
 import { normalizeQuestionnaireInput } from "@/lib/domain/contractor-questionnaire";
 import type { BusinessRegistrationVerificationStatus, CoiVerificationStatus } from "@/lib/domain/contractor-questionnaire";
@@ -34,10 +43,12 @@ export async function saveContractorQuestionnaireDraftAction(
     if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
     normalizeQuestionnaireInput(input);
-    const hub = await loadHub();
+    const cleaner = await loadCleanerProfile(session.cleanerId);
+    if (!cleaner) return { ok: false, message: "Cleaner not found." };
     const now = new Date().toISOString();
+    const hubSlice = { ...emptyHub(todayInBusinessZone()), cleaners: [cleaner] };
     const outcome = saveContractorQuestionnaireOnHub(
-      hub,
+      hubSlice,
       session.cleanerId,
       input,
       session.email,
@@ -45,11 +56,16 @@ export async function saveContractorQuestionnaireDraftAction(
       "draft",
     );
     if (!outcome.result.ok) return outcome.result;
-    await saveHub(outcome.hub);
+    const nextCleaner = outcome.hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
+    if (!nextCleaner) return { ok: false, message: "Could not save business information." };
+    await persistCleanerProfile(nextCleaner);
     return {
       ok: true,
       message: "Form saved.",
-      data: hubDataForCleaner(outcome.hub, session.cleanerId),
+      data: hubDataForCleaner(
+        { ...outcome.hub, cleaners: [nextCleaner] },
+        session.cleanerId,
+      ),
     };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
@@ -95,7 +111,12 @@ export async function submitContractorQuestionnaireAction(
         },
       };
     }
-    await saveHub(outcome.hub);
+    const nextCleaner = outcome.hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
+    const submission = outcome.hub.contractorQuestionnaireSubmissions.at(-1);
+    if (!nextCleaner || !submission) {
+      return { ok: false, message: "Could not save business information." };
+    }
+    await persistCleanerQuestionnaireSubmit(nextCleaner, submission);
     const cleanerAfter = outcome.hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
     if (cleanerAfter && outcome.submitted) {
       try {

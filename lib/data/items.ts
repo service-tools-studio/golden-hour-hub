@@ -14,6 +14,7 @@ import type {
   RecurringSeries,
 } from "../domain/types.ts";
 import { buildCustomerSearchKeys } from "../domain/customers.ts";
+import { readQuestionnaireFromRecord, readQuestionnaireDraftFromRecord } from "../domain/contractor-questionnaire.ts";
 
 export type DynamoItem = {
   pk: string;
@@ -41,7 +42,7 @@ export function hubToItems(data: HubData): DynamoItem[] {
     ...data.jobs.map(jobItem),
     ...data.jobs.filter((job) => job.seriesId).map(occurItem),
     ...data.assignments.map(assignmentItem),
-    ...data.contractorQuestionnaireSubmissions.map(contractorQuestionnaireSubmissionItem),
+    ...data.contractorQuestionnaireSubmissions.map(contractorQuestionnaireSubmissionToItem),
   ];
   return items;
 }
@@ -113,7 +114,7 @@ function submissionItem(submission: AvailabilitySubmission): DynamoItem {
   };
 }
 
-function contractorQuestionnaireSubmissionItem(record: ContractorQuestionnaireSubmissionRecord): DynamoItem {
+export function contractorQuestionnaireSubmissionToItem(record: ContractorQuestionnaireSubmissionRecord): DynamoItem {
   const version = String(record.submissionVersion).padStart(6, "0");
   return {
     pk: `CLEANER#${record.cleanerId}`,
@@ -240,7 +241,9 @@ function withoutEmpty(record: object): Record<string, unknown> {
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
-import { readQuestionnaireFromRecord, readQuestionnaireDraftFromRecord } from "../domain/contractor-questionnaire.ts";
+export function readCleanerProfileFromItem(item: DynamoItem): CleanerProfile {
+  return readCleaner(item);
+}
 
 function readCleaner(item: DynamoItem): CleanerProfile {
   const typicalHelperCount = numberField(item, "typicalHelperCount");

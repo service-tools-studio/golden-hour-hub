@@ -5,7 +5,16 @@ import { clearStaleNotScheduledAttention } from "../domain/invitations.ts";
 import { reconcileScheduleConflictWarnings } from "../domain/scheduling.ts";
 import { todayInBusinessZone } from "../domain/time.ts";
 import { emptyHub, type HubData } from "../mock/seed.ts";
-import { hubToItems, itemsToHub, type DynamoItem } from "./items.ts";
+import type { CleanerProfile } from "../domain/types.ts";
+import type { ContractorQuestionnaireSubmissionRecord } from "../domain/contractor-questionnaire-submission.ts";
+import {
+  cleanerToItem,
+  contractorQuestionnaireSubmissionToItem,
+  hubToItems,
+  itemsToHub,
+  readCleanerProfileFromItem,
+  type DynamoItem,
+} from "./items.ts";
 
 const BATCH_SIZE = 25;
 const HUB_META_PK = "HUB";
@@ -97,6 +106,34 @@ export async function loadHub(): Promise<HubData> {
 export async function putItems(items: DynamoItem[]): Promise<void> {
   if (items.length === 0) return;
   await writeBatches(items.map((item) => ({ PutRequest: { Item: item } })));
+}
+
+/** Read a single cleaner PROFILE row (no full-table scan). */
+export async function loadCleanerProfile(cleanerId: string): Promise<CleanerProfile | null> {
+  const doc = client();
+  const result = await doc.send(
+    new GetCommand({
+      TableName: tableName(),
+      Key: { pk: `CLEANER#${cleanerId}`, sk: "PROFILE" },
+    }),
+  );
+  if (!result.Item || result.Item.entity !== "cleaner") return null;
+  return readCleanerProfileFromItem(result.Item as DynamoItem);
+}
+
+/** Persist one cleaner profile and bump hub revision (for autosave-sized writes). */
+export async function persistCleanerProfile(cleaner: CleanerProfile): Promise<number> {
+  await putItems([cleanerToItem(cleaner)]);
+  return bumpHubRevision();
+}
+
+/** Persist cleaner questionnaire submit: profile + append-only submission row. */
+export async function persistCleanerQuestionnaireSubmit(
+  cleaner: CleanerProfile,
+  submission: ContractorQuestionnaireSubmissionRecord,
+): Promise<number> {
+  await putItems([cleanerToItem(cleaner), contractorQuestionnaireSubmissionToItem(submission)]);
+  return bumpHubRevision();
 }
 
 /** Remove every item in the table. Use before a clean seed. */
