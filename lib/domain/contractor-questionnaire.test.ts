@@ -105,7 +105,14 @@ describe("contractor questionnaire domain", () => {
     const input = {
       ...soloBase(),
       hasAdditionalWorkers: true,
-      teamMembers: [{ firstName: "Alex", lastName: "Kim", workingRelationship: "EMPLOYEE", workingRelationshipOther: "" }],
+      teamMembers: [
+        {
+          firstName: "Alex",
+          lastName: "Kim",
+          workingRelationship: "EMPLOYEE" as const,
+          workingRelationshipOther: "",
+        },
+      ],
       workersCompStatus: "NO" as const,
       workersCompNoReason: "OBTAINING_COVERAGE" as const,
       helperPaymentArrangement: "BUSINESS_PAYS" as const,
@@ -319,9 +326,9 @@ describe("contractor questionnaire domain", () => {
   });
 
   it("requires insurance follow-ups when general liability is yes", () => {
-    const input = {
+    const input: ContractorQuestionnaireInput = {
       ...soloBase(),
-      generalLiabilityStatus: "YES" as const,
+      generalLiabilityStatus: "YES",
       insuranceProviderName: "",
       insuranceExpirationDate: "",
       insuranceOregonCoverage: "",

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { saveContractorQuestionnaireOnHub } from "./contractor-questionnaire-mutations.ts";
 import { buildSeed } from "../mock/seed.ts";
+import type { ContractorQuestionnaireInput } from "../domain/contractor-questionnaire.ts";
 
-function soloBase() {
+function soloBase(): ContractorQuestionnaireInput {
   return {
     businessDisplayName: "Bright Cleaning",
     ownerLegalName: "Jamie Lee",

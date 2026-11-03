@@ -501,6 +501,11 @@ function parseWorkersCompNoReason(value: unknown): WorkersCompNoReason | "" {
   return "";
 }
 
+function parseWorkersCompNoReasonOptional(value: unknown): WorkersCompNoReason | undefined {
+  const parsed = parseWorkersCompNoReason(value);
+  return parsed === "" ? undefined : parsed;
+}
+
 export function helperPaymentArrangementLabel(value: HelperPaymentArrangement): string {
   switch (value) {
     case "BUSINESS_PAYS":
@@ -957,7 +962,14 @@ export function buildQuestionnaireFromInput(
     base.insuranceOregonCoverage = normalized.insuranceOregonCoverage as InsuranceOregonCoverageStatus;
   }
 
-  if (insuranceSelfReportChanged(previous, base)) {
+  if (
+    insuranceSelfReportChanged(previous, {
+      generalLiabilityStatus: base.generalLiabilityStatus ?? "NO",
+      insuranceProviderName: base.insuranceProviderName,
+      insuranceExpirationDate: base.insuranceExpirationDate,
+      insuranceOregonCoverage: base.insuranceOregonCoverage,
+    })
+  ) {
     base.insuranceUpdatedAt = now;
   } else if (previous?.insuranceUpdatedAt) {
     base.insuranceUpdatedAt = previous.insuranceUpdatedAt;
@@ -1047,7 +1059,7 @@ export function buildQuestionnaireFromInput(
 
   base.reviewFlags = computeReviewFlags(base);
   if (teamRosterChanged(previous, base)) {
-    base.reviewFlags = [...new Set([...base.reviewFlags, "TEAM_ROSTER_UPDATED"])];
+    base.reviewFlags = [...new Set<QuestionnaireReviewFlag>([...base.reviewFlags, "TEAM_ROSTER_UPDATED"])];
   }
   base.reviewStatus = base.reviewFlags.length > 0 ? "NEEDS_REVIEW" : "SUBMITTED";
 
@@ -1424,7 +1436,7 @@ export function readQuestionnaireFromRecord(
       record.workersCompStatus === "UNSURE"
         ? record.workersCompStatus
         : undefined,
-    workersCompNoReason: parseWorkersCompNoReason(record.workersCompNoReason),
+    workersCompNoReason: parseWorkersCompNoReasonOptional(record.workersCompNoReason),
     workersCompNoReasonOther:
       typeof record.workersCompNoReasonOther === "string" ? record.workersCompNoReasonOther : undefined,
     workersCompCarrierName:
@@ -1516,7 +1528,9 @@ export function questionnaireEffectiveReviewStatus(
 export function questionnaireUiVisibility(input: ContractorQuestionnaireInput): {
   showRegistrationDetails: boolean;
   showTeamSection: boolean;
+  showWorkersCompSection: boolean;
   showWorkersCompReason: boolean;
+  showWorkersCompPolicyDetails: boolean;
   showWorkersCompOther: boolean;
   showInsuranceDetails: boolean;
 } {

@@ -747,6 +747,7 @@ export function HubProvider({
           assignments: state.assignments,
           availability: state.availability,
           submissions: state.submissions,
+          contractorQuestionnaireSubmissions: state.contractorQuestionnaireSubmissions,
         };
         void drainPersistQueue();
       }

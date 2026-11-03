@@ -6,6 +6,7 @@ import { ButtonLoadingLabel, CautionNotice, Field, PrimaryButton, fieldClass } f
 import type {
   BusinessRegistrationStatus,
   BusinessStructure,
+  ContractorBusinessQuestionnaire,
   ContractorQuestionnaireInput,
   GeneralLiabilityInsuranceStatus,
   HelperPaymentArrangement,

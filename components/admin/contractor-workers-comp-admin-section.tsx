@@ -5,7 +5,8 @@ import { updateContractorWorkersCompComplianceAction } from "@/app/actions/contr
 import { useHub } from "@/components/hub-provider";
 import { Field, FormSubmitNotice, SecondaryButton, fieldClass } from "@/components/ui";
 import type { ContractorBusinessQuestionnaire } from "@/lib/domain/contractor-questionnaire";
-import type { AdminWorkersCompComplianceUpdate, WorkersCompComplianceStatus } from "@/lib/domain/contractor-workers-comp-compliance";
+import type { WorkersCompComplianceStatus } from "@/lib/domain/contractor-questionnaire";
+import type { AdminWorkersCompComplianceUpdate } from "@/lib/domain/contractor-workers-comp-compliance";
 import {
   effectiveWorkersCompComplianceStatus,
   workersCompComplianceStatusLabel,
