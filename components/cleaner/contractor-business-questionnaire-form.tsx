@@ -581,7 +581,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
       {step === 1 ? (
       <>
       <CautionNotice>
-        <p className="font-semibold text-ink">For Business Owners</p>
+        <p className="font-semibold text-ink">For the Business Owner</p>
         <p>
           This form must be completed by the owner of the cleaning business. Please answer the questions from your own
           perspective as the business owner.
