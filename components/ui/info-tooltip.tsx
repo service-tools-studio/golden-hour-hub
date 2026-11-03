@@ -89,7 +89,7 @@ export function InfoTooltip({ text }: { text: string }) {
           ref={tooltipRef}
           id={id}
           role="tooltip"
-          className={`fixed z-50 w-[min(18rem,calc(100vw-2.5rem))] rounded-2xl bg-ink px-3 py-2 text-left text-sm font-normal leading-snug text-cream shadow-lg ${
+          className={`fixed z-50 w-[min(18rem,calc(100vw-2.5rem))] rounded-2xl bg-mint px-3 py-2 text-left text-sm font-normal leading-snug text-ink shadow-[0_8px_30px_rgba(51,51,51,0.12)] ring-1 ring-ink/10 ${
             position ? "visible" : "invisible"
           }`}
           style={

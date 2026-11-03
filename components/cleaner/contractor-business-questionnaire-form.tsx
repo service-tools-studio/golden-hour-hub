@@ -813,6 +813,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
       ) : null}
 
       {step === 2 ? (
+      <>
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Who works with you?</h2>
@@ -950,30 +951,42 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
               You must update this list and receive approval from Golden Hour Cleaning Co before bringing any new person to a
               Golden Hour Cleaning Co cleaning appointment.
             </CautionNotice>
-
-            <div data-questionnaire-field="helperPaymentArrangement" data-questionnaire-question="helperPaymentArrangement" className="scroll-mt-24">
-              <FieldLabelWithTooltip
-                label="How do you pay the other people who perform cleaning services for your business?"
-                tooltip="This helps us understand who is responsible for paying each person who performs cleaning services besides you."
-              />
-              <div className="mt-2">
-                <RadioGroup<HelperPaymentArrangement>
-                  name="helperPaymentArrangement"
-                  value={form.helperPaymentArrangement}
-                  error={errors.helperPaymentArrangement}
-                  onChange={(helperPaymentArrangement) => patch({ helperPaymentArrangement })}
-                  options={[
-                    { value: "BUSINESS_PAYS", label: "I pay them through my business" },
-                    { value: "GOLDEN_HOUR_PAYS", label: "Golden Hour Cleaning Co pays them directly" },
-                    { value: "VARIES", label: "It varies" },
-                    { value: "UNSURE", label: "I'm not sure" },
-                  ]}
-                />
-              </div>
-            </div>
           </div>
         ) : null}
       </section>
+
+      {visibility.showTeamSection ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">Paying your team</h2>
+          </div>
+          <div
+            data-questionnaire-field="helperPaymentArrangement"
+            data-questionnaire-question="helperPaymentArrangement"
+            className="scroll-mt-24"
+          >
+            <FieldLabelWithTooltip
+              label="How do you pay the other people who perform cleaning services for your business?"
+              tooltip="This helps us understand who is responsible for paying each person who performs cleaning services besides you."
+            />
+            <div className="mt-2">
+              <RadioGroup<HelperPaymentArrangement>
+                name="helperPaymentArrangement"
+                value={form.helperPaymentArrangement}
+                error={errors.helperPaymentArrangement}
+                onChange={(helperPaymentArrangement) => patch({ helperPaymentArrangement })}
+                options={[
+                  { value: "BUSINESS_PAYS", label: "I pay them through my business" },
+                  { value: "GOLDEN_HOUR_PAYS", label: "Golden Hour Cleaning Co pays them directly" },
+                  { value: "VARIES", label: "It varies" },
+                  { value: "UNSURE", label: "I'm not sure" },
+                ]}
+              />
+            </div>
+          </div>
+        </section>
+      ) : null}
+      </>
       ) : null}
 
       {step === 3 ? (
