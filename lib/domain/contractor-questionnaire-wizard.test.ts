@@ -66,6 +66,22 @@ describe("contractor questionnaire wizard", () => {
     assert.equal(step2.generalLiabilityStatus, undefined);
   });
 
+  it("clears team member name errors once first and last names are entered", () => {
+    const partial = {
+      ...soloBase(),
+      hasAdditionalWorkers: true,
+      teamMembers: [{ firstName: "Sam", lastName: "", workingRelationship: "EMPLOYEE", workingRelationshipOther: "" }],
+      helperPaymentArrangement: "BUSINESS_PAYS" as const,
+    };
+    assert.match(validateQuestionnaireWizardStep(2, partial).teamMembers ?? "", /first and last name/i);
+
+    const complete = {
+      ...partial,
+      teamMembers: [{ firstName: "Sam", lastName: "Lee", workingRelationship: "EMPLOYEE", workingRelationshipOther: "" }],
+    };
+    assert.equal(validateQuestionnaireWizardStep(2, complete).teamMembers, undefined);
+  });
+
   it("validates step 3 insurance and workers comp only", () => {
     const input = { ...soloBase(), generalLiabilityStatus: "" as const, workersCompStatus: "" as const };
     const step3 = validateQuestionnaireWizardStep(3, input);

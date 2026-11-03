@@ -469,7 +469,13 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
     setErrors((prev) => {
       let next: QuestionnaireFieldErrors | undefined;
       for (const key of wizardStepFieldKeys(step)) {
-        if (prev[key] && !stepValidation[key]) {
+        const message = stepValidation[key];
+        if (message) {
+          if (prev[key] !== message) {
+            if (!next) next = { ...prev };
+            next[key] = message;
+          }
+        } else if (prev[key]) {
           if (!next) next = { ...prev };
           delete next[key];
         }
@@ -617,7 +623,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
         </p>
         <p>
           When we ask about people who may work with you on Golden Hour Cleaning Co jobs, include everyone who helps
-          perform cleaning services besides yourself — including your spouse, romantic partner, family members,
+          perform cleaning services besides yourself — including your spouse, partner, family members,
           employees, or occasional helpers.
         </p>
       </CautionNotice>
@@ -821,7 +827,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
 
         <Field
           label="Besides yourself, will anyone else perform cleaning services for Golden Hour Cleaning Co through your business?"
-          hint="Include anyone you will be cleaning with on a Golden Hour Cleaning Co job—such as your spouse, romantic partner, family members, employees, or occasional helpers."
+          hint="Include anyone you will be cleaning with on a Golden Hour Cleaning Co job—such as your spouse, partner, family members, employees, or occasional helpers."
           error={errors.hasAdditionalWorkers as string | undefined}
           questionnaireField="hasAdditionalWorkers"
         >
