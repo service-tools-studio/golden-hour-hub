@@ -627,8 +627,14 @@ export function validateQuestionnaireInput(input: ContractorQuestionnaireInput):
       }
     }
     if (input.workersCompStatus === "YES") {
+      if (!trim(input.workersCompCarrierName ?? "")) {
+        errors.workersCompCarrierName = "Enter your insurance carrier.";
+      }
+      if (!trim(input.workersCompPolicyNumber ?? "")) {
+        errors.workersCompPolicyNumber = "Enter your policy number.";
+      }
       const exp = trim(input.workersCompExpirationDate);
-      if (exp && !isValidDate(exp)) {
+      if (!exp || !isValidDate(exp)) {
         errors.workersCompExpirationDate = "Select a valid expiration date.";
       }
     }

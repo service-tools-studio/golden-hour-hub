@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { updateContractorWorkersCompComplianceAction } from "@/app/actions/contractor-questionnaire";
 import { useHub } from "@/components/hub-provider";
-import { Field, FormSubmitNotice, SecondaryButton, fieldClass } from "@/components/ui";
+import { DateInput, Field, FormSubmitNotice, SecondaryButton, fieldClass } from "@/components/ui";
 import type { ContractorBusinessQuestionnaire } from "@/lib/domain/contractor-questionnaire";
 import type { WorkersCompComplianceStatus } from "@/lib/domain/contractor-questionnaire";
 import type { AdminWorkersCompComplianceUpdate } from "@/lib/domain/contractor-workers-comp-compliance";
@@ -109,11 +109,10 @@ export function ContractorWorkersCompAdminSection({
               <input className={fieldClass} value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} />
             </Field>
             <Field label="Policy expiration date">
-              <input
+              <DateInput
                 className={fieldClass}
-                type="date"
                 value={policyExpirationDate}
-                onChange={(e) => setPolicyExpirationDate(e.target.value)}
+                onValueChange={setPolicyExpirationDate}
               />
             </Field>
             <label className="flex items-center gap-2 text-sm text-ink/80">

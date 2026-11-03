@@ -23,6 +23,17 @@ const testSubmitContext = {
   email: "cleaner@test.com",
 };
 
+function workersCompYesPolicyFields(): Pick<
+  ContractorQuestionnaireInput,
+  "workersCompCarrierName" | "workersCompPolicyNumber" | "workersCompExpirationDate"
+> {
+  return {
+    workersCompCarrierName: "Oregon Mutual",
+    workersCompPolicyNumber: "WC-10001",
+    workersCompExpirationDate: "2027-12-01",
+  };
+}
+
 function soloBase(): ContractorQuestionnaireInput {
   return {
     businessDisplayName: "Bright Cleaning",
@@ -189,6 +200,20 @@ describe("contractor questionnaire domain", () => {
     assert.equal(submitted.businessCity, "Portland");
   });
 
+  it("requires workers comp policy details when coverage is yes", () => {
+    const input: ContractorQuestionnaireInput = {
+      ...soloBase(),
+      workersCompStatus: "YES",
+      workersCompCarrierName: "",
+      workersCompPolicyNumber: "",
+      workersCompExpirationDate: "",
+    };
+    const errors = validateQuestionnaireInput(normalizeQuestionnaireInput(input));
+    assert.ok(errors.workersCompCarrierName);
+    assert.ok(errors.workersCompPolicyNumber);
+    assert.ok(errors.workersCompExpirationDate);
+  });
+
   it("prefills business phone and email from cleaner profile when questionnaire fields are empty", () => {
     const loaded = inputFromSavedState(undefined, undefined, {
       mobilePhone: "5035550101",
@@ -272,6 +297,7 @@ describe("contractor questionnaire domain", () => {
         teamMembers: [{ firstName: "A", lastName: "B", workingRelationship: "UNSURE", workingRelationshipOther: "" }],
         workersCompStatus: "YES",
         helperPaymentArrangement: "GOLDEN_HOUR_PAYS",
+        ...workersCompYesPolicyFields(),
       },
       undefined,
       "2026-01-01T00:00:00.000Z",
@@ -501,6 +527,7 @@ describe("contractor questionnaire domain", () => {
         ],
         workersCompStatus: "YES",
         helperPaymentArrangement: "BUSINESS_PAYS",
+        ...workersCompYesPolicyFields(),
       },
       undefined,
       "2026-01-01T00:00:00.000Z",
@@ -519,6 +546,7 @@ describe("contractor questionnaire domain", () => {
         ],
         workersCompStatus: "YES",
         helperPaymentArrangement: "BUSINESS_PAYS",
+        ...workersCompYesPolicyFields(),
       },
       undefined,
       "2026-01-01T00:00:00.000Z",
@@ -535,6 +563,7 @@ describe("contractor questionnaire domain", () => {
         ],
         workersCompStatus: "YES",
         helperPaymentArrangement: "BUSINESS_PAYS",
+        ...workersCompYesPolicyFields(),
       },
       reviewed,
       "2026-01-03T00:00:00.000Z",
@@ -553,6 +582,7 @@ describe("contractor questionnaire domain", () => {
         teamMembers: [{ firstName: "Alex", lastName: "Kim", workingRelationship: "EMPLOYEE", workingRelationshipOther: "" }],
         workersCompStatus: "YES",
         helperPaymentArrangement: "BUSINESS_PAYS",
+        ...workersCompYesPolicyFields(),
       },
       undefined,
       "2026-01-01T00:00:00.000Z",

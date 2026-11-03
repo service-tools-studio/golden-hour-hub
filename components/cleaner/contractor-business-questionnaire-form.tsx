@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, 
 import Link from "next/link";
 import { ContractorBusinessQuestionnaireReview } from "@/components/cleaner/contractor-business-questionnaire-review";
 import { FieldLabelWithTooltip } from "@/components/ui/info-tooltip";
-import { ButtonLoadingLabel, CautionNotice, Field, PrimaryButton, SecondaryButton, fieldClass } from "@/components/ui";
+import { ButtonLoadingLabel, CautionNotice, DateInput, Field, PrimaryButton, SecondaryButton, fieldClass } from "@/components/ui";
 import type {
   BusinessRegistrationStatus,
   BusinessStructure,
@@ -1018,26 +1018,25 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
 
             {visibility.showWorkersCompPolicyDetails ? (
               <div className="space-y-4">
-                <Field label="Insurance carrier (optional)" error={errors.workersCompCarrierName}>
+                <Field label="Insurance carrier" error={errors.workersCompCarrierName} questionnaireField="workersCompCarrierName">
                   <input
                     className={fieldClass}
                     value={form.workersCompCarrierName}
                     onChange={(event) => patch({ workersCompCarrierName: event.target.value })}
                   />
                 </Field>
-                <Field label="Policy number (optional)" error={errors.workersCompPolicyNumber}>
+                <Field label="Policy number" error={errors.workersCompPolicyNumber} questionnaireField="workersCompPolicyNumber">
                   <input
                     className={fieldClass}
                     value={form.workersCompPolicyNumber}
                     onChange={(event) => patch({ workersCompPolicyNumber: event.target.value })}
                   />
                 </Field>
-                <Field label="Policy expiration date (optional)" error={errors.workersCompExpirationDate} questionnaireField="workersCompExpirationDate">
-                  <input
+                <Field label="Policy expiration date" error={errors.workersCompExpirationDate} questionnaireField="workersCompExpirationDate">
+                  <DateInput
                     className={fieldClass}
-                    type="date"
                     value={form.workersCompExpirationDate}
-                    onChange={(event) => patch({ workersCompExpirationDate: event.target.value })}
+                    onValueChange={(workersCompExpirationDate) => patch({ workersCompExpirationDate })}
                   />
                 </Field>
               </div>
@@ -1087,11 +1086,10 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
               />
             </Field>
             <Field label="When does your insurance expire?" error={errors.insuranceExpirationDate} questionnaireField="insuranceExpirationDate">
-              <input
+              <DateInput
                 className={fieldClass}
-                type="date"
                 value={form.insuranceExpirationDate}
-                onChange={(event) => patch({ insuranceExpirationDate: event.target.value })}
+                onValueChange={(insuranceExpirationDate) => patch({ insuranceExpirationDate })}
               />
             </Field>
             <div data-questionnaire-field="insuranceOregonCoverage" data-questionnaire-question="insuranceOregonCoverage" className="scroll-mt-24">
