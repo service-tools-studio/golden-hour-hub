@@ -24,7 +24,6 @@ import {
 import {
   emptyTeamMember,
   inputFromSavedState,
-  normalizeQuestionnaireInput,
   questionnaireInputIsComplete,
   questionnaireUiVisibility,
 } from "@/lib/domain/contractor-questionnaire";
@@ -247,18 +246,7 @@ export const ContractorBusinessQuestionnaireForm = forwardRef<
         onDraftSaveError?.(result.message);
         return false;
       }
-      const normalized = normalizeQuestionnaireInput(current);
-      const savedSnapshot = snapshotInput(normalized);
-      baselineRef.current = savedSnapshot;
-      const latest = formRef.current;
-      if (
-        latest &&
-        snapshotInput(latest) === snapshotAtStart &&
-        savedSnapshot !== snapshotAtStart
-      ) {
-        formRef.current = normalized;
-        setForm(normalized);
-      }
+      baselineRef.current = snapshotAtStart;
       return true;
     } finally {
       setSavingState(false);

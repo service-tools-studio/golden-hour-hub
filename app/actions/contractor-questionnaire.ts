@@ -42,7 +42,6 @@ export async function saveContractorQuestionnaireDraftAction(
     const session = await requireCleaner();
     if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    normalizeQuestionnaireInput(input);
     const cleaner = await loadCleanerProfile(session.cleanerId);
     if (!cleaner) return { ok: false, message: "Cleaner not found." };
     const now = new Date().toISOString();

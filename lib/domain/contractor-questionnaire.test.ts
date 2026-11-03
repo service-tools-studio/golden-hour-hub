@@ -9,6 +9,7 @@ import {
   inputFromSavedState,
   insurancePolicyIsExpired,
   normalizeQuestionnaireInput,
+  prepareQuestionnaireDraftInput,
   questionnaireUiVisibility,
   validateQuestionnaireInput,
 } from "./contractor-questionnaire.ts";
@@ -149,20 +150,20 @@ describe("contractor questionnaire domain", () => {
     assert.equal(loaded.hasAdditionalWorkers, false);
   });
 
-  it("keeps team member working relationship on draft normalize before names are entered", () => {
-    const normalized = normalizeQuestionnaireInput({
+  it("keeps team member working relationship on draft prepare before names are entered", () => {
+    const prepared = prepareQuestionnaireDraftInput({
       ...soloBase(),
       hasAdditionalWorkers: true,
       teamMembers: [{ firstName: "", lastName: "", workingRelationship: "EMPLOYEE", workingRelationshipOther: "" }],
       workersCompStatus: "",
       helperPaymentArrangement: "",
     });
-    assert.equal(normalized.teamMembers.length, 1);
-    assert.equal(normalized.teamMembers[0]?.workingRelationship, "EMPLOYEE");
+    assert.equal(prepared.teamMembers.length, 1);
+    assert.equal(prepared.teamMembers[0]?.workingRelationship, "EMPLOYEE");
   });
 
-  it("keeps empty team member rows on draft normalize when adding another person", () => {
-    const normalized = normalizeQuestionnaireInput({
+  it("keeps empty team member rows on draft prepare when adding another person", () => {
+    const prepared = prepareQuestionnaireDraftInput({
       ...soloBase(),
       hasAdditionalWorkers: true,
       teamMembers: [
@@ -172,7 +173,20 @@ describe("contractor questionnaire domain", () => {
       workersCompStatus: "",
       helperPaymentArrangement: "",
     });
-    assert.equal(normalized.teamMembers.length, 2);
+    assert.equal(prepared.teamMembers.length, 2);
+  });
+
+  it("trims questionnaire fields on submit normalize only", () => {
+    const draft = prepareQuestionnaireDraftInput({
+      ...soloBase(),
+      businessDisplayName: "  Bright Co  ",
+      businessCity: " Portland ",
+    });
+    assert.equal(draft.businessDisplayName, "  Bright Co  ");
+    assert.equal(draft.businessCity, " Portland ");
+    const submitted = normalizeQuestionnaireInput(draft);
+    assert.equal(submitted.businessDisplayName, "Bright Co");
+    assert.equal(submitted.businessCity, "Portland");
   });
 
   it("prefills business phone and email from cleaner profile when questionnaire fields are empty", () => {

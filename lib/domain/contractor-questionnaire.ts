@@ -664,34 +664,15 @@ export function questionnaireInputIsComplete(input: ContractorQuestionnaireInput
   return Object.keys(validateQuestionnaireInput(normalized)).length === 0;
 }
 
-/** Drop conditional fields that no longer apply. */
-export function normalizeQuestionnaireInput(input: ContractorQuestionnaireInput): ContractorQuestionnaireInput {
+/** Drop conditional fields that no longer apply (no string trimming). */
+export function prepareQuestionnaireDraftInput(input: ContractorQuestionnaireInput): ContractorQuestionnaireInput {
   const next: ContractorQuestionnaireInput = {
     ...input,
-    businessDisplayName: trim(input.businessDisplayName),
-    ownerLegalName: trim(input.ownerLegalName),
-    registeredLegalName: trim(input.registeredLegalName),
-    stateRegistrationNumber: trim(input.stateRegistrationNumber),
-    businessStreetAddress: trim(input.businessStreetAddress),
-    businessCity: trim(input.businessCity),
-    businessZip: input.businessZip.replace(/\D/g, "").slice(0, 10),
-    businessEmail: trim(input.businessEmail),
-    workersCompNoReasonOther: trim(input.workersCompNoReasonOther),
-    workersCompCarrierName: trim(input.workersCompCarrierName ?? ""),
-    workersCompPolicyNumber: trim(input.workersCompPolicyNumber ?? ""),
-    workersCompExpirationDate: trim(input.workersCompExpirationDate ?? ""),
-    insuranceProviderName: trim(input.insuranceProviderName),
-    insuranceExpirationDate: trim(input.insuranceExpirationDate),
-    teamMembers: input.teamMembers.map((member) => ({
-      firstName: trim(member.firstName),
-      lastName: trim(member.lastName),
-      workingRelationship: member.workingRelationship,
-      workingRelationshipOther: trim(member.workingRelationshipOther ?? ""),
-    })),
+    teamMembers: input.teamMembers.map((member) => ({ ...member })),
   };
   next.teamMembers = next.teamMembers.map((member) => ({
     ...member,
-    workingRelationshipOther: member.workingRelationship === "OTHER" ? member.workingRelationshipOther : "",
+    workingRelationshipOther: member.workingRelationship === "OTHER" ? member.workingRelationshipOther ?? "" : "",
   }));
   if (next.registrationStatus !== "LLC_OR_CORP") {
     next.businessStructure = "";
@@ -718,8 +699,6 @@ export function normalizeQuestionnaireInput(input: ContractorQuestionnaireInput)
     next.insuranceExpirationDate = "";
     next.insuranceOregonCoverage = "";
   }
-  const phone = normalizePhone(next.businessPhone);
-  if (phone) next.businessPhone = phone;
   if (
     next.oregonServiceStatus !== "YES" &&
     next.oregonServiceStatus !== "NO" &&
@@ -728,6 +707,36 @@ export function normalizeQuestionnaireInput(input: ContractorQuestionnaireInput)
     next.oregonServiceStatus = "YES";
   }
   return next;
+}
+
+/** Trim and normalize values for validation and submit (not used for draft autosave). */
+export function normalizeQuestionnaireInput(input: ContractorQuestionnaireInput): ContractorQuestionnaireInput {
+  const trimmed: ContractorQuestionnaireInput = {
+    ...input,
+    businessDisplayName: trim(input.businessDisplayName),
+    ownerLegalName: trim(input.ownerLegalName),
+    registeredLegalName: trim(input.registeredLegalName),
+    stateRegistrationNumber: trim(input.stateRegistrationNumber),
+    businessStreetAddress: trim(input.businessStreetAddress),
+    businessCity: trim(input.businessCity),
+    businessZip: input.businessZip.replace(/\D/g, "").slice(0, 10),
+    businessEmail: trim(input.businessEmail),
+    workersCompNoReasonOther: trim(input.workersCompNoReasonOther),
+    workersCompCarrierName: trim(input.workersCompCarrierName ?? ""),
+    workersCompPolicyNumber: trim(input.workersCompPolicyNumber ?? ""),
+    workersCompExpirationDate: trim(input.workersCompExpirationDate ?? ""),
+    insuranceProviderName: trim(input.insuranceProviderName),
+    insuranceExpirationDate: trim(input.insuranceExpirationDate),
+    teamMembers: input.teamMembers.map((member) => ({
+      firstName: trim(member.firstName),
+      lastName: trim(member.lastName),
+      workingRelationship: member.workingRelationship,
+      workingRelationshipOther: trim(member.workingRelationshipOther ?? ""),
+    })),
+  };
+  const phone = normalizePhone(trimmed.businessPhone);
+  if (phone) trimmed.businessPhone = phone;
+  return prepareQuestionnaireDraftInput(trimmed);
 }
 
 function questionnaireHasEmployeeHelper(questionnaire: ContractorBusinessQuestionnaire): boolean {

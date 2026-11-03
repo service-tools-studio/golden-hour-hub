@@ -4,6 +4,7 @@ import {
   applyAdminCoiVerification,
   applyAdminRegistrationVerification,
   buildQuestionnaireFromInput,
+  prepareQuestionnaireDraftInput,
   normalizeQuestionnaireInput,
   validateQuestionnaireInput,
 } from "../domain/contractor-questionnaire.ts";
@@ -55,7 +56,8 @@ export function saveContractorQuestionnaireOnHub(
     return { hub, result: { ok: false, message: "Cleaner not found." }, submitted: false };
   }
   try {
-    const normalized = normalizeQuestionnaireInput(input);
+    const normalized =
+      intent === "draft" ? prepareQuestionnaireDraftInput(input) : normalizeQuestionnaireInput(input);
 
     if (intent === "draft") {
       const nextCleaner = {
