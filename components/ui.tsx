@@ -308,31 +308,7 @@ export function CautionNotice({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Controlled date input that syncs clears from the iOS picker Reset control (change alone is unreliable). */
-export function DateInput({
-  value,
-  onValueChange,
-  className,
-  ...rest
-}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "defaultValue" | "onChange" | "onInput"> & {
-  value: string;
-  onValueChange: (value: string) => void;
-}) {
-  function sync(element: HTMLInputElement) {
-    onValueChange(element.value);
-  }
-  return (
-    <input
-      {...rest}
-      type="date"
-      className={className}
-      value={value || ""}
-      onChange={(event) => sync(event.currentTarget)}
-      onInput={(event) => sync(event.currentTarget)}
-      onBlur={(event) => sync(event.currentTarget)}
-    />
-  );
-}
+export { DateInput } from "@/components/date-input";
 
 export const fieldClass =
   "min-h-12 w-full rounded-2xl border border-ink/15 bg-white px-3 text-base text-ink outline-none focus:border-ink";
