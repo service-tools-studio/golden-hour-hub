@@ -136,7 +136,8 @@ function snapshotInput(input: ContractorQuestionnaireInput): string {
   return JSON.stringify(input);
 }
 
-const AUTOSAVE_MS = 800;
+/** Wait after last edit before background save (keeps typing / field changes smooth on mobile). */
+const AUTOSAVE_MS = 1500;
 
 function MailIcon({ className }: { className?: string }) {
   return (
@@ -380,12 +381,47 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
     goToStep(editStep);
   }
 
-  async function runDraftSave(): Promise<boolean> {
+  type DraftSaveMode = "foreground" | "background";
+
+  function tryDebouncedAutosave() {
+    debounceTimerRef.current = null;
+    const current = formRef.current;
+    if (!current || snapshotInput(current) === baselineRef.current) return;
+
+    const root = stepContentRef.current;
+    const active = document.activeElement;
+    if (
+      root &&
+      active instanceof HTMLElement &&
+      root.contains(active) &&
+      (active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement ||
+        active.getAttribute("role") === "radio")
+    ) {
+      debounceTimerRef.current = setTimeout(tryDebouncedAutosave, 350);
+      return;
+    }
+
+    void runDraftSave("background");
+  }
+
+  function scheduleDebouncedAutosave() {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(tryDebouncedAutosave, AUTOSAVE_MS);
+  }
+
+  async function runDraftSave(mode: DraftSaveMode = "foreground"): Promise<boolean> {
     const current = formRef.current;
     if (!current || snapshotInput(current) === baselineRef.current) return true;
     if (savingRef.current) return false;
     const snapshotAtStart = snapshotInput(current);
-    setSavingState(true);
+    savingRef.current = true;
+    if (mode === "foreground") {
+      setSavingState(true);
+    } else {
+      setSaveStatus("saving");
+    }
     try {
       const result = await onSaveDraft(current);
       if (!result.ok) {
@@ -397,7 +433,11 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
       setSaveStatus("saved");
       return true;
     } finally {
-      setSavingState(false);
+      savingRef.current = false;
+      if (mode === "foreground") {
+        setSaving(false);
+        onSavingChange?.(false);
+      }
     }
   }
 
@@ -411,7 +451,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
     }
     const current = formRef.current;
     if (!current || snapshotInput(current) === baselineRef.current) return true;
-    return runDraftSave();
+    return runDraftSave("foreground");
   }
 
   useImperativeHandle(ref, () => ({
@@ -423,21 +463,6 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
     isSaving: () => savingRef.current,
     flushSave,
   }));
-
-  useEffect(() => {
-    if (snapshotInput(form) === baselineRef.current) return;
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      debounceTimerRef.current = null;
-      void runDraftSave();
-    }, AUTOSAVE_MS);
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
-    };
-  }, [form]);
 
   useEffect(() => {
     const stepValidation = validateQuestionnaireWizardStep(step, form);
@@ -471,6 +496,10 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
       formRef.current = next;
       return next;
     });
+    const current = formRef.current;
+    if (current && snapshotInput(current) !== baselineRef.current) {
+      scheduleDebouncedAutosave();
+    }
   }
 
   function handleSubmit() {

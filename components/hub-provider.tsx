@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, startTransition } from "react";
 import { HubRemoteSyncBlockerProvider } from "@/components/hub-sync";
 import { usePathname } from "next/navigation";
 import {
@@ -888,7 +888,19 @@ export function HubProvider({
       if (!data.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
       const remote = await saveContractorQuestionnaireDraftAction(input);
       if (!remote.ok) return remote;
-      setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+      const prev = stateRef.current ?? data;
+      const prevCleaner = prev.cleaners.find((item) => item.cleanerId === data.cleanerId);
+      const nextCleaner = remote.data.cleaners.find((item) => item.cleanerId === data.cleanerId);
+      const draftUnchanged =
+        prevCleaner &&
+        nextCleaner &&
+        JSON.stringify(prevCleaner.businessQuestionnaireDraft ?? null) ===
+          JSON.stringify(nextCleaner.businessQuestionnaireDraft ?? null);
+      if (!draftUnchanged) {
+        startTransition(() => {
+          setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+        });
+      }
       return { ok: true, message: remote.message };
     }
     const cleanerId = data.cleanerId;
@@ -897,10 +909,22 @@ export function HubProvider({
     const snapshot = stateRef.current ?? data;
     const preview = saveContractorQuestionnaireOnHub(snapshot, cleanerId, input, "preview", now, "draft");
     if (!preview.result.ok) return preview.result;
-    setState((prev) => {
-      if (!prev) return prev;
-      const outcome = saveContractorQuestionnaireOnHub(prev, cleanerId, input, "preview", now, "draft");
-      return { ...outcome.hub, role: prev.role, cleanerId: prev.cleanerId };
+    startTransition(() => {
+      setState((prev) => {
+        if (!prev) return prev;
+        const outcome = saveContractorQuestionnaireOnHub(prev, cleanerId, input, "preview", now, "draft");
+        const prevCleaner = prev.cleaners.find((item) => item.cleanerId === cleanerId);
+        const nextCleaner = outcome.hub.cleaners.find((item) => item.cleanerId === cleanerId);
+        if (
+          prevCleaner &&
+          nextCleaner &&
+          JSON.stringify(prevCleaner.businessQuestionnaireDraft ?? null) ===
+            JSON.stringify(nextCleaner.businessQuestionnaireDraft ?? null)
+        ) {
+          return prev;
+        }
+        return { ...outcome.hub, role: prev.role, cleanerId: prev.cleanerId };
+      });
     });
     return { ok: true, message: "Form saved." };
   }

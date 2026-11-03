@@ -22,12 +22,29 @@ function ExternalLinkIcon({ className }: { className?: string }) {
   );
 }
 
-export function NextInsuranceExploreLink({ className }: { className?: string }) {
+/** Single referral anchor — use for every NEXT Insurance link in the questionnaire. */
+export function NextInsuranceReferralLink({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <a
       href={NEXT_INSURANCE_REFERRAL_URL}
       target="_blank"
       rel="noopener noreferrer"
+      className={className}
+    >
+      {children}
+    </a>
+  );
+}
+
+export function NextInsuranceExploreLink({ className }: { className?: string }) {
+  return (
+    <NextInsuranceReferralLink
       className={
         className ??
         "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-mint px-4 text-sm font-semibold text-ink shadow-[0_4px_12px_rgba(51,51,51,0.08)] sm:w-auto sm:min-h-12 sm:text-base"
@@ -35,7 +52,7 @@ export function NextInsuranceExploreLink({ className }: { className?: string }) 
     >
       Explore NEXT Insurance
       <ExternalLinkIcon className="shrink-0 opacity-90" />
-    </a>
+    </NextInsuranceReferralLink>
   );
 }
 
@@ -62,14 +79,9 @@ export function NextInsuranceOregonCoverageHelper() {
       <p className="text-sm leading-relaxed text-ink/75">
         Please contact your insurance provider to confirm whether your policy covers cleaning services performed in
         Oregon. If you need different coverage, you can explore options through{" "}
-        <a
-          href={NEXT_INSURANCE_REFERRAL_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-semibold text-ink underline underline-offset-2"
-        >
+        <NextInsuranceReferralLink className="font-semibold text-ink underline underline-offset-2">
           NEXT Insurance
-        </a>{" "}
+        </NextInsuranceReferralLink>{" "}
         or another provider.
       </p>
     </div>
