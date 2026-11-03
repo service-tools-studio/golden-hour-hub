@@ -70,14 +70,18 @@ describe("contractor questionnaire wizard", () => {
     const partial = {
       ...soloBase(),
       hasAdditionalWorkers: true,
-      teamMembers: [{ firstName: "Sam", lastName: "", workingRelationship: "EMPLOYEE", workingRelationshipOther: "" }],
+      teamMembers: [
+        { firstName: "Sam", lastName: "", workingRelationship: "EMPLOYEE" as const, workingRelationshipOther: "" },
+      ],
       helperPaymentArrangement: "BUSINESS_PAYS" as const,
     };
     assert.match(validateQuestionnaireWizardStep(2, partial).teamMembers ?? "", /first and last name/i);
 
     const complete = {
       ...partial,
-      teamMembers: [{ firstName: "Sam", lastName: "Lee", workingRelationship: "EMPLOYEE", workingRelationshipOther: "" }],
+      teamMembers: [
+        { firstName: "Sam", lastName: "Lee", workingRelationship: "EMPLOYEE" as const, workingRelationshipOther: "" },
+      ],
     };
     assert.equal(validateQuestionnaireWizardStep(2, complete).teamMembers, undefined);
   });
