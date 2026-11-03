@@ -1,4 +1,5 @@
-import { buildCustomerSearchKeys } from "../domain/customers.ts";
+import { readQuestionnaireSubmissionFromRecord } from "../domain/contractor-questionnaire-submission.ts";
+import type { ContractorQuestionnaireSubmissionRecord } from "../domain/contractor-questionnaire-submission.ts";
 import type { HubData } from "../mock/seed.ts";
 import type {
   AssignmentNotice,
@@ -12,6 +13,7 @@ import type {
   Property,
   RecurringSeries,
 } from "../domain/types.ts";
+import { buildCustomerSearchKeys } from "../domain/customers.ts";
 
 export type DynamoItem = {
   pk: string;
@@ -39,6 +41,7 @@ export function hubToItems(data: HubData): DynamoItem[] {
     ...data.jobs.map(jobItem),
     ...data.jobs.filter((job) => job.seriesId).map(occurItem),
     ...data.assignments.map(assignmentItem),
+    ...data.contractorQuestionnaireSubmissions.map(contractorQuestionnaireSubmissionItem),
   ];
   return items;
 }
@@ -54,6 +57,7 @@ export function itemsToHub(items: DynamoItem[], today: string): HubData {
     assignments: [],
     availability: [],
     submissions: [],
+    contractorQuestionnaireSubmissions: [],
   };
   for (const item of items) {
     if (item.entity === "cleaner") data.cleaners.push(readCleaner(item));
@@ -64,6 +68,10 @@ export function itemsToHub(items: DynamoItem[], today: string): HubData {
     if (item.entity === "assignment") data.assignments.push(readAssignment(item));
     if (item.entity === "availability") data.availability.push(readAvailability(item));
     if (item.entity === "submission") data.submissions.push(readSubmission(item));
+    if (item.entity === "contractor_questionnaire_submission") {
+      const row = readQuestionnaireSubmissionFromRecord(item);
+      if (row) data.contractorQuestionnaireSubmissions.push(row);
+    }
   }
   return data;
 }
@@ -102,6 +110,18 @@ function submissionItem(submission: AvailabilitySubmission): DynamoItem {
     gsi1pk: `SUBMISSION#${submission.weekStart}`,
     gsi1sk: submission.cleanerId,
     ...submission,
+  };
+}
+
+function contractorQuestionnaireSubmissionItem(record: ContractorQuestionnaireSubmissionRecord): DynamoItem {
+  const version = String(record.submissionVersion).padStart(6, "0");
+  return {
+    pk: `CLEANER#${record.cleanerId}`,
+    sk: `BQSUB#${version}#${record.submissionId}`,
+    entity: "contractor_questionnaire_submission",
+    gsi1pk: `CLEANER#${record.cleanerId}`,
+    gsi1sk: record.submittedAt,
+    ...record,
   };
 }
 
@@ -220,6 +240,8 @@ function withoutEmpty(record: object): Record<string, unknown> {
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
+import { readQuestionnaireFromRecord, readQuestionnaireDraftFromRecord } from "../domain/contractor-questionnaire.ts";
+
 function readCleaner(item: DynamoItem): CleanerProfile {
   const typicalHelperCount = numberField(item, "typicalHelperCount");
   const storedMax = item.maxHelperCount;
@@ -249,6 +271,8 @@ function readCleaner(item: DynamoItem): CleanerProfile {
     smsConsentRecordedAt: optionalString(item, "smsConsentRecordedAt"),
     smsConsentDisclosureVersion: optionalString(item, "smsConsentDisclosureVersion"),
     smsConsentMethod: optionalString(item, "smsConsentMethod"),
+    businessQuestionnaire: readQuestionnaireFromRecord(item.businessQuestionnaire),
+    businessQuestionnaireDraft: readQuestionnaireDraftFromRecord(item.businessQuestionnaireDraft),
     createdAt: stringField(item, "createdAt"),
     createdBy: stringField(item, "createdBy"),
     updatedAt: stringField(item, "updatedAt"),

@@ -90,7 +90,9 @@ See [.env.example](.env.example).
 | `CRON_SECRET` | Optional. Bearer token for `/api/cron/assignment-sms-log-retention` and `/api/cron/availability-week-open` (required in production unless you rely only on admin saves). Vercel Cron sends `Authorization: Bearer …` when this is set. |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
 | `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links and admin ops texts |
-| `JASMIN_PHONE` | Same format as `KELSEY_PHONE`; both receive the same admin ops texts (invite accepted, availability submitted/updated). Set on Vercel/hosting too, not only `.env.local` |
+| `JASMIN_PHONE` | Same format as `KELSEY_PHONE`; with Kelsey, receives invite-accepted and availability ops texts; also receives business-information submitted/updated texts (Kelsey does not). Set on Vercel/hosting too, not only `.env.local` |
+| `BUSINESS_CONTACT_EMAIL` | Optional. Server-side inbox for Certificate of Insurance emails referenced in the business questionnaire |
+| `NEXT_PUBLIC_BUSINESS_CONTACT_EMAIL` | Optional. Same address exposed to the cleaner business form for COI instructions (falls back to `BUSINESS_CONTACT_EMAIL` on the server helper) |
 | `GOOGLE_MAPS_API_KEY` | Server-only key for customer address typeahead (**Places API (New)** only). Hub calls Autocomplete on keystrokes and **Place Details once per selection** with an Essentials field mask (`addressComponents`, `formattedAddress` only—no reviews/ratings/`generativeSummary`). Use **session tokens** so Google bills autocomplete + details as one session. Restrict the key to Places API (New) + your server IPs/domains; disable unused Maps client SDKs so nothing else can trigger Enterprise SKUs. |
 | `GOOGLE_CALENDAR_ENABLED` | Leave `false` until sync is built |
 | `GOOGLE_CALENDAR_ID` | Target calendar, later |

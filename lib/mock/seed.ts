@@ -18,6 +18,7 @@ import type {
   JobAssignment,
   RecurringSeries,
 } from "../domain/types.ts";
+import type { ContractorQuestionnaireSubmissionRecord } from "../domain/contractor-questionnaire-submission.ts";
 
 export type HubData = {
   today: string;
@@ -29,6 +30,7 @@ export type HubData = {
   assignments: JobAssignment[];
   availability: AvailabilityWindow[];
   submissions: AvailabilitySubmission[];
+  contractorQuestionnaireSubmissions: ContractorQuestionnaireSubmissionRecord[];
 };
 
 export function emptyHub(today: string): HubData {
@@ -42,6 +44,7 @@ export function emptyHub(today: string): HubData {
     assignments: [],
     availability: [],
     submissions: [],
+    contractorQuestionnaireSubmissions: [],
   };
 }
 
@@ -241,6 +244,7 @@ export function buildSeed(today: string): HubData {
     series: generated.series,
     jobs: generated.jobs,
     assignments: generated.assignments,
+    contractorQuestionnaireSubmissions: [],
   };
 }
 

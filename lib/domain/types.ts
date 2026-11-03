@@ -5,6 +5,8 @@
  * Recurrence is determined by seriesId, not by the serviceType label.
  */
 
+import type { ContractorBusinessQuestionnaire, ContractorQuestionnaireInput } from "./contractor-questionnaire.ts";
+
 export const BUSINESS_TIME_ZONE = "America/Los_Angeles";
 
 export type AppRole = "ADMIN" | "CLEANER";
@@ -63,6 +65,10 @@ export type CleanerProfile = {
   smsConsentDisclosureVersion?: string;
   /** How opt-in was captured, e.g. hub_web or sms_start. */
   smsConsentMethod?: string;
+  /** Contractor business questionnaire responses (cleaner-submitted). */
+  businessQuestionnaire?: ContractorBusinessQuestionnaire;
+  /** In-progress questionnaire answers until a complete submit. */
+  businessQuestionnaireDraft?: ContractorQuestionnaireInput;
   createdAt: string;
   createdBy: string;
   updatedAt: string;

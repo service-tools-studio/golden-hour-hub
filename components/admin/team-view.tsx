@@ -11,6 +11,7 @@ import { sendAvailabilityReminders } from "@/app/actions/reminders";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
+import { ContractorBusinessAdminPanel } from "@/components/admin/contractor-business-admin-panel";
 import { ButtonLoadingLabel, Card, FormSubmitNotice, Notice, PageHeader, PrimaryButton, Screen } from "@/components/ui";
 import { listSubmissionStatus } from "@/lib/domain/availability";
 import { helpersApproved, maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
@@ -199,7 +200,7 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   );
   const availabilityRef = useRef<AvailabilityWeekEditorHandle>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<"general" | "availability">("general");
+  const [detailTab, setDetailTab] = useState<"general" | "business" | "availability">("general");
   const cleanerSnapshot = JSON.stringify({ helpersOn, typicalHelperCount, maxHelperCount, status, hourlyRate });
   const cleanerBaseline = useRef<string | null>(null);
   if (cleaner && cleanerBaseline.current === null) cleanerBaseline.current = cleanerSnapshot;
@@ -294,6 +295,17 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
                 <span className="size-1.5 shrink-0 rounded-full bg-gold" aria-label="Unsaved changes" />
               ) : null}
             </span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={detailTab === "business"}
+            onClick={() => setDetailTab("business")}
+            className={`-mb-px flex-1 border-b-2 pb-3 pt-1 text-sm font-semibold transition-colors ${
+              detailTab === "business" ? "border-gold text-ink" : "border-transparent text-ink/45"
+            }`}
+          >
+            Business
           </button>
           <button
             type="button"
@@ -396,6 +408,17 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
           <p className="mt-1 text-base">Maximum approved crew size: {approvedCrew}</p>
           <p className="mt-1 text-sm text-ink/60">Crew size is the cleaner plus their helpers. Only admins can change these limits.</p>
         </Card>
+        </div>
+
+        <div
+          role="tabpanel"
+          hidden={detailTab !== "business"}
+          className={detailTab === "business" ? "space-y-3 pt-1" : "hidden"}
+        >
+          <ContractorBusinessAdminPanel
+            cleaner={cleaner}
+            submissionHistory={hub.contractorQuestionnaireSubmissions ?? []}
+          />
         </div>
 
         <div

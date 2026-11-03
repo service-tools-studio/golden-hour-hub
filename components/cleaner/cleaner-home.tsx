@@ -22,6 +22,11 @@ import {
   dismissExpiredInvitation,
   readDismissedExpiredInvitationIds,
 } from "@/lib/cleaner/expired-invitation-dismissals";
+import {
+  questionnaireEffectiveReviewStatus,
+  questionnaireReviewStatusClassName,
+  questionnaireReviewStatusLabel,
+} from "@/lib/domain/contractor-questionnaire";
 import { cleanerAllowsSchedulingSms } from "@/lib/cleaner/sms-consent";
 import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
 import { kelseyContactLinks } from "@/lib/contact";
@@ -96,6 +101,7 @@ export function CleanerHome() {
   const cleaner = hub.cleaners.find((item) => item.cleanerId === hub.cleanerId);
   if (!cleaner) return null;
   const cleanerId = cleaner.cleanerId;
+  const businessReviewStatus = questionnaireEffectiveReviewStatus(cleaner.businessQuestionnaire);
 
   function dismissExpiredInvite(assignmentId: string) {
     dismissExpiredInvitation(cleanerId, assignmentId);
@@ -248,6 +254,27 @@ export function CleanerHome() {
         ) : null}
 
         {showSmsOptInBanner ? <SmsOptInActionBanner /> : null}
+
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Business information</h2>
+          <Card>
+            <p className="text-base text-ink/75">
+              Share how your cleaning business is set up and who may work on Golden Hour jobs.
+            </p>
+            <p className="mt-2 text-sm text-ink/60">
+              Status:{" "}
+              <span className={questionnaireReviewStatusClassName(businessReviewStatus)}>
+                {questionnaireReviewStatusLabel(businessReviewStatus)}
+              </span>
+            </p>
+            <Link
+              href="/cleaner/business"
+              className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+            >
+              {cleaner.businessQuestionnaire?.submittedAt ? "Update business information" : "Complete business information"}
+            </Link>
+          </Card>
+        </section>
 
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Upcoming jobs</h2>

@@ -26,6 +26,14 @@ export function adminNotifyPhoneDigitsFromEnv(
   return out;
 }
 
+/** 10-digit US number from JASMIN_PHONE only (server notifications). */
+export function jasminNotifyPhoneDigitsFromEnv(
+  env: { JASMIN_PHONE?: string } = process.env as { JASMIN_PHONE?: string },
+): string | null {
+  const digits = kelseyPhoneDigitsFromEnv(env.JASMIN_PHONE);
+  return digits || null;
+}
+
 export function kelseyContactLinks(
   digits: string,
   smsBody?: string,
