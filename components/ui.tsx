@@ -257,15 +257,23 @@ export function Field({
   children,
   error,
   id,
+  questionnaireField,
 }: {
   label: React.ReactNode;
   hint?: string;
   children: React.ReactNode;
   error?: string;
   id?: string;
+  /** Scroll target when this step fails validation on Continue. */
+  questionnaireField?: string;
 }) {
   return (
-    <label id={id} className="block">
+    <label
+      id={id}
+      className="block scroll-mt-24"
+      data-questionnaire-field={questionnaireField}
+      data-questionnaire-question={questionnaireField}
+    >
       <div className="mb-1.5">
         <div className={`block text-sm font-medium ${error ? "text-red-700" : "text-ink/80"}`}>{label}</div>
         {hint ? <p className="mt-0.5 text-sm text-ink/60">{hint}</p> : null}

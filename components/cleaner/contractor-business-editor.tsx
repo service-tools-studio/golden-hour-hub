@@ -91,10 +91,10 @@ export function ContractorBusinessEditor() {
           profileMobilePhone={cleaner.mobilePhone}
           profileEmail={cleaner.email}
           savedAt={cleaner.updatedAt}
+          cleanerId={hub.cleanerId ?? undefined}
           onSaveDraft={(input) => hub.saveContractorQuestionnaireDraft(input)}
           onDraftSaveError={(message) => hub.flash(message)}
           onSubmit={(input, attestation) => hub.submitContractorQuestionnaire(input, attestation)}
-          onSubmitted={() => hub.flash("Submitted.")}
           onSavingChange={setFormSaving}
         />
       </div>
