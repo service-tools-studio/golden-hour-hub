@@ -304,7 +304,7 @@ export function questionnaireReviewStatusLabel(status: QuestionnaireReviewStatus
     case "SUBMITTED":
       return "Submitted";
     case "NEEDS_REVIEW":
-      return "Needs review";
+      return "In review";
     case "REVIEWED":
       return "Reviewed";
   }
@@ -313,6 +313,7 @@ export function questionnaireReviewStatusLabel(status: QuestionnaireReviewStatus
 /** Tailwind classes for cleaner-facing status emphasis. */
 export function questionnaireReviewStatusClassName(status: QuestionnaireReviewStatus): string {
   if (status === "NOT_SUBMITTED") return "font-semibold text-red-700";
+  if (status === "NEEDS_REVIEW") return "font-semibold text-gold";
   return "font-semibold text-ink";
 }
 
