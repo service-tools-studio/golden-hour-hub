@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { ButtonSpinner } from "@/components/ui";
 
-type Item = { href: string; label: string; icon: "home" | "calendar" | "people" | "team" | "clock" };
+type Item = { href: string; label: string; icon: "home" | "calendar" | "people" | "team" | "clock" | "business" };
 
 function tabActive(pathname: string, href: string): boolean {
   return href === "/admin" || href === "/cleaner" ? pathname === href : pathname.startsWith(href);
@@ -84,6 +84,18 @@ function NavIcon({ name, active }: { name: Item["icon"]; active: boolean }) {
       </svg>
     );
   }
+  if (name === "business") {
+    return (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M5 9V20h14V9M5 9l2-4h10l2 4M9 13h2v4H9v-4Zm4 0h2v4h-2v-4Z"
+          stroke={color}
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
   if (name === "people" || name === "team") {
     return (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -112,4 +124,5 @@ export const cleanerNav: Item[] = [
   { href: "/cleaner", label: "Home", icon: "home" },
   { href: "/cleaner/schedule", label: "My Schedule", icon: "calendar" },
   { href: "/cleaner/availability", label: "Availability", icon: "clock" },
+  { href: "/cleaner/business", label: "Business", icon: "business" },
 ];

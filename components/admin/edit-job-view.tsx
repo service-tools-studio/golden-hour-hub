@@ -700,7 +700,7 @@ function DeleteCleaningButton({
       {hintOpen && deleteBlocked ? (
         <p
           role="tooltip"
-          className="absolute bottom-full left-0 right-0 z-10 mb-2 rounded-2xl bg-ink px-4 py-3 text-center text-sm leading-5 text-cream shadow-[0_8px_30px_rgba(51,51,51,0.2)]"
+          className="absolute bottom-full left-0 right-0 z-10 mb-2 rounded-2xl bg-mint px-4 py-3 text-center text-sm leading-5 text-ink shadow-[0_8px_30px_rgba(51,51,51,0.12)] ring-1 ring-ink/10"
         >
           {CLEANING_DELETE_BLOCKED_MESSAGE}
         </p>

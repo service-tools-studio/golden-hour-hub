@@ -57,6 +57,7 @@ export function pendingNavigationLabel(href: string): string {
     "/cleaner": "Home",
     "/cleaner/schedule": "My Schedule",
     "/cleaner/availability": "Availability",
+    "/cleaner/business": "Business",
   };
   const name = labels[path];
   return name ? `Opening ${name}…` : "Loading…";

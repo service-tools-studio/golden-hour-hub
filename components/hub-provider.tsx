@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, startTransition } from "react";
 import { HubRemoteSyncBlockerProvider } from "@/components/hub-sync";
 import { usePathname } from "next/navigation";
 import {
@@ -8,6 +8,10 @@ import {
   declineInvitationAction,
   submitAvailabilityAction,
 } from "@/app/actions/cleaner-hub";
+import {
+  saveContractorQuestionnaireDraftAction,
+  submitContractorQuestionnaireAction,
+} from "@/app/actions/contractor-questionnaire";
 import { ManualCleanerTextPrompt } from "@/components/admin/manual-cleaner-text-prompt";
 import { PreviewModeBanner } from "@/components/preview-mode-banner";
 import {
@@ -18,6 +22,8 @@ import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
 import { purgeAssignmentSmsLogsOnCleanerRemoval } from "@/app/actions/assignment-sms-log-cleanup";
 import { updateCleanerAdminOnHub } from "@/lib/hub/admin-mutations";
 import { submitAvailabilityOnHub } from "@/lib/hub/cleaner-mutations";
+import { saveContractorQuestionnaireOnHub } from "@/lib/hub/contractor-questionnaire-mutations";
+import type { ContractorQuestionnaireInput } from "@/lib/domain/contractor-questionnaire";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import { SIGNED_OUT_STORAGE_KEY } from "@/lib/auth/signed-out-guard";
@@ -193,6 +199,17 @@ type HubContextValue = HubState & {
     windows: AvailabilityWindow[],
     options?: { quiet?: boolean },
   ) => AsyncActionResult;
+  saveContractorQuestionnaireDraft: (
+    input: ContractorQuestionnaireInput,
+  ) => Promise<{ ok: true; message: string } | { ok: false; message: string }>;
+  submitContractorQuestionnaire: (
+    input: ContractorQuestionnaireInput,
+    attestation: import("@/lib/domain/contractor-questionnaire-submission").ContractorQuestionnaireSubmitAttestation,
+  ) => Promise<
+    | { ok: true; message: string }
+    | { ok: false; message: string; fieldErrors?: Record<string, string> }
+  >;
+  mergeAdminHub: (remote: HubData) => void;
   saveCustomer: (input: CustomerInput, customerId?: string) => ActionResult;
   deleteCustomer: (customerId: string) => ActionResult;
   saveSeries: (
@@ -730,6 +747,7 @@ export function HubProvider({
           assignments: state.assignments,
           availability: state.availability,
           submissions: state.submissions,
+          contractorQuestionnaireSubmissions: state.contractorQuestionnaireSubmissions,
         };
         void drainPersistQueue();
       }
@@ -861,6 +879,111 @@ export function HubProvider({
     });
     if (!options?.quiet) setToast(toastMessage);
     return { ok: true, message: toastMessage };
+  }
+
+  async function saveContractorQuestionnaireDraft(
+    input: ContractorQuestionnaireInput,
+  ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+    if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
+      if (!data.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
+      const remote = await saveContractorQuestionnaireDraftAction(input);
+      if (!remote.ok) return remote;
+      const prev = stateRef.current ?? data;
+      const prevCleaner = prev.cleaners.find((item) => item.cleanerId === data.cleanerId);
+      const nextCleaner = remote.data.cleaners.find((item) => item.cleanerId === data.cleanerId);
+      const draftUnchanged =
+        prevCleaner &&
+        nextCleaner &&
+        JSON.stringify(prevCleaner.businessQuestionnaireDraft ?? null) ===
+          JSON.stringify(nextCleaner.businessQuestionnaireDraft ?? null);
+      if (!draftUnchanged) {
+        startTransition(() => {
+          setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+        });
+      }
+      return { ok: true, message: remote.message };
+    }
+    const cleanerId = data.cleanerId;
+    if (!cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
+    const now = new Date().toISOString();
+    const snapshot = stateRef.current ?? data;
+    const preview = saveContractorQuestionnaireOnHub(snapshot, cleanerId, input, "preview", now, "draft");
+    if (!preview.result.ok) return preview.result;
+    startTransition(() => {
+      setState((prev) => {
+        if (!prev) return prev;
+        const outcome = saveContractorQuestionnaireOnHub(prev, cleanerId, input, "preview", now, "draft");
+        const prevCleaner = prev.cleaners.find((item) => item.cleanerId === cleanerId);
+        const nextCleaner = outcome.hub.cleaners.find((item) => item.cleanerId === cleanerId);
+        if (
+          prevCleaner &&
+          nextCleaner &&
+          JSON.stringify(prevCleaner.businessQuestionnaireDraft ?? null) ===
+            JSON.stringify(nextCleaner.businessQuestionnaireDraft ?? null)
+        ) {
+          return prev;
+        }
+        return { ...outcome.hub, role: prev.role, cleanerId: prev.cleanerId };
+      });
+    });
+    return { ok: true, message: "Form saved." };
+  }
+
+  async function submitContractorQuestionnaire(
+    input: ContractorQuestionnaireInput,
+    attestation: import("@/lib/domain/contractor-questionnaire-submission").ContractorQuestionnaireSubmitAttestation,
+  ): Promise<
+    | { ok: true; message: string }
+    | { ok: false; message: string; fieldErrors?: Record<string, string> }
+  > {
+    if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
+      if (!data.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
+      const remote = await submitContractorQuestionnaireAction(input, attestation);
+      if (!remote.ok) {
+        return {
+          ok: false,
+          message: remote.message,
+          fieldErrors: remote.fieldErrors,
+        };
+      }
+      setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+      return { ok: true, message: remote.message };
+    }
+    const cleanerId = data.cleanerId;
+    if (!cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
+    const now = new Date().toISOString();
+    const snapshot = stateRef.current ?? data;
+    const preview = saveContractorQuestionnaireOnHub(snapshot, cleanerId, input, "preview", now, "submit", {
+      attestation,
+      cognitoSub: "preview-cleaner",
+      email: data.cleaners.find((item) => item.cleanerId === cleanerId)?.email ?? "preview@example.com",
+    });
+    if (!preview.result.ok) {
+      return {
+        ok: false,
+        message: preview.result.message,
+        fieldErrors: preview.fieldErrors
+          ? Object.fromEntries(Object.entries(preview.fieldErrors).map(([key, value]) => [key, value]))
+          : undefined,
+      };
+    }
+    setState((prev) => {
+      if (!prev) return prev;
+      const outcome = saveContractorQuestionnaireOnHub(prev, cleanerId, input, "preview", now, "submit", {
+        attestation,
+        cognitoSub: "preview-cleaner",
+        email: prev.cleaners.find((item) => item.cleanerId === cleanerId)?.email ?? "preview@example.com",
+      });
+      return { ...outcome.hub, role: prev.role, cleanerId: prev.cleanerId };
+    });
+    return { ok: true, message: "Submitted." };
+  }
+
+  function mergeAdminHub(remote: HubData) {
+    setState((prev) => {
+      if (!prev) return prev;
+      return { ...withCurrentHorizon(remote), role: prev.role, cleanerId: prev.cleanerId };
+    });
   }
 
   function saveCustomer(input: CustomerInput, customerId?: string): ActionResult {
@@ -2318,6 +2441,9 @@ export function HubProvider({
     acceptInvitation,
     declineInvitation,
     submitAvailability,
+    saveContractorQuestionnaireDraft,
+    submitContractorQuestionnaire,
+    mergeAdminHub,
     saveCustomer,
     deleteCustomer,
     saveSeries,

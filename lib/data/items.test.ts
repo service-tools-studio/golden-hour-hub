@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { buildQuestionnaireFromInput } from "../domain/contractor-questionnaire.ts";
+import { createQuestionnaireSubmissionRecord } from "../domain/contractor-questionnaire-submission.ts";
 import { buildSeed } from "../mock/seed.ts";
 import { hubToItems, itemsToHub } from "./items.ts";
 
@@ -52,5 +54,113 @@ describe("DynamoDB item mapping", () => {
     );
     assert.equal(restored.cleaners[0].maxHelperCount, 0);
     assert.equal(restored.cleaners[0].typicalHelperCount, 0);
+  });
+
+  it("round-trips businessQuestionnaire on cleaner profiles", () => {
+    const today = "2026-09-27";
+    const data = buildSeed(today);
+    const cleaner = data.cleaners[0]!;
+    const questionnaire = buildQuestionnaireFromInput(
+      {
+        businessDisplayName: "Test Co",
+        ownerLegalName: "Pat Smith",
+        registrationStatus: "SOLE_PROPRIETOR",
+        businessStructure: "",
+        registeredLegalName: "",
+        registrationState: "",
+        stateRegistrationNumber: "",
+        businessStreetAddress: "1 Oak",
+        businessCity: "Portland",
+        businessState: "OR",
+        businessZip: "97201",
+        businessPhone: "5035550100",
+        businessEmail: "pat@example.com",
+        oregonServiceStatus: "YES",
+        hasAdditionalWorkers: false,
+        teamMembers: [{ firstName: "", lastName: "", workingRelationship: "", workingRelationshipOther: "" }],
+        workersCompStatus: "NO",
+        workersCompNoReason: "WORK_ALONE",
+        workersCompNoReasonOther: "",
+        workersCompCarrierName: "",
+        workersCompPolicyNumber: "",
+        workersCompExpirationDate: "",
+        helperPaymentArrangement: "",
+        generalLiabilityStatus: "YES",
+        insuranceProviderName: "NEXT Insurance",
+        insuranceExpirationDate: "2027-06-01",
+        insuranceOregonCoverage: "YES",
+      },
+      undefined,
+      "2026-09-27T00:00:00.000Z",
+      "pat@example.com",
+    );
+    const items = hubToItems({
+      ...data,
+      cleaners: data.cleaners.map((row) =>
+        row.cleanerId === cleaner.cleanerId ? { ...row, businessQuestionnaire: questionnaire } : row,
+      ),
+    });
+    const restored = itemsToHub(items, today);
+    const roundTripped = restored.cleaners.find((row) => row.cleanerId === cleaner.cleanerId)?.businessQuestionnaire;
+    assert.equal(roundTripped?.businessDisplayName, "Test Co");
+    assert.equal(roundTripped?.reviewStatus, "SUBMITTED");
+  });
+
+  it("round-trips contractor questionnaire submission history items", () => {
+    const today = "2026-09-27";
+    const data = buildSeed(today);
+    const cleaner = data.cleaners[0]!;
+    const questionnaire = buildQuestionnaireFromInput(
+      {
+        businessDisplayName: "Test Co",
+        ownerLegalName: "Pat Smith",
+        registrationStatus: "SOLE_PROPRIETOR",
+        businessStructure: "",
+        registeredLegalName: "",
+        registrationState: "",
+        stateRegistrationNumber: "",
+        businessStreetAddress: "1 Oak",
+        businessCity: "Portland",
+        businessState: "OR",
+        businessZip: "97201",
+        businessPhone: "5035550100",
+        businessEmail: "pat@example.com",
+        oregonServiceStatus: "YES",
+        hasAdditionalWorkers: false,
+        teamMembers: [{ firstName: "", lastName: "", workingRelationship: "", workingRelationshipOther: "" }],
+        workersCompStatus: "NO",
+        workersCompNoReason: "WORK_ALONE",
+        workersCompNoReasonOther: "",
+        workersCompCarrierName: "",
+        workersCompPolicyNumber: "",
+        workersCompExpirationDate: "",
+        helperPaymentArrangement: "",
+        generalLiabilityStatus: "YES",
+        insuranceProviderName: "NEXT Insurance",
+        insuranceExpirationDate: "2027-06-01",
+        insuranceOregonCoverage: "YES",
+      },
+      undefined,
+      "2026-09-27T00:00:00.000Z",
+      "pat@example.com",
+    );
+    const record = createQuestionnaireSubmissionRecord({
+      cleanerId: cleaner.cleanerId,
+      submissionVersion: 1,
+      submittedAt: "2026-09-27T12:00:00.000Z",
+      submittedByCognitoSub: "sub-1",
+      submittedByEmail: "pat@example.com",
+      electronicSignature: "Pat Smith",
+      questionnaireSnapshot: questionnaire,
+      submissionId: "bqsub-test-1",
+    });
+    const items = hubToItems({ ...data, contractorQuestionnaireSubmissions: [record] });
+    const item = items.find((row) => row.entity === "contractor_questionnaire_submission");
+    assert.equal(item?.pk, `CLEANER#${cleaner.cleanerId}`);
+    assert.match(String(item?.sk), /^BQSUB#/);
+    const restored = itemsToHub(items, today);
+    assert.equal(restored.contractorQuestionnaireSubmissions.length, 1);
+    assert.equal(restored.contractorQuestionnaireSubmissions[0]?.submissionId, "bqsub-test-1");
+    assert.equal(restored.contractorQuestionnaireSubmissions[0]?.electronicSignature, "Pat Smith");
   });
 });

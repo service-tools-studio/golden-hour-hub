@@ -31,7 +31,9 @@ gsi1pk CLEANER_STATUS#ACTIVE
 gsi1sk ramos#claudia
 ```
 
-Fields: `cleanerId`, `firstName`, `lastName`, `email`, `mobilePhone`, `status` (`ACTIVE` or `INACTIVE`), `typicalHelperCount`, `maxHelperCount`, `typicalHourlyRateCents` (per-person default hourly pay in cents), plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
+Fields: `cleanerId`, `firstName`, `lastName`, `email`, `mobilePhone`, `status` (`ACTIVE` or `INACTIVE`), `typicalHelperCount`, `maxHelperCount`, `typicalHourlyRateCents` (per-person default hourly pay in cents), optional nested `businessQuestionnaire` (contractor business questionnaire responses and admin review metadata), optional `businessQuestionnaireDraft` (in-progress answers until submit), plus `createdAt`, `createdBy`, `updatedAt`, `updatedBy`.
+
+When present, `businessQuestionnaire` stores business display and legal names, registration status (`LLC_OR_CORP` or `SOLE_PROPRIETOR`), optional structure and registration state, optional `stateRegistrationNumber` (state registry ID, not EIN), optional `registrationVerificationStatus` (`NOT_VERIFIED`, `VERIFIED`, `UNABLE_TO_VERIFY`, admin-set for LLC/corp), business address and contact fields, Oregon service intent (`YES`, `NO`, `PLANNED`), team member names, team relationship and workers' compensation enums, helper payment arrangement, `submittedAt`, `updatedAt`, `reviewStatus` (`NOT_SUBMITTED`, `SUBMITTED`, `NEEDS_REVIEW`, `REVIEWED`), `reviewFlags`, and optional `reviewedAt` / `reviewedBy`.
 
 Helper authorization is `maxHelperCount`. It is not a stored boolean. `maxHelperCount = 0` means no helpers. `maxHelperCount >= 1` means helpers are approved up to that number. The screen may show “Helpers approved? Yes / No”; that choice only writes the counts. Yes requires `maxHelperCount >= 1`. No writes `typicalHelperCount = 0` and `maxHelperCount = 0`.
 
@@ -46,6 +48,20 @@ Claudia stores `typicalHelperCount = 1` and `maxHelperCount = 2`, so her usual c
 `typicalHourlyRateCents` is the admin-set default per-person hourly rate for staffing (integer cents, at least 0). Profiles without the field read back as `3000` ($30/hour per person).
 
 Acceptance, direct assignment, and any move into `PENDING_AVAILABILITY` or `CONFIRMED` reload this profile and use the current `maxHelperCount`. An older invitation does not keep a higher crew. A confirmed assignment is not rewritten when the maximum later changes.
+
+### Contractor business questionnaire submission (immutable history)
+
+Each submit appends a read-only snapshot. The latest answers still live on the cleaner profile (`businessQuestionnaire`); history is not overwritten when a contractor updates and resubmits.
+
+```
+pk     CLEANER#claudia
+sk     BQSUB#000001#<submissionId>
+gsi1pk CLEANER#claudia
+gsi1sk <submittedAt ISO UTC>
+entity contractor_questionnaire_submission
+```
+
+Fields: `submissionId`, `cleanerId`, `submissionVersion` (1, 2, … per cleaner), `questionnaireVersion` (schema version), `submittedAt` (server UTC), `submittedByCognitoSub`, `submittedByEmail`, `acknowledgmentVersion`, `acknowledgmentText`, `electronicSignature`, `electronicSignatureConsentText`, and `questionnaireSnapshot` (full questionnaire at submit time). Application APIs append only; contractors do not receive this list in their hub slice.
 
 ### Availability window
 

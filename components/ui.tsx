@@ -257,17 +257,25 @@ export function Field({
   children,
   error,
   id,
+  questionnaireField,
 }: {
-  label: string;
+  label: React.ReactNode;
   hint?: string;
   children: React.ReactNode;
   error?: string;
   id?: string;
+  /** Scroll target when this step fails validation on Continue. */
+  questionnaireField?: string;
 }) {
   return (
-    <label id={id} className="block">
+    <label
+      id={id}
+      className="block scroll-mt-24"
+      data-questionnaire-field={questionnaireField}
+      data-questionnaire-question={questionnaireField}
+    >
       <div className="mb-1.5">
-        <span className={`block text-sm font-medium ${error ? "text-red-700" : "text-ink/80"}`}>{label}</span>
+        <div className={`block text-sm font-medium ${error ? "text-red-700" : "text-ink/80"}`}>{label}</div>
         {hint ? <p className="mt-0.5 text-sm text-ink/60">{hint}</p> : null}
       </div>
       {children}
@@ -279,6 +287,28 @@ export function Field({
     </label>
   );
 }
+
+function CautionTriangleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M12 4 21 20H3L12 4z" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />
+      <path d="M12 9v5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+      <circle cx="12" cy="17.2" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Pale gold callout with caution icon (matches booking / admin note styling). */
+export function CautionNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3 rounded-2xl bg-gold/15 px-4 py-3.5">
+      <CautionTriangleIcon className="mt-0.5 shrink-0 text-[#8d6b16]" />
+      <div className="min-w-0 space-y-2 text-sm leading-relaxed text-ink/85">{children}</div>
+    </div>
+  );
+}
+
+export { DateInput } from "@/components/date-input";
 
 export const fieldClass =
   "min-h-12 w-full rounded-2xl border border-ink/15 bg-white px-3 text-base text-ink outline-none focus:border-ink";

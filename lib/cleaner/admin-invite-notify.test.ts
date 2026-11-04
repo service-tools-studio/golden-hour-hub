@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { adminNotifyPhoneDigitsFromEnv, kelseyPhoneDigitsFromEnv } from "../contact.ts";
+import {
+  adminNotifyPhoneDigitsFromEnv,
+  jasminNotifyPhoneDigitsFromEnv,
+  kelseyPhoneDigitsFromEnv,
+} from "../contact.ts";
 import { adminInviteAcceptedSms } from "./admin-invite-sms.ts";
 
 describe("kelseyPhoneDigitsFromEnv", () => {
@@ -26,6 +30,13 @@ describe("adminNotifyPhoneDigitsFromEnv", () => {
       JASMIN_PHONE: "5035550102",
     });
     assert.deepEqual(phones, ["5035550101", "5035550102"]);
+  });
+});
+
+describe("jasminNotifyPhoneDigitsFromEnv", () => {
+  it("returns Jasmin only", () => {
+    assert.equal(jasminNotifyPhoneDigitsFromEnv({ JASMIN_PHONE: "(503) 555-0199" }), "5035550199");
+    assert.equal(jasminNotifyPhoneDigitsFromEnv({ JASMIN_PHONE: "" }), null);
   });
 });
 
