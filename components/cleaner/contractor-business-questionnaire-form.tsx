@@ -469,13 +469,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
     setErrors((prev) => {
       let next: QuestionnaireFieldErrors | undefined;
       for (const key of wizardStepFieldKeys(step)) {
-        const message = stepValidation[key];
-        if (message) {
-          if (prev[key] !== message) {
-            if (!next) next = { ...prev };
-            next[key] = message;
-          }
-        } else if (prev[key]) {
+        if (prev[key] && !stepValidation[key]) {
           if (!next) next = { ...prev };
           delete next[key];
         }
