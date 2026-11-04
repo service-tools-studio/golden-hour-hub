@@ -640,7 +640,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
           <input
             className={fieldClass}
             value={form.businessDisplayName}
-            placeholder="for example: Bright and Tidy Cleaning"
+            placeholder="for example: Golden Hour Cleaning Co."
             onChange={(event) => patch({ businessDisplayName: event.target.value })}
           />
         </Field>
