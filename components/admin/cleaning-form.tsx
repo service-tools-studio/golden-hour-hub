@@ -319,7 +319,7 @@ export function CleaningForm({
       arrivalWindowStart: arrivalStartTbd ? undefined : arrivalStart,
       arrivalWindowEnd: arrivalStartTbd ? undefined : arrivalEnd,
       expectedDurationMinutes: duration ?? 0,
-      headcountNeeded: quote ? headcount : 0,
+      headcountNeeded: headcount,
       specialInstructions: instructions,
       cleanerIds: draftCleanerIds,
       cleanerArrivals: cleanerArrivals.filter((arrival) => draftCleanerIds.includes(arrival.cleanerId)),
@@ -581,7 +581,7 @@ export function CleaningForm({
               }}
             />
 
-            {quote && property && estimate ? (
+            {property ? (
               <div>
                 <p className="mb-1.5 text-sm font-medium text-ink/80">Headcount</p>
                 <div className="flex min-h-12 items-center justify-between rounded-2xl bg-white px-2 ring-1 ring-ink/15">
@@ -605,11 +605,15 @@ export function CleaningForm({
                     +
                   </button>
                 </div>
-                {propertySizeLine ? <p className="mt-2 text-sm text-ink/70">{propertySizeLine}</p> : null}
-                <p className={`text-sm text-ink/70 ${propertySizeLine ? "" : "mt-2"}`}>
-                  Estimated time on site is {estimate.text} with {headcount}{" "}
-                  {headcount === 1 ? "cleaner" : "cleaners"}.
-                </p>
+                {quote && estimate ? (
+                  <>
+                    {propertySizeLine ? <p className="mt-2 text-sm text-ink/70">{propertySizeLine}</p> : null}
+                    <p className={`text-sm text-ink/70 ${propertySizeLine ? "" : "mt-2"}`}>
+                      Estimated time on site is {estimate.text} with {headcount}{" "}
+                      {headcount === 1 ? "cleaner" : "cleaners"}.
+                    </p>
+                  </>
+                ) : null}
               </div>
             ) : null}
 
