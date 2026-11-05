@@ -51,7 +51,6 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
     <Screen>
       <PageHeader
         title="Schedule"
-        subtitle="Scheduled cleanings"
         action={
           <div className="mt-1 flex shrink-0 items-center gap-2 self-center">
             <button
@@ -309,6 +308,7 @@ function DayView({
               </button>
               <span className="text-xs font-semibold text-ink/55">{shortMonthTitle(prevMonthStart)}</span>
             </div>
+            <span className="shrink-0 px-1 text-sm font-semibold text-ink/55">{date.slice(0, 4)}</span>
             <div className="flex min-w-0 items-center gap-0.5">
               <span className="text-xs font-semibold text-ink/55">{shortMonthTitle(nextMonthStart)}</span>
               <button
