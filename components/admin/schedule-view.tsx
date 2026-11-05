@@ -3,26 +3,20 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHub } from "@/components/hub-provider";
-import { useNow } from "@/components/use-now";
 import { PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { personName } from "@/lib/domain/cleaners";
 import {
   calculateBlockedRange,
-  subtractConfirmedBookingsFromAvailability,
-  toAssignmentSchedule,
 } from "@/lib/domain/scheduling";
 import {
   addDays,
-  dayOfWeek,
   eachDate,
-  formatMonthDay,
   formatTimeLabel,
-  minutesFromTime,
+  daysInMonth,
   sundayOf,
   timeFromMinutes,
-  zonedParts,
 } from "@/lib/domain/time";
-import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment, RecurringSeries } from "@/lib/domain/types";
+import type { CleanerProfile, Job, JobAssignment, RecurringSeries } from "@/lib/domain/types";
 import { formatLongDate, serviceLabel } from "@/lib/format";
 
 type View = "day" | "month";
@@ -35,14 +29,12 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
   }, [hub.ready, hub.refreshRecurringHorizon]);
   const [view, setView] = useState<View>(initialView);
   const [date, setDate] = useState(initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : hub.today);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [dayViewKey, setDayViewKey] = useState(0);
   const searchField = useRef<HTMLInputElement>(null);
   const cleaners = hub.cleaners.filter((cleaner) => cleaner.status === "ACTIVE");
-  const showingAll = selectedIds.length === 0;
-  const visible = showingAll ? cleaners : cleaners.filter((cleaner) => selectedIds.includes(cleaner.cleanerId));
+  const cleanerIds = cleaners.map((cleaner) => cleaner.cleanerId);
 
   const matches = useMemo(() => searchCleanings(hub.jobs, hub.assignments, hub.cleaners, query), [hub.assignments, hub.cleaners, hub.jobs, query]);
 
@@ -55,21 +47,11 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
     setQuery("");
   }
 
-  function toggleCleaner(cleanerId: string) {
-    setSelectedIds((current) => {
-      const next = current.includes(cleanerId)
-        ? current.filter((id) => id !== cleanerId)
-        : [...current, cleanerId];
-      if (next.length === 0 || next.length === cleaners.length) return [];
-      return next;
-    });
-  }
-
   return (
     <Screen>
       <PageHeader
         title="Schedule"
-        subtitle="Availability and confirmed jobs"
+        subtitle="Scheduled cleanings"
         action={
           <div className="mt-1 flex shrink-0 items-center gap-2 self-center">
             <button
@@ -95,30 +77,13 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
         <ScheduleSearch query={query} onQuery={setQuery} onClose={closeSearch} fieldRef={searchField} matches={matches} />
       ) : (
         <div className="space-y-4 px-5 pt-4">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            <FilterChip active={showingAll} onClick={() => setSelectedIds([])} label="All" />
-            {cleaners.map((cleaner) => (
-              <FilterChip
-                key={cleaner.cleanerId}
-                active={!showingAll && selectedIds.includes(cleaner.cleanerId)}
-                onClick={() => toggleCleaner(cleaner.cleanerId)}
-                label={cleaner.firstName}
-              />
-            ))}
-          </div>
           {view === "day" ? (
-            <DayView
-              key={dayViewKey}
-              date={date}
-              cleanerIds={visible.map((cleaner) => cleaner.cleanerId)}
-              onDate={setDate}
-              onMonth={() => setView("month")}
-            />
+            <DayView key={dayViewKey} date={date} cleanerIds={cleanerIds} onDate={setDate} />
           ) : null}
           {view === "month" ? (
             <MonthView
               date={date}
-              cleanerIds={visible.map((cleaner) => cleaner.cleanerId)}
+              cleanerIds={cleanerIds}
               onPickDay={(next) => {
                 setDate(next);
                 setView("day");
@@ -268,181 +233,235 @@ function cleaningMatches(job: Job, assignments: JobAssignment[], cleaners: Clean
   return digits.length >= 3 && phone.includes(digits);
 }
 
-function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold ${active ? "bg-gold text-ink" : "bg-white text-ink/70"
-        }`}
-    >
-      {label}
-    </button>
-  );
-}
+type SegmentTone = "confirmed" | "pending" | "unassigned";
+
+type ScheduleDayItem = {
+  jobId: string;
+  href: string;
+  title: string;
+  subtitle: string;
+  location?: string;
+  startMin: number;
+  endMin: number;
+  segments: SegmentTone[];
+  timed: boolean;
+};
+
+const TONE_CLASS: Record<SegmentTone, string> = {
+  confirmed: "bg-gold",
+  pending: "bg-white",
+  unassigned: "bg-red-50",
+};
+
+const ACCENT_CLASS: Record<SegmentTone, string> = {
+  confirmed: "bg-[#8d6b16]",
+  pending: "bg-white ring-1 ring-inset ring-ink/15",
+  unassigned: "bg-[#e15b64]",
+};
+
+const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
+  "CONFIRMED",
+  "INVITED",
+  "PENDING_AVAILABILITY",
+  "NEEDS_ATTENTION",
+]);
 
 function DayView({
   date,
   cleanerIds,
   onDate,
-  onMonth,
 }: {
   date: string;
   cleanerIds: string[];
   onDate: (date: string) => void;
-  onMonth: () => void;
 }) {
   const hub = useHub();
-  const openings = useDatesWithCleanerOpenings(cleanerIds);
   const scheduled = useDatesWithScheduledJobs();
-  const scroller = useRef<HTMLDivElement>(null);
-  const ready = useRef(false);
-  const lock = useRef(false);
-  const pendingWidth = useRef<number | null>(null);
-  const [weeks, setWeeks] = useState(() => weekRange(sundayOf(date), 8, 10));
+  const monthStart = `${date.slice(0, 7)}-01`;
 
-  useLayoutEffect(() => {
-    const node = scroller.current;
-    if (!node) return;
-    if (pendingWidth.current != null) {
-      node.scrollLeft += node.scrollWidth - pendingWidth.current;
-      pendingWidth.current = null;
-      lock.current = false;
-      return;
-    }
-    if (!ready.current) {
-      const index = weeks.findIndex((start) => start === sundayOf(date));
-      if (index >= 0) node.scrollLeft = index * node.clientWidth;
-      ready.current = true;
-    }
-  });
-
-  function settleWeek() {
-    const node = scroller.current;
-    if (!node || !ready.current || lock.current || node.clientWidth === 0) return;
-    const index = Math.round(node.scrollLeft / node.clientWidth);
-    const start = weeks[index];
-    if (!start) return;
-    const offset = eachDate(sundayOf(date), date).length - 1;
-    const next = addDays(start, offset);
-    if (next !== date) onDate(next);
-    if (index <= 1) {
-      lock.current = true;
-      pendingWidth.current = node.scrollWidth;
-      setWeeks((current) => [...weekRange(current[0], 3, 0).slice(0, 3), ...current]);
-      return;
-    }
-    if (index >= weeks.length - 2) {
-      lock.current = true;
-      const last = weeks[weeks.length - 1];
-      setWeeks((current) => [...current, ...weekRange(addDays(last, 7), 0, 2)]);
-    }
+  function shiftSelectedMonth(delta: number) {
+    const dayNum = Number(date.slice(8, 10));
+    const nextMonthStart = shiftMonth(monthStart, delta);
+    const year = Number(nextMonthStart.slice(0, 4));
+    const month = Number(nextMonthStart.slice(5, 7));
+    const clampedDay = Math.min(dayNum, daysInMonth(year, month));
+    onDate(`${nextMonthStart.slice(0, 7)}-${String(clampedDay).padStart(2, "0")}`);
   }
 
-  useEffect(() => {
-    const node = scroller.current;
-    if (!node) return;
-    node.addEventListener("scrollend", settleWeek);
-    return () => node.removeEventListener("scrollend", settleWeek);
-  });
-
-  useEffect(() => {
-    const node = scroller.current;
-    if (!node || !ready.current || node.clientWidth === 0) return;
-    const index = weeks.indexOf(sundayOf(date));
-    if (index < 0 || Math.round(node.scrollLeft / node.clientWidth) === index) return;
-    node.scrollTo({ left: index * node.clientWidth, behavior: "smooth" });
-  }, [date, weeks]);
+  const prevMonthStart = shiftMonth(monthStart, -1);
+  const nextMonthStart = shiftMonth(monthStart, 1);
 
   return (
     <div>
-      <div className="rounded-3xl bg-white px-3 pb-4 pt-3">
-        <button
-          type="button"
-          onClick={onMonth}
-          className="inline-flex min-h-10 items-center gap-1 rounded-full bg-cream px-3 text-base font-semibold"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          {monthTitle(date)}
-        </button>
-        <div
-          ref={scroller}
-          aria-label="Weeks"
-          className="mt-3 flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {weeks.map((start) => (
-            <div key={start} className="grid min-w-full shrink-0 snap-start grid-cols-7">
-              {eachDate(start, addDays(start, 6)).map((day, index) => {
-                const today = day === hub.today;
-                const selected = day === date;
-                return (
-                  <button key={day} type="button" onClick={() => onDate(day)} className="flex flex-col items-center gap-1 py-1" aria-current={today ? "date" : undefined}>
-                    <span className="text-[11px] font-semibold text-ink/40">{WEEKDAY_LETTERS[index]}</span>
+      <DaySwipeArea onSwipe={(step) => shiftSelectedMonth(step)}>
+        <div className="rounded-3xl bg-white px-2 pb-4 pt-3">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex min-w-0 items-center gap-0.5">
+              <button
+                type="button"
+                aria-label={`Previous month, ${shortMonthTitle(prevMonthStart)}`}
+                onClick={() => shiftSelectedMonth(-1)}
+                className="flex size-10 shrink-0 items-center justify-center rounded-full text-ink hover:bg-cream"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <span className="text-xs font-semibold text-ink/55">{shortMonthTitle(prevMonthStart)}</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-0.5">
+              <span className="text-xs font-semibold text-ink/55">{shortMonthTitle(nextMonthStart)}</span>
+              <button
+                type="button"
+                aria-label={`Next month, ${shortMonthTitle(nextMonthStart)}`}
+                onClick={() => shiftSelectedMonth(1)}
+                className="flex size-10 shrink-0 items-center justify-center rounded-full text-ink hover:bg-cream"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <h2 className="mt-1 px-1 text-4xl font-semibold tracking-tight">{monthTitle(date)}</h2>
+          <div className="mt-3 grid grid-cols-7 px-1">
+            {WEEKDAY_LETTERS.map((label, index) => (
+              <p key={`${label}-${index}`} className="pb-1 text-center text-[11px] font-semibold text-ink/40">
+                {label}
+              </p>
+            ))}
+          </div>
+          {monthRows(monthStart).map((row, rowIndex) => (
+            <div key={`${monthStart}-${rowIndex}`} className="grid grid-cols-7 px-1">
+              {row.map((day, dayIndex) =>
+                day ? (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => onDate(day)}
+                    aria-current={day === hub.today ? "date" : undefined}
+                    className="flex min-h-11 flex-col items-center justify-center py-0.5"
+                  >
                     <span
-                      className={`flex size-9 items-center justify-center rounded-full text-base ${today ? "bg-mint font-semibold text-ink" : selected ? "bg-ink/10 font-semibold text-ink" : "text-ink"
-                        }`}
+                      className={`flex size-9 items-center justify-center rounded-full text-base ${
+                        day === date
+                          ? "bg-ink font-semibold text-cream"
+                          : day === hub.today
+                            ? "bg-mint font-semibold text-ink"
+                            : "text-ink"
+                      }`}
                     >
                       {Number(day.slice(8))}
                     </span>
-                    <span className="flex h-1.5 items-center justify-center gap-0.5" aria-hidden="true">
-                      {scheduled.has(day) ? <span className="size-1.5 rounded-full bg-gold" /> : null}
-                      {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" /> : null}
-                      {!scheduled.has(day) && !openings.has(day) ? <span className="size-1.5" /> : null}
+                    <span className="mt-0.5 flex h-1.5 items-center justify-center" aria-hidden="true">
+                      {scheduled.has(day) ? <span className="size-1.5 rounded-full bg-gold" /> : <span className="size-1.5" />}
                     </span>
                   </button>
-                );
-              })}
+                ) : (
+                  <span key={`${monthStart}-empty-${rowIndex}-${dayIndex}`} className="min-h-11" />
+                ),
+              )}
             </div>
           ))}
         </div>
-      </div>
+      </DaySwipeArea>
       <DaySwipeArea onSwipe={(step) => onDate(addDays(date, step))}>
-        <p className="sticky top-0 z-10 -mx-5 bg-cream px-5 pb-3 pt-4 text-center text-base font-semibold">{dayHeading(date)}</p>
-        <DayTimeline date={date} cleanerIds={cleanerIds} />
+        <ScheduleDayAgenda date={date} cleanerIds={cleanerIds} />
       </DaySwipeArea>
     </div>
   );
 }
 
-const HOUR_PX = 40;
-const GRID_PAD_TOP = 10;
-const GRID_PAD_BOTTOM = 14;
+function ScheduleDayAgenda({ date, cleanerIds }: { date: string; cleanerIds: string[] }) {
+  const hub = useHub();
+  const ids = cleanerIds.join("\0");
+  const list = useMemo(
+    () =>
+      buildScheduleDayList({
+        date,
+        cleanerIds: ids ? ids.split("\0") : [],
+        cleaners: hub.cleaners,
+        jobs: hub.jobs,
+        assignments: hub.assignments,
+        series: hub.series,
+      }),
+    [date, hub.assignments, hub.cleaners, hub.jobs, hub.series, ids],
+  );
 
-type EventTone = "open" | "confirmed" | "pending" | "unassigned";
+  if (list.timed.length === 0 && list.untimed.length === 0) {
+    return <p className="py-10 text-center text-sm text-ink/55">No cleanings scheduled for this day.</p>;
+  }
 
-type DayEvent = {
-  id: string;
-  cleanerId: string;
-  jobId?: string;
-  order: number;
-  startMin: number;
-  endMin: number;
-  href: string;
-  title: string;
-  subtitle: string;
-  location?: string;
-  time: string;
-  tone: EventTone;
-  assignmentId?: string;
-  windowMinutes?: number;
-};
+  return (
+    <ul className="mt-4 space-y-2 pb-4">
+      {list.timed.map((item) => (
+        <li key={item.jobId}>
+          <ScheduleDayRow item={item} />
+        </li>
+      ))}
+      {list.untimed.map((item) => (
+        <li key={`${item.jobId}-untimed`}>
+          <ScheduleDayRow item={item} />
+        </li>
+      ))}
+    </ul>
+  );
+}
 
-const TONE_CLASS: Record<EventTone, string> = {
-  open: "bg-mint",
-  confirmed: "bg-gold",
-  pending: "bg-white",
-  unassigned: "bg-red-50 ring-1 ring-inset ring-[#e15b64]/40",
-};
+function ScheduleDayRow({ item }: { item: ScheduleDayItem }) {
+  const startClock = item.timed ? formatTimeLabel(timeFromMinutes(item.startMin)) : null;
+  const endClock = item.timed ? formatTimeLabel(timeFromMinutes(item.endMin)) : null;
+  const split = item.segments.length > 1;
 
-const ACCENT_CLASS: Record<EventTone, string> = {
-  open: "bg-[#12858b]",
-  confirmed: "bg-[#8d6b16]",
-  pending: "bg-[#8d6b16]",
-  unassigned: "bg-[#e15b64]",
-};
+  return (
+    <Link
+      href={item.href}
+      className={`relative flex min-h-[4.5rem] overflow-hidden rounded-2xl ring-1 ring-ink/10 ${
+        !split && item.segments[0] === "unassigned" ? "ring-[#e15b64]/30" : ""
+      }`}
+    >
+      {split ? (
+        <div className="absolute inset-0 flex" aria-hidden="true">
+          {item.segments.map((tone, index) => (
+            <div key={index} className={`flex-1 ${TONE_CLASS[tone]} ${index > 0 ? "border-l border-ink/10" : ""}`} />
+          ))}
+        </div>
+      ) : item.segments[0] === "unassigned" ? (
+        <div className="absolute inset-0 bg-red-50" aria-hidden="true" />
+      ) : item.segments[0] === "confirmed" ? (
+        <div className="absolute inset-0 bg-gold/35" aria-hidden="true" />
+      ) : (
+        <div className="absolute inset-0 bg-white" aria-hidden="true" />
+      )}
+      <div
+        className={`relative z-10 flex w-full min-w-0 items-stretch gap-2 px-3 py-3 ${
+          split ? "" : "pl-4"
+        }`}
+      >
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-base font-semibold text-ink">{item.title}</span>
+          {item.subtitle ? <span className="mt-0.5 block truncate text-sm text-ink/70">{item.subtitle}</span> : null}
+          {item.location ? (
+            <span className="mt-1 flex items-start gap-1 text-sm text-ink/55">
+              <PinIcon />
+              <span className="truncate">{item.location}</span>
+            </span>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-col items-end justify-center text-sm leading-tight text-ink">
+          {item.timed && startClock && endClock ? (
+            <>
+              <span className="font-medium">{startClock}</span>
+              <span className="text-ink/45">{endClock}</span>
+            </>
+          ) : (
+            <span className="max-w-[5.5rem] text-right text-ink/55">Time not set</span>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
 
 const SWIPE_MIN_PX = 50;
 const WHEEL_MIN_PX = 60;
@@ -532,209 +551,105 @@ function DaySwipeArea({ onSwipe, children }: { onSwipe: (step: 1 | -1) => void; 
   );
 }
 
-function DayTimeline({ date, cleanerIds }: { date: string; cleanerIds: string[] }) {
-  const hub = useHub();
-  const ids = cleanerIds.join("\0");
-  const built = useMemo(
-    () =>
-      buildDayEvents({
-        date,
-        cleanerIds: ids ? ids.split("\0") : [],
-        cleaners: hub.cleaners,
-        jobs: hub.jobs,
-        assignments: hub.assignments,
-        availability: hub.availability,
-        series: hub.series,
-      }),
-    [date, hub.assignments, hub.availability, hub.cleaners, hub.jobs, hub.series, ids],
-  );
-  const laidOut = layoutDayEvents(built.events, ids ? ids.split("\0") : []);
-  const grid = gridBounds(built.events);
-  const hours = Array.from({ length: (grid.end - grid.start) / 60 + 1 }, (_, index) => grid.start / 60 + index);
-  const height = GRID_PAD_TOP + ((grid.end - grid.start) / 60) * HOUR_PX + GRID_PAD_BOTTOM;
-  const nowMs = useNow();
-  const now = date === hub.today ? nowMinutes(nowMs) : null;
-  const showNow = now != null && now >= grid.start && now <= grid.end;
-  return (
-    <div className="rounded-3xl bg-white px-2 pb-3 pt-2">
-      <div className="relative" style={{ height }}>
-        {hours.map((hour) => (
-          <div
-            key={hour}
-            className="absolute right-0 left-12 border-t border-ink/10"
-            style={{ top: GRID_PAD_TOP + ((hour * 60 - grid.start) / 60) * HOUR_PX }}
-          >
-            <span className="absolute -left-12 top-0 w-11 -translate-y-1/2 pr-1 text-right text-[11px] font-medium text-ink/40">
-              {hourLabel(hour)}
-            </span>
-          </div>
-        ))}
-        {showNow && now != null ? (
-          <div
-            className="absolute right-0 left-12 z-20 h-0.5 bg-[#e15b64]"
-            style={{ top: GRID_PAD_TOP + ((now - grid.start) / 60) * HOUR_PX }}
-          >
-            <span className="absolute -left-1 top-1/2 size-2 -translate-y-1/2 rounded-full bg-[#e15b64]" />
-          </div>
-        ) : null}
-        <div className="absolute right-1 left-12" style={{ top: 0, height }}>
-          {laidOut.map((event) => (
-            <Link
-              key={event.id}
-              href={event.href}
-              aria-label={`${event.title}. ${event.subtitle}. ${event.location ? `${event.location}. ` : ""}${event.time}`}
-              className={`absolute overflow-hidden rounded-md text-ink ${TONE_CLASS[event.tone]} ${event.tone === "pending" ? "z-[15]" : "z-10"}`}
-              style={eventBoxStyle(event, grid.start)}
-            >
-              <EventBody event={event} />
-            </Link>
-          ))}
-        </div>
-      </div>
-      {built.quiet.length > 0 ? (
-        <p className="px-2 pt-1 text-sm text-ink/50">
-          {nameList(built.quiet)} {built.quiet.length === 1 ? "has" : "have"} no availability this day.
-        </p>
-      ) : null}
-      {built.untimed.map((job) => (
-        <Link
-          key={job.jobId}
-          href={job.href}
-          className="mx-2 mt-2 flex min-h-11 items-center justify-between gap-3 rounded-xl bg-red-50 px-3 text-sm ring-1 ring-inset ring-[#e15b64]/40"
-        >
-          <span className="font-semibold">{job.title}</span>
-          <span className="text-ink/70">{job.note}</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function eventBoxStyle(
-  event: { startMin: number; endMin: number; column: number; columns: number },
-  gridStart: number,
-) {
-  return {
-    top: GRID_PAD_TOP + ((event.startMin - gridStart) / 60) * HOUR_PX,
-    height: Math.max(((event.endMin - event.startMin) / 60) * HOUR_PX - 3, 28),
-    left: `calc(${(event.column / event.columns) * 100}% + 2px)`,
-    width: `calc(${100 / event.columns}% - 4px)`,
-  };
-}
-
-function EventBody({ event }: { event: DayEvent }) {
-  return (
-    <>
-      <span className={`absolute inset-y-0 left-0 w-1 ${ACCENT_CLASS[event.tone]}`} />
-      <span className="block py-1 pr-1.5 pl-2.5">
-        <span className="block truncate text-[13px] leading-4 font-semibold">{event.title}</span>
-        <span className="mt-0.5 block truncate text-[11px] leading-4 text-ink/75">{event.subtitle}</span>
-        {event.location ? (
-          <span className="mt-0.5 flex items-start gap-1 text-[11px] leading-4 text-ink/75">
-            <PinIcon />
-            <span className="truncate">{event.location}</span>
-          </span>
-        ) : null}
-        <span className="mt-0.5 flex items-start gap-1 text-[11px] leading-4 text-ink/75">
-          <ClockIcon />
-          <span className="truncate">{event.time}</span>
-        </span>
-      </span>
-    </>
-  );
-}
-
 function PinIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="mt-px shrink-0">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="mt-0.5 shrink-0">
       <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" stroke="currentColor" strokeWidth="2" />
       <circle cx="12" cy="10" r="2.2" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
 
-function ClockIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="mt-px shrink-0">
-      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
-      <path d="M12 8.5V12l2.5 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+function assignmentSegmentTone(assignment: JobAssignment): SegmentTone {
+  if (assignment.status === "CONFIRMED") return "confirmed";
+  return "pending";
 }
 
-function buildDayEvents(input: {
+function buildScheduleDayList(input: {
   date: string;
   cleanerIds: string[];
   cleaners: CleanerProfile[];
   jobs: Job[];
   assignments: JobAssignment[];
-  availability: AvailabilityWindow[];
   series: RecurringSeries[];
-}): { events: DayEvent[]; quiet: string[]; untimed: Array<{ jobId: string; title: string; href: string; note: string }> } {
-  const events: DayEvent[] = [];
-  const quiet: string[] = [];
-  const untimed: Array<{ jobId: string; title: string; href: string; note: string }> = [];
-  const untimedJobIds = new Set<string>();
-  const several = input.cleanerIds.length > 1;
-  input.cleanerIds.forEach((cleanerId, cleanerIndex) => {
+}): { timed: ScheduleDayItem[]; untimed: ScheduleDayItem[] } {
+  type JobBucket = {
+    job: Job;
+    staffed: Array<{ assignment: JobAssignment; cleaner: CleanerProfile }>;
+  };
+  const buckets = new Map<string, JobBucket>();
+
+  for (const cleanerId of input.cleanerIds) {
     const cleaner = input.cleaners.find((item) => item.cleanerId === cleanerId);
-    if (!cleaner) return;
-    const before = events.length;
-    let addedForCleaner = false;
-    const own = input.assignments.filter((assignment) => assignment.cleanerId === cleanerId);
-    const windows = input.availability
-      .filter((window) => window.cleanerId === cleanerId)
-      .map((window) => ({ date: window.date, start: window.start, end: window.end }));
-    const confirmed = own.filter((assignment) => assignment.status === "CONFIRMED");
-    const open = subtractConfirmedBookingsFromAvailability(windows, confirmed.map(toAssignmentSchedule)).filter(
-      (window) => window.date === input.date,
-    );
-    for (const window of open) {
-      const startMin = minutesFromTime(window.start);
-      const endMin = minutesFromTime(window.end);
-      if (endMin <= startMin) continue;
-      const params = new URLSearchParams({ cleanerId, date: input.date, start: window.start, end: window.end });
-      events.push({
-        id: `${cleanerId}-open-${window.start}-${window.end}`,
-        cleanerId,
-        order: cleanerIndex * 10,
-        startMin,
-        endMin,
-        href: `/admin/jobs/new?${params}`,
-        title: personName(cleaner.firstName, cleaner.lastName),
-        subtitle: "Available",
-        time: rangeLabel(startMin, endMin),
-        tone: "open",
-      });
-      addedForCleaner = true;
-    }
-    for (const assignment of own) {
+    if (!cleaner) continue;
+    for (const assignment of input.assignments.filter((item) => item.cleanerId === cleanerId)) {
       const job = input.jobs.find((item) => item.jobId === assignment.jobId);
-      if (!job || job.date !== input.date) continue;
-      if (
-        assignment.status !== "CONFIRMED" &&
-        assignment.status !== "INVITED" &&
-        assignment.status !== "PENDING_AVAILABILITY" &&
-        assignment.status !== "NEEDS_ATTENTION"
-      ) {
-        continue;
-      }
-      const href = `/admin/jobs/${job.jobId}?from=schedule`;
+      if (!job || job.date !== input.date || !STAFFED_STATUSES.has(assignment.status)) continue;
+      const bucket = buckets.get(job.jobId) ?? { job, staffed: [] };
+      bucket.staffed.push({ assignment, cleaner });
+      buckets.set(job.jobId, bucket);
+    }
+  }
+
+  for (const job of input.jobs) {
+    if (job.date !== input.date || job.status === "CANCELED") continue;
+    if (input.assignments.some((assignment) => assignment.jobId === job.jobId && STAFFED_STATUSES.has(assignment.status))) {
+      continue;
+    }
+    if (!buckets.has(job.jobId)) buckets.set(job.jobId, { job, staffed: [] });
+  }
+
+  const timed: ScheduleDayItem[] = [];
+  const untimed: ScheduleDayItem[] = [];
+
+  for (const [jobId, bucket] of buckets) {
+    const { job, staffed } = bucket;
+    const href = `/admin/jobs/${jobId}?from=schedule`;
+    const title = job.snapshot.customerDisplayName;
+    const location = job.snapshot.streetAddress;
+
+    if (staffed.length === 0) {
+      const series = job.seriesId ? input.series.find((item) => item.seriesId === job.seriesId) : undefined;
+      const arrivalStart = job.arrivalWindowStart ?? series?.defaultArrivalWindowStart;
+      const arrivalEnd = job.arrivalWindowEnd ?? series?.defaultArrivalWindowEnd;
+      const span =
+        arrivalStart && arrivalEnd
+          ? calculateBlockedRange({
+              date: job.date,
+              arrivalWindowStart: arrivalStart,
+              arrivalWindowEnd: arrivalEnd,
+              expectedDurationMinutes: job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes ?? 0,
+            }).spans.find((item) => item.date === input.date)
+          : undefined;
+      const item: ScheduleDayItem = {
+        jobId,
+        href,
+        title,
+        subtitle: "No cleaner assigned",
+        location,
+        startMin: span?.startMin ?? 0,
+        endMin: span?.endMin ?? 0,
+        segments: ["unassigned"],
+        timed: Boolean(span && span.endMin > span.startMin),
+      };
+      if (item.timed) timed.push(item);
+      else untimed.push(item);
+      continue;
+    }
+
+    staffed.sort((a, b) =>
+      personName(a.cleaner.firstName, a.cleaner.lastName).localeCompare(
+        personName(b.cleaner.firstName, b.cleaner.lastName),
+      ),
+    );
+    const segments = staffed.map(({ assignment }) => assignmentSegmentTone(assignment));
+    let startMin = 24 * 60;
+    let endMin = 0;
+    let allTimed = true;
+    for (const { assignment } of staffed) {
       if (!assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) {
-        if (untimedJobIds.has(job.jobId)) {
-          addedForCleaner = true;
-          continue;
-        }
-        const who = several ? `${cleaner.firstName} · ` : "";
-        untimed.push({
-          jobId: job.jobId,
-          title: job.snapshot.customerDisplayName,
-          href,
-          note: `${who}${pendingLabel(assignment)} · Time not set`,
-        });
-        untimedJobIds.add(job.jobId);
-        addedForCleaner = true;
-        continue;
+        allTimed = false;
+        break;
       }
       const span = calculateBlockedRange({
         date: job.date,
@@ -742,80 +657,43 @@ function buildDayEvents(input: {
         arrivalWindowEnd: assignment.arrivalWindowEnd,
         expectedDurationMinutes: assignment.expectedDurationMinutes,
       }).spans.find((item) => item.date === input.date);
-      if (!span || span.endMin <= span.startMin) continue;
-      const pending = assignment.status !== "CONFIRMED";
-      const who = several ? `${cleaner.firstName} · ` : "";
-      const windowMinutes = minutesFromTime(assignment.arrivalWindowEnd) - minutesFromTime(assignment.arrivalWindowStart);
-      events.push({
-        id: assignment.assignmentId,
-        cleanerId,
-        jobId: job.jobId,
-        order: cleanerIndex * 10 + (pending ? 2 : 1),
-        startMin: span.startMin,
-        endMin: span.endMin,
-        href: `/admin/jobs/${job.jobId}?from=schedule`,
-        title: job.snapshot.customerDisplayName,
-        subtitle: pending
-          ? `${who}${pendingLabel(assignment)}`
-          : `${who}${serviceLabel(job.serviceType)}`,
-        location: job.snapshot.streetAddress,
-        time: rangeLabel(span.startMin, span.endMin),
-        tone: pending ? "pending" : "confirmed",
-        assignmentId: windowMinutes > 0 ? assignment.assignmentId : undefined,
-        windowMinutes: windowMinutes > 0 ? windowMinutes : undefined,
-      });
-      addedForCleaner = true;
+      if (!span || span.endMin <= span.startMin) {
+        allTimed = false;
+        break;
+      }
+      startMin = Math.min(startMin, span.startMin);
+      endMin = Math.max(endMin, span.endMin);
     }
-    if (!addedForCleaner && events.length === before) quiet.push(personName(cleaner.firstName, cleaner.lastName));
-  });
-  for (const job of input.jobs) {
-    if (job.date !== input.date || job.status === "CANCELED") continue;
-    if (untimedJobIds.has(job.jobId)) continue;
-    if (input.assignments.some((assignment) => assignment.jobId === job.jobId && STAFFED_STATUSES.has(assignment.status))) {
-      continue;
-    }
-    const href = `/admin/jobs/${job.jobId}?from=schedule`;
-    const title = job.snapshot.customerDisplayName;
-    const series = job.seriesId ? input.series.find((item) => item.seriesId === job.seriesId) : undefined;
-    const arrivalStart = job.arrivalWindowStart ?? series?.defaultArrivalWindowStart;
-    const arrivalEnd = job.arrivalWindowEnd ?? series?.defaultArrivalWindowEnd;
-    const span =
-      arrivalStart && arrivalEnd
-        ? calculateBlockedRange({
-          date: job.date,
-          arrivalWindowStart: arrivalStart,
-          arrivalWindowEnd: arrivalEnd,
-          expectedDurationMinutes: job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes ?? 0,
-        }).spans.find((item) => item.date === input.date)
-        : undefined;
-    if (!span || span.endMin <= span.startMin) {
-      untimed.push({ jobId: job.jobId, title, href, note: "No cleaner assigned · Time not set" });
-      continue;
-    }
-    events.push({
-      id: `${job.jobId}-unassigned`,
-      cleanerId: "",
-      jobId: job.jobId,
-      order: -1,
-      startMin: span.startMin,
-      endMin: span.endMin,
+
+    const allConfirmed = staffed.every(({ assignment }) => assignment.status === "CONFIRMED");
+    const subtitle = allConfirmed
+      ? serviceLabel(job.serviceType)
+      : staffed
+          .map(({ assignment, cleaner }) => {
+            const who = personName(cleaner.firstName, cleaner.lastName);
+            return assignment.status === "CONFIRMED" ? who : `${who} · ${pendingLabel(assignment)}`;
+          })
+          .join(" · ");
+
+    const item: ScheduleDayItem = {
+      jobId,
       href,
       title,
-      subtitle: "No cleaner assigned",
-      location: job.snapshot.streetAddress,
-      time: rangeLabel(span.startMin, span.endMin),
-      tone: "unassigned",
-    });
+      subtitle,
+      location,
+      startMin: allTimed ? startMin : 0,
+      endMin: allTimed ? endMin : 0,
+      segments,
+      timed: allTimed,
+    };
+    if (item.timed) timed.push(item);
+    else untimed.push(item);
   }
-  return { events, quiet, untimed };
-}
 
-const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
-  "CONFIRMED",
-  "INVITED",
-  "PENDING_AVAILABILITY",
-  "NEEDS_ATTENTION",
-]);
+  timed.sort((a, b) => a.startMin - b.startMin || a.title.localeCompare(b.title));
+  untimed.sort((a, b) => a.title.localeCompare(b.title));
+  return { timed, untimed };
+}
 
 function pendingLabel(assignment: JobAssignment): string {
   if (assignment.status === "CONFIRMED") return "Confirmed";
@@ -826,96 +704,17 @@ function pendingLabel(assignment: JobAssignment): string {
   return "Assigned";
 }
 
-function shortClock(minutes: number): { clock: string; suffix: string } {
-  const [clock, suffix] = formatTimeLabel(timeFromMinutes(minutes)).split(" ");
-  const [hour, minute] = clock.split(":");
-  return { clock: minute === "00" ? hour : clock, suffix };
-}
-
-function rangeLabel(startMin: number, endMin: number): string {
-  const start = shortClock(startMin);
-  const end = shortClock(endMin);
-  if (start.suffix === end.suffix) return `${start.clock}–${end.clock} ${end.suffix}`;
-  return `${start.clock} ${start.suffix}–${end.clock} ${end.suffix}`;
-}
-
-function hourLabel(hour: number): string {
-  const hour24 = hour % 24;
-  const suffix = hour24 >= 12 ? "PM" : "AM";
-  const clock = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  return `${clock} ${suffix}`;
-}
-
-function nowMinutes(nowMs: number): number {
-  const parts = zonedParts(new Date(nowMs));
-  return parts.hour * 60 + parts.minute;
-}
-
-function gridBounds(events: DayEvent[]): { start: number; end: number } {
-  let start = 8 * 60;
-  let end = 18 * 60;
-  for (const event of events) {
-    start = Math.min(start, Math.floor(event.startMin / 60) * 60);
-    end = Math.max(end, Math.ceil(event.endMin / 60) * 60);
-  }
-  start = Math.max(0, start);
-  end = Math.min(24 * 60, Math.max(end, start + 60));
-  return { start, end };
-}
-
-function layoutDayEvents(
-  events: DayEvent[],
-  cleanerIds: string[],
-): Array<DayEvent & { column: number; columns: number }> {
-  const hasUnassigned = events.some((event) => event.tone === "unassigned");
-  const activeCleanerIds = cleanerIds.filter((id) => events.some((event) => event.cleanerId === id));
-  const openMinutes = new Map<string, number>();
-  for (const event of events) {
-    if (event.tone !== "open" || !event.cleanerId) continue;
-    openMinutes.set(event.cleanerId, (openMinutes.get(event.cleanerId) ?? 0) + (event.endMin - event.startMin));
-  }
-  const orderedCleanerIds = [...activeCleanerIds].sort((a, b) => {
-    const gap = (openMinutes.get(b) ?? 0) - (openMinutes.get(a) ?? 0);
-    if (gap !== 0) return gap;
-    return cleanerIds.indexOf(a) - cleanerIds.indexOf(b);
-  });
-  const homeColumn = new Map(orderedCleanerIds.map((id, index) => [id, index]));
-  const columns = Math.max(1, orderedCleanerIds.length + (hasUnassigned ? 1 : 0));
-
-  function columnFor(event: DayEvent): number {
-    if (event.tone === "unassigned") return orderedCleanerIds.length > 0 ? orderedCleanerIds.length : 0;
-    return homeColumn.get(event.cleanerId) ?? 0;
-  }
-
-  return events.map((event) => ({
-    ...event,
-    column: columnFor(event),
-    columns,
-  }));
-}
-
-function nameList(names: string[]): string {
-  if (names.length <= 1) return names[0] ?? "";
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
-}
-
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
-
-function weekRange(sunday: string, before: number, after: number): string[] {
-  const first = addDays(sunday, -7 * before);
-  return Array.from({ length: before + after + 1 }, (_, index) => addDays(first, index * 7));
-}
 
 function monthTitle(date: string): string {
   const { year, month, day } = { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)), day: Number(date.slice(8, 10)) };
   return new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day, 12)));
 }
 
-function dayHeading(date: string): string {
-  const weekday = dayOfWeek(date);
-  const label = weekday.charAt(0) + weekday.slice(1).toLowerCase();
-  return `${label} – ${formatMonthDay(date)}, ${date.slice(0, 4)}`;
+function shortMonthTitle(monthStart: string): string {
+  const year = Number(monthStart.slice(0, 4));
+  const month = Number(monthStart.slice(5, 7));
+  return new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1, 12)));
 }
 
 function shiftMonth(monthStart: string, delta: number): string {
@@ -940,26 +739,6 @@ function monthRows(monthStart: string): (string | null)[][] {
   return rows;
 }
 
-function useDatesWithCleanerOpenings(cleanerIds: string[]) {
-  const hub = useHub();
-  const ids = cleanerIds.join("\0");
-  return useMemo(() => {
-    const dates = new Set<string>();
-    for (const cleanerId of ids ? ids.split("\0") : []) {
-      const windows = hub.availability
-        .filter((window) => window.cleanerId === cleanerId)
-        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
-      const confirmed = hub.assignments.filter(
-        (assignment) => assignment.cleanerId === cleanerId && assignment.status === "CONFIRMED",
-      );
-      for (const window of subtractConfirmedBookingsFromAvailability(windows, confirmed.map(toAssignmentSchedule))) {
-        dates.add(window.date);
-      }
-    }
-    return dates;
-  }, [hub.assignments, hub.availability, ids]);
-}
-
 function useDatesWithScheduledJobs() {
   const hub = useHub();
   return useMemo(() => {
@@ -982,7 +761,6 @@ function MonthView({
   onPickDay: (date: string) => void;
 }) {
   const hub = useHub();
-  const openings = useDatesWithCleanerOpenings(cleanerIds);
   const scheduled = useDatesWithScheduledJobs();
   const scroller = useRef<HTMLDivElement>(null);
   const focus = `${date.slice(0, 7)}-01`;
@@ -1028,8 +806,7 @@ function MonthView({
                         </span>
                         <span className="mt-0.5 flex h-1.5 items-center justify-center gap-0.5" aria-hidden="true">
                           {scheduled.has(day) ? <span className="size-1.5 rounded-full bg-gold" /> : null}
-                          {openings.has(day) ? <span className="size-1.5 rounded-full bg-mint" /> : null}
-                          {!scheduled.has(day) && !openings.has(day) ? <span className="size-1.5" /> : null}
+                          {!scheduled.has(day) ? <span className="size-1.5" /> : null}
                         </span>
                       </button>
                     ) : (
