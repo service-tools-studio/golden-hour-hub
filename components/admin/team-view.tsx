@@ -27,7 +27,17 @@ export function TeamView() {
   const filtering = query.trim() !== "";
   return (
     <Screen>
-      <PageHeader title="Team" />
+      <PageHeader
+        title="Team"
+        action={
+          <Link
+            href="/admin/team/new"
+            className="mt-1 flex min-h-11 shrink-0 items-center justify-center self-center rounded-2xl bg-gold px-3 text-sm font-semibold text-ink"
+          >
+            + Add cleaner
+          </Link>
+        }
+      />
       <div className="space-y-3 px-5 pt-4">
         <WeekSubmissions />
         <CleanerSearchField query={query} onQuery={setQuery} />
@@ -326,6 +336,25 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
         </div>
 
         <div role="tabpanel" hidden={detailTab !== "general"} className={detailTab === "general" ? "space-y-3 pt-1" : "hidden"}>
+        <Card>
+          <p className="text-base font-semibold">Sign-in</p>
+          {cleaner.cognitoSub ? (
+            <>
+              <p className="mt-2 text-sm font-medium text-ink">Sign-in account linked</p>
+              <p className="mt-1 text-sm text-ink/70">
+                Sign-in email: <span className="font-medium text-ink">{cleaner.email}</span>
+              </p>
+              <p className="mt-2 text-sm text-ink/60">
+                Cognito emailed a temporary password when this account was created. On first sign-in they must set a new
+                password.
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-ink/70">
+              No sign-in account is linked on this profile yet. They may still sign in if Cognito uses the same email.
+            </p>
+          )}
+        </Card>
         <Card>
           <p className="text-sm text-ink/70">{cleaner.email}</p>
           <p className="mt-4 text-base font-medium">Status</p>

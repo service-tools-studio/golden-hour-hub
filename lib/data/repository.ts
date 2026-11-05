@@ -1,5 +1,12 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { BatchWriteCommand, DynamoDBDocumentClient, GetCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  BatchWriteCommand,
+  DeleteCommand,
+  DynamoDBDocumentClient,
+  GetCommand,
+  ScanCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { mergeRecurringHorizon } from "../domain/recurrence.ts";
 import { clearStaleNotScheduledAttention } from "../domain/invitations.ts";
 import { reconcileScheduleConflictWarnings } from "../domain/scheduling.ts";
@@ -124,6 +131,18 @@ export async function loadCleanerProfile(cleanerId: string): Promise<CleanerProf
 /** Persist one cleaner profile and bump hub revision (for autosave-sized writes). */
 export async function persistCleanerProfile(cleaner: CleanerProfile): Promise<number> {
   await putItems([cleanerToItem(cleaner)]);
+  return bumpHubRevision();
+}
+
+/** Remove a cleaner PROFILE row (rollback or admin delete). Does not remove availability or assignments. */
+export async function deleteCleanerProfile(cleanerId: string): Promise<number> {
+  const doc = client();
+  await doc.send(
+    new DeleteCommand({
+      TableName: tableName(),
+      Key: { pk: `CLEANER#${cleanerId}`, sk: "PROFILE" },
+    }),
+  );
   return bumpHubRevision();
 }
 

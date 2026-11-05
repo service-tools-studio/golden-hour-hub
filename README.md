@@ -57,6 +57,7 @@ The DynamoDB repository is wired. Cognito is not.
 8. **Production**: `AUTH_SESSION_SECRET`, `COGNITO_USER_POOL_ID`, and `COGNITO_CLIENT_ID` are required; preview mode is disabled when `NODE_ENV=production`.
 9. **Login password hints**: Hub reads your pool’s password policy via `cognito-idp:DescribeUserPool` on the user pool. Grant that action to the IAM user/role that runs the app, **or** set the optional `COGNITO_PASSWORD_*` variables in `.env.local` to match what you configured in the Cognito console (see `.env.example`).
 10. **Disabled users**: Disabling someone in the Cognito console does **not** invalidate their refresh token. Hub calls `cognito-idp:AdminGetUser` on every protected request (via session refresh) so disabled users are signed out on the next action or `/api/auth/session` check. Grant `AdminGetUser` on your user pool to the app’s IAM principal (often bundled with `AmazonCognitoReadOnly` or similar admin read policies).
+11. **Creating cleaners from Hub**: Grant `AdminCreateUser`, `AdminAddUserToGroup`, and `AdminDeleteUser` on the same user pool so admins can use **Team → Add cleaner**. Ensure the pool can send email (SES or Cognito default) for temporary passwords.
 
 Restart `npm run dev` after changing env. Sign in at [http://localhost:3000/login](http://localhost:3000/login).
 
@@ -65,6 +66,10 @@ Restart `npm run dev` after changing env. Sign in at [http://localhost:3000/logi
 Create Jasmin and Kelsey in Cognito in the `ADMIN` group with temporary passwords. They set a new password on first sign-in at `/login`. Passwords are never stored in DynamoDB.
 
 ## Cleaner accounts
+
+Admins can add cleaners from **Team → Add cleaner** when DynamoDB and Cognito are configured. Hub saves the cleaner profile first, then creates the Cognito user in the `CLEANER` group; Cognito emails the temporary password. The app server needs `cognito-idp:AdminCreateUser`, `AdminAddUserToGroup`, and `AdminDeleteUser` (rollback) on the user pool, in addition to existing `AdminGetUser`.
+
+For seed data only, `npm run seed:cleaners` still upserts PROFILE rows (no Cognito). Linking rules:
 
 Create the cleaner in Cognito (`CLEANER` group) and ensure their profile exists in DynamoDB with the same email. They sign in at `/login` after setting their password. Only an admin can change `typicalHelperCount` and `maxHelperCount`. Helper approval is `maxHelperCount > 0`.
 
