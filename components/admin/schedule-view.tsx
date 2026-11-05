@@ -77,7 +77,7 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
       ) : (
         <div className="space-y-4 px-5 pt-4">
           {view === "day" ? (
-            <DayView key={dayViewKey} date={date} cleanerIds={cleanerIds} onDate={setDate} />
+            <DayView key={dayViewKey} date={date} cleanerIds={cleanerIds} onDate={setDate} onMonthView={() => setView("month")} />
           ) : null}
           {view === "month" ? (
             <MonthView
@@ -269,10 +269,12 @@ function DayView({
   date,
   cleanerIds,
   onDate,
+  onMonthView,
 }: {
   date: string;
   cleanerIds: string[];
   onDate: (date: string) => void;
+  onMonthView: () => void;
 }) {
   const hub = useHub();
   const scheduled = useDatesWithScheduledJobs();
@@ -308,7 +310,14 @@ function DayView({
               </button>
               <span className="text-xs font-semibold text-ink/55">{shortMonthTitle(prevMonthStart)}</span>
             </div>
-            <span className="shrink-0 px-1 text-sm font-semibold text-ink/55">{date.slice(0, 4)}</span>
+            <button
+              type="button"
+              onClick={onMonthView}
+              aria-label="Show all months"
+              className="shrink-0 rounded-full px-2 py-1 text-sm font-semibold text-ink/55 hover:bg-cream hover:text-ink"
+            >
+              {date.slice(0, 4)}
+            </button>
             <div className="flex min-w-0 items-center gap-0.5">
               <span className="text-xs font-semibold text-ink/55">{shortMonthTitle(nextMonthStart)}</span>
               <button
