@@ -1,5 +1,5 @@
-import { AddCleanerView } from "@/components/admin/add-cleaner-view";
+import { CreateCleanerAccountView } from "@/components/admin/create-cleaner-account-view";
 
 export default function NewCleanerPage() {
-  return <AddCleanerView />;
+  return <CreateCleanerAccountView />;
 }

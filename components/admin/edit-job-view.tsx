@@ -438,7 +438,7 @@ export function EditJobView({
     const arrival = arrivalStartTbd
       ? { arrivalWindowStart: undefined, arrivalWindowEnd: undefined }
       : { arrivalWindowStart: arrivalStart, arrivalWindowEnd: arrivalEnd };
-    const result = hub.completeAssignment({
+    const result = await hub.completeAssignment({
       jobId,
       assignmentId,
       cleanerId: cleaner.cleanerId,
@@ -935,7 +935,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     const arrival = arrivalStartTbd
       ? { arrivalWindowStart: undefined, arrivalWindowEnd: undefined }
       : { arrivalWindowStart: arrivalStart, arrivalWindowEnd: arrivalEnd };
-    const result = hub.completeAssignment({
+    const result = await hub.completeAssignment({
       jobId: job.jobId,
       cleanerId: cleaner.cleanerId,
       propertyId: job.propertyId,

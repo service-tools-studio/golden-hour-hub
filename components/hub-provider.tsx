@@ -18,7 +18,9 @@ import {
   queueSchedulingSmsDelivery,
   type ManualCleanerTextPrompt as ManualCleanerTextOffer,
 } from "@/lib/cleaner/deliver-scheduling-sms";
+import { completeAssignmentAction } from "@/app/actions/admin-assignments";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
+import { completeAssignmentOnHub } from "@/lib/hub/complete-assignment-mutations";
 import { purgeAssignmentSmsLogsOnCleanerRemoval } from "@/app/actions/assignment-sms-log-cleanup";
 import { updateCleanerAdminOnHub } from "@/lib/hub/admin-mutations";
 import { submitAvailabilityOnHub } from "@/lib/hub/cleaner-mutations";
@@ -234,7 +236,7 @@ type HubContextValue = HubState & {
   createJob: (input: CreateJobInput) => ActionResult;
   saveCleanerDetails: (input: SaveCleanerDetailsInput) => ActionResult;
   staffCleaner: (input: StaffCleanerInput) => ActionResult;
-  completeAssignment: (input: CompleteAssignmentInput) => ActionResult;
+  completeAssignment: (input: CompleteAssignmentInput) => AsyncActionResult;
   addJobCleaner: (jobId: string, cleanerId: string) => ActionResult;
   removeJobCleaner: (jobId: string, cleanerId: string) => ActionResult;
   updateVisit: (input: UpdateVisitInput) => ActionResult;
@@ -462,6 +464,7 @@ export function HubProvider({
   const syncInFlightRef = useRef(false);
   const hubRevisionRef = useRef<number | null>(null);
   const skipPersistForRemoteSyncRef = useRef(false);
+  const staffingSaveInFlightRef = useRef(false);
   const actionLoadingRef = useRef(0);
   const previewAuthRef = useRef(previewAuth);
   const stateRef = useRef<HubState | null>(null);
@@ -480,6 +483,7 @@ export function HubProvider({
       if (check()) return true;
     }
     if (persistRunningRef.current) return true;
+    if (staffingSaveInFlightRef.current) return true;
     if (actionLoadingRef.current > 0) return true;
     return false;
   }
@@ -1492,222 +1496,34 @@ export function HubProvider({
     return { ok: true, jobId: job.jobId, message };
   }
 
-  function completeAssignment(input: CompleteAssignmentInput): ActionResult {
-    if (input.mode === "DRAFT" && !input.assignmentId) {
-      const saved = saveCleanerDetails(input);
-      return saved.ok ? { ...saved, message: "Draft saved." } : saved;
-    }
-    const job = data.jobs.find((item) => item.jobId === input.jobId);
-    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
-    const existing = input.assignmentId
-      ? data.assignments.find((item) => item.assignmentId === input.assignmentId && item.jobId === job.jobId)
-      : undefined;
-    if (input.assignmentId && !existing) return { ok: false, message: "That cleaner assignment could not be found." };
-    const cleanerId = existing?.cleanerId ?? input.cleanerId;
-    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
-    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
-    if (!existing && !(job.draftCleanerIds ?? []).includes(cleaner.cleanerId)) {
-      return { ok: false, message: "Add that cleaner to the cleaning before saving their details." };
-    }
-    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
-    if (!arrivalTimes.ok) return arrivalTimes;
-    if (
-      !Number.isInteger(input.expectedDurationMinutes) ||
-      input.expectedDurationMinutes < 30 ||
-      input.expectedDurationMinutes > 12 * 60
-    ) {
-      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-    }
-    if (job.headcountNeeded < 1) {
-      return { ok: false, message: "Set the headcount on this cleaning first." };
-    }
-    const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
-    if (!crew.ok) return crew;
-    if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
-      return { ok: false, message: "Enter the pay per person." };
-    }
-    const now = new Date().toISOString();
-    const notice = assignmentNotice(input);
-    if (input.mode === "DRAFT" && existing) {
-      const pay = confirmedCompensationCents({
-        payType: input.payType,
-        payPerPersonCents: input.payPerPersonCents,
-        confirmedCrewSize: input.proposedCrewSize,
-      });
-      let nextAssignments = data.assignments.map((item) => {
-        if (item.assignmentId !== existing.assignmentId) return item;
-        let nextItem: JobAssignment = {
-          ...item,
-          proposedCrewSize: input.proposedCrewSize,
-          confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
-          arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-          arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-          expectedDurationMinutes: input.expectedDurationMinutes,
-          payType: input.payType,
-          payPerPersonCents: input.payPerPersonCents,
-          proposedTotalPayCents: pay,
-          confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
-          lastNotified: (() => {
-            const notice = assignmentNotice({
-              arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-              arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-              expectedDurationMinutes: input.expectedDurationMinutes,
-              proposedCrewSize: input.proposedCrewSize,
-              payType: input.payType,
-              payPerPersonCents: input.payPerPersonCents,
-            });
-            if (!item.lastNotified) return notice;
-            if (assignmentScheduleNoticeInSync(item.lastNotified, notice)) {
-              return {
-                ...item.lastNotified,
-                payType: input.payType,
-                payPerPersonCents: input.payPerPersonCents,
-                proposedCrewSize: input.proposedCrewSize,
-              };
-            }
-            return item.lastNotified;
-          })(),
-          updatedAt: now,
+  async function completeAssignment(input: CompleteAssignmentInput): AsyncActionResult {
+    if (sourceRef.current === "dynamodb" && data.role === "ADMIN") {
+      staffingSaveInFlightRef.current = true;
+      try {
+        const remote = await completeAssignmentAction(input);
+        if (!remote.ok) return remote;
+        skipPersistForRemoteSyncRef.current = true;
+        hubRevisionRef.current = remote.revision;
+        setState({ ...remote.hub, role: data.role, cleanerId: data.cleanerId });
+        return {
+          ok: true,
+          jobId: remote.jobId,
+          message: remote.message,
+          assignmentId: remote.assignmentId,
         };
-        if (item.status === "CONFIRMED" || item.status === "NEEDS_ATTENTION") {
-          const merged = data.assignments.map((row) => (row.assignmentId === existing.assignmentId ? nextItem : row));
-          nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
-        }
-        return nextItem;
-      });
-      if (arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined) {
-        nextAssignments = syncJobAssignmentsToCleaningArrival(
-          nextAssignments,
-          job.jobId,
-          arrivalTimes.arrivalWindowStart,
-          arrivalTimes.arrivalWindowEnd,
-          now,
-        );
+      } finally {
+        staffingSaveInFlightRef.current = false;
       }
-      const nextJob =
-        arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined
-          ? jobWithCleaningArrival(job, arrivalTimes.arrivalWindowStart, arrivalTimes.arrivalWindowEnd, now)
-          : { ...job, updatedAt: now, updatedBy: "kelsey" };
-      const next = withEarliestArrival(nextJob, nextAssignments);
-      setState({
-        ...data,
-        jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-        assignments: nextAssignments,
-      });
-      const savedMessage =
-        existing.status === "INVITED" ||
-        existing.status === "CONFIRMED" ||
-        existing.status === "PENDING_AVAILABILITY" ||
-        existing.status === "NEEDS_ATTENTION"
-          ? "Changes saved."
-          : "Draft saved.";
-      return { ok: true, jobId: job.jobId, message: savedMessage };
     }
-    const weekStart = mondayOf(job.date);
-    const availabilityByCleaner: Record<string, { submitted: boolean; windows: { date: string; start: string; end: string }[] }> = {};
-    for (const candidate of data.cleaners) {
-      availabilityByCleaner[candidate.cleanerId] = {
-        submitted: data.submissions.some((submission) => submission.cleanerId === candidate.cleanerId && submission.weekStart === weekStart),
-        windows: data.availability
-          .filter((window) => window.cleanerId === candidate.cleanerId)
-          .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-      };
-    }
-    const plan = planOccurrenceStaffing({
-      jobId: job.jobId,
-      serviceDate: job.date,
-      headcountNeeded: job.headcountNeeded,
-      mode: input.mode === "INVITE" ? "INVITE" : "DIRECT",
-      template: [
-        {
-          cleanerId: cleaner.cleanerId,
-          proposedCrewSize: input.proposedCrewSize,
-          arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-          arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-          expectedDurationMinutes: input.expectedDurationMinutes,
-          payType: input.payType,
-          payPerPersonCents: input.payPerPersonCents,
-        },
-      ],
-      cleaners: data.cleaners,
-      availabilityByCleaner,
-      confirmedAssignments: data.assignments.filter(
-        (item) => item.status === "CONFIRMED" && item.assignmentId !== existing?.assignmentId,
-      ),
-      nowIso: now,
-      newId: () => existing?.assignmentId ?? `as-${Date.now()}`,
-    });
-    if (plan.attention.length > 0) return { ok: false, message: plan.attention[0].reason };
-    const planned = plan.assignments[0];
-    if (!planned) return { ok: false, message: "The cleaning could not be assigned." };
-    const savedAssignment: JobAssignment = {
-      ...planned,
-      assignmentId: existing?.assignmentId ?? planned.assignmentId,
-      createdAt: existing?.createdAt ?? planned.createdAt,
-      lastNotified: notice,
-      notifiedServiceDate: job.date,
-      needsDateReinvite: undefined,
+    const outcome = completeAssignmentOnHub(data, input);
+    if (!outcome.ok) return outcome;
+    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    return {
+      ok: true,
+      jobId: outcome.jobId,
+      message: outcome.message,
+      assignmentId: outcome.assignmentId,
     };
-    let nextAssignments = existing
-      ? data.assignments.map((item) => (item.assignmentId === existing.assignmentId ? savedAssignment : item))
-      : [...data.assignments, savedAssignment];
-    if (arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined) {
-      nextAssignments = syncJobAssignmentsToCleaningArrival(
-        nextAssignments,
-        job.jobId,
-        arrivalTimes.arrivalWindowStart,
-        arrivalTimes.arrivalWindowEnd,
-        now,
-      );
-    }
-    const scheduledJob = {
-      ...job,
-      draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
-      draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
-      status: "SCHEDULED" as const,
-    };
-    const nextJob =
-      arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined
-        ? jobWithCleaningArrival(
-            scheduledJob,
-            arrivalTimes.arrivalWindowStart,
-            arrivalTimes.arrivalWindowEnd,
-            now,
-          )
-        : { ...scheduledJob, updatedAt: now, updatedBy: "kelsey" };
-    const next = withEarliestArrival(nextJob, nextAssignments);
-    let assignments = nextAssignments;
-    if (savedAssignment.status === "CONFIRMED") {
-      assignments = expireJobInvitesIfHeadcountMet(assignments, job.jobId, job.headcountNeeded, now);
-    }
-    if (
-      savedAssignment.status === "CONFIRMED" &&
-      data.submissions.some((submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart)
-    ) {
-      assignments = revalidatePendingAssignments({
-        assignments,
-        cleaner,
-        weekStart,
-        weekEnd: addDays(weekStart, 6),
-        windows: data.availability
-          .filter((window) => window.cleanerId === cleaner.cleanerId)
-          .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-        jobs: data.jobs,
-        nowIso: now,
-      });
-    }
-    setState({
-      ...data,
-      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-      assignments: clearStaleNotScheduledAttention(
-        data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-        assignments,
-        now,
-      ),
-    });
-    const assignMode = input.mode === "INVITE" ? "INVITE" : "DIRECT";
-    const message = assignmentSavedMessage(cleaner, savedAssignment, assignMode);
-    return { ok: true, jobId: job.jobId, assignmentId: savedAssignment.assignmentId, message };
   }
 
   function addJobCleaner(jobId: string, cleanerId: string): ActionResult {
