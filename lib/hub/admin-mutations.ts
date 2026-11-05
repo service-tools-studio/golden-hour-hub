@@ -35,7 +35,7 @@ export function updateCleanerAdminOnHub(
               maxHelperCount: crew.maxHelperCount,
               typicalHourlyRateCents: input.typicalHourlyRateCents,
               updatedAt: now,
-              updatedBy: "kelsey",
+              updatedBy: "Hub Admin",
             }
           : cleaner,
       ),
