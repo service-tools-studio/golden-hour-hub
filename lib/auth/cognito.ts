@@ -167,10 +167,13 @@ export function decodeIdToken(idToken: string): { sub: string; email: string; us
   };
 }
 
+/** Whether Cognito still allows this user to sign in (AdminGetUser). */
+export type CognitoUserSignInStatus = "allowed" | "disabled" | "unknown";
+
 /** False when the user is disabled or missing in Cognito (disabling does not revoke refresh tokens). */
-export async function cognitoUserSignInAllowed(cognitoUsername: string): Promise<boolean> {
+export async function cognitoUserSignInAllowed(cognitoUsername: string): Promise<CognitoUserSignInStatus> {
   const username = cognitoUsername.trim().toLowerCase();
-  if (!username) return false;
+  if (!username) return "disabled";
   try {
     const response = await client().send(
       new AdminGetUserCommand({
@@ -178,12 +181,12 @@ export async function cognitoUserSignInAllowed(cognitoUsername: string): Promise
         Username: username,
       }),
     );
-    return response.Enabled === true;
+    return response.Enabled === true ? "allowed" : "disabled";
   } catch (error) {
     const name = cognitoErrorName(error);
-    if (name === "UserNotFoundException") return false;
+    if (name === "UserNotFoundException") return "disabled";
     console.error("Could not verify Cognito user status.", error);
-    return false;
+    return "unknown";
   }
 }
 

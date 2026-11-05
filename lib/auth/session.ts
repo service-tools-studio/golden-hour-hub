@@ -44,19 +44,45 @@ function toAuthSession(stored: StoredAuthCookie): AuthSession | null {
   return { sub: stored.sub, email: stored.email, role: stored.role, cleanerId: stored.cleanerId };
 }
 
-async function sessionFromTokens(tokens: CognitoTokens, email: string): Promise<AuthSession | null> {
+async function sessionFromTokens(
+  tokens: CognitoTokens,
+  email: string,
+  trustedStored?: Pick<StoredAuthCookie, "sub" | "role" | "cleanerId">,
+): Promise<AuthSession | null> {
   const claims = decodeIdToken(tokens.idToken);
   const groups = await resolveCognitoGroups(claims.username || claims.email, claims.groups);
-  const role = roleFromCognitoGroups(groups);
+  let role = roleFromCognitoGroups(groups);
+  if (!role && trustedStored && trustedStored.sub === claims.sub) {
+    role = trustedStored.role;
+  }
   if (!role) return null;
+
   let cleanerId: string | null = null;
   if (role === "CLEANER") {
-    if (!dynamoConfigured()) return null;
-    const hub = await loadHub();
-    cleanerId = cleanerIdForCognitoUser(hub.cleaners, claims.sub, claims.email);
-    if (!cleanerId) return null;
+    if (
+      trustedStored &&
+      trustedStored.sub === claims.sub &&
+      trustedStored.role === "CLEANER" &&
+      trustedStored.cleanerId
+    ) {
+      cleanerId = trustedStored.cleanerId;
+    } else {
+      if (!dynamoConfigured()) return null;
+      const hub = await loadHub();
+      cleanerId = cleanerIdForCognitoUser(hub.cleaners, claims.sub, claims.email);
+      if (!cleanerId) return null;
+    }
   }
   return { sub: claims.sub, email: claims.email, role, cleanerId };
+}
+
+function sessionFromStoredIdentity(
+  stored: StoredAuthCookie,
+  claims: ReturnType<typeof decodeIdToken>,
+): AuthSession | null {
+  if (stored.sub !== claims.sub) return null;
+  if (!authCookieSessionActive(stored)) return null;
+  return { sub: stored.sub, email: stored.email, role: stored.role, cleanerId: stored.cleanerId };
 }
 
 function storedFromSession(
@@ -89,22 +115,31 @@ function readStoredSession(raw: string | undefined): StoredAuthCookie | null {
 }
 
 async function revalidateStoredSessionOnce(stored: StoredAuthCookie): Promise<StoredAuthCookie | null> {
-  if (!(await cognitoUserSignInAllowed(cognitoUsernameForRefresh(stored)))) {
-    return null;
-  }
-
   const now = Math.floor(Date.now() / 1000);
   if (now - (stored.verifiedAt ?? 0) < COGNITO_RECHECK_SECONDS) {
     return stored;
   }
 
+  const signInStatus = await cognitoUserSignInAllowed(cognitoUsernameForRefresh(stored));
+  if (signInStatus === "disabled") return null;
+
   const tokens = await refreshTokens(cognitoUsernameForRefresh(stored), stored.refreshToken);
   if (!tokens) return null;
-  const session = await sessionFromTokens(tokens, stored.email);
-  if (!session) return null;
+
   const claims = decodeIdToken(tokens.idToken);
   const username = (claims.username || claims.email).toLowerCase();
-  return storedFromSession(session, tokens, username, now);
+
+  const session = await sessionFromTokens(tokens, stored.email, stored);
+  if (session) {
+    return storedFromSession(session, tokens, username, now);
+  }
+
+  const fallback = sessionFromStoredIdentity(stored, claims);
+  if (fallback) {
+    return storedFromSession(fallback, tokens, username, now);
+  }
+
+  return null;
 }
 
 async function revalidateStoredSession(stored: StoredAuthCookie): Promise<StoredAuthCookie | null> {
