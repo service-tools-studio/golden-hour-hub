@@ -23,6 +23,7 @@ import { completeAssignmentAction } from "@/app/actions/admin-assignments";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
 import { completeAssignmentOnHub } from "@/lib/hub/complete-assignment-mutations";
 import { createJobOnHub } from "@/lib/hub/create-job-mutations";
+import { mergeHubPersistAttempt } from "@/lib/hub/merge-hub-persist";
 import { purgeAssignmentSmsLogsOnCleanerRemoval } from "@/app/actions/assignment-sms-log-cleanup";
 import { updateCleanerAdminOnHub } from "@/lib/hub/admin-mutations";
 import { submitAvailabilityOnHub } from "@/lib/hub/cleaner-mutations";
@@ -544,11 +545,32 @@ export function HubProvider({
       while (persistQueueRef.current) {
         const payload = persistQueueRef.current;
         persistQueueRef.current = null;
-        const result = await persistAdminHub(payload);
-        if (!result.ok) {
-          setToast(result.message);
-        } else {
-          hubRevisionRef.current = result.revision;
+        let attempt = payload;
+        let expectedRevision = hubRevisionRef.current ?? 0;
+
+        for (let tries = 0; tries < 3; tries++) {
+          const result = await persistAdminHub(attempt, expectedRevision);
+          if (result.ok) {
+            hubRevisionRef.current = result.revision;
+            break;
+          }
+          if ("conflict" in result && result.conflict) {
+            hubRevisionRef.current = result.revision;
+            attempt = mergeHubPersistAttempt(result.hub, payload);
+            expectedRevision = result.revision;
+            const prev = stateRef.current;
+            if (prev?.role) {
+              skipPersistForRemoteSyncRef.current = true;
+              setState({
+                ...withCurrentHorizon(attempt),
+                role: prev.role,
+                cleanerId: prev.cleanerId,
+              });
+            }
+            continue;
+          }
+          setToast("message" in result ? result.message : "Could not save Hub data.");
+          break;
         }
       }
     } finally {

@@ -181,6 +181,21 @@ export async function saveHub(data: HubData): Promise<number> {
   return bumpHubRevision();
 }
 
+export type SaveHubRevisionResult =
+  | { ok: true; revision: number }
+  | { ok: false; kind: "conflict"; revision: number; hub: HubData };
+
+/** Save only when hub revision still matches what the caller loaded. */
+export async function saveHubIfRevision(data: HubData, expectedRevision: number): Promise<SaveHubRevisionResult> {
+  const current = await readHubRevision();
+  if (current !== expectedRevision) {
+    const hub = await loadHub();
+    return { ok: false, kind: "conflict", revision: current, hub };
+  }
+  const revision = await saveHub(data);
+  return { ok: true, revision };
+}
+
 async function scanAll(): Promise<DynamoItem[]> {
   const doc = client();
   const items: DynamoItem[] = [];
