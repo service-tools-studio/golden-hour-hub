@@ -18,9 +18,11 @@ import {
   queueSchedulingSmsDelivery,
   type ManualCleanerTextPrompt as ManualCleanerTextOffer,
 } from "@/lib/cleaner/deliver-scheduling-sms";
+import { createJobAction } from "@/app/actions/admin-jobs";
 import { completeAssignmentAction } from "@/app/actions/admin-assignments";
 import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
 import { completeAssignmentOnHub } from "@/lib/hub/complete-assignment-mutations";
+import { createJobOnHub } from "@/lib/hub/create-job-mutations";
 import { purgeAssignmentSmsLogsOnCleanerRemoval } from "@/app/actions/assignment-sms-log-cleanup";
 import { updateCleanerAdminOnHub } from "@/lib/hub/admin-mutations";
 import { submitAvailabilityOnHub } from "@/lib/hub/cleaner-mutations";
@@ -233,7 +235,7 @@ type HubContextValue = HubState & {
       status: CleanerStatus;
     },
   ) => ActionResult;
-  createJob: (input: CreateJobInput) => ActionResult;
+  createJob: (input: CreateJobInput) => AsyncActionResult;
   saveCleanerDetails: (input: SaveCleanerDetailsInput) => ActionResult;
   staffCleaner: (input: StaffCleanerInput) => ActionResult;
   completeAssignment: (input: CompleteAssignmentInput) => AsyncActionResult;
@@ -1226,126 +1228,24 @@ export function HubProvider({
     return { ok: true };
   }
 
-  function createJob(input: CreateJobInput): ActionResult {
-    const priceCheck = validatePricePerVisitCents(input.pricePerVisitCents);
-    if (priceCheck && !priceCheck.ok) return priceCheck;
-    const cleanerIds = [...new Set(input.cleanerIds)];
-    const cleaners = cleanerIds.map((cleanerId) => data.cleaners.find((item) => item.cleanerId === cleanerId));
-    if (cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
-      return { ok: false, message: "Choose an active cleaner." };
-    }
-    if (!isValidDate(input.date)) return { ok: false, message: "Choose a valid date." };
-    const customer = data.customers.find((item) => item.customerId === input.customerId && item.status === "ACTIVE");
-    if (!customer) return { ok: false, message: "Choose a customer." };
-    const property = data.properties.find(
-      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
-    );
-    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
-    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
-    if (!arrivalTimes.ok) return arrivalTimes;
-    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
-      return { ok: false, message: "Enter how many cleaners are needed." };
-    }
-    if (
-      !Number.isInteger(input.expectedDurationMinutes) ||
-      input.expectedDurationMinutes < 30 ||
-      input.expectedDurationMinutes > 12 * 60
-    ) {
-      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-    }
-    if (input.recurringSchedule) {
-      if (input.serviceType !== "RECURRING") {
-        return { ok: false, message: "Recurring schedule applies only to recurring cleans." };
-      }
-      if (arrivalTimes.arrivalWindowStart === undefined) {
-        return { ok: false, message: "Choose a start time before creating a recurring schedule." };
-      }
-      const headcountForSeries = input.headcountNeeded > 0 ? input.headcountNeeded : 1;
-      if (headcountForSeries < 1) {
-        return { ok: false, message: "Choose headcount before creating a recurring schedule." };
+  async function createJob(input: CreateJobInput): AsyncActionResult {
+    if (sourceRef.current === "dynamodb" && data.role === "ADMIN") {
+      staffingSaveInFlightRef.current = true;
+      try {
+        const remote = await createJobAction(input);
+        if (!remote.ok) return remote;
+        skipPersistForRemoteSyncRef.current = true;
+        hubRevisionRef.current = remote.revision;
+        setState({ ...remote.hub, role: data.role, cleanerId: data.cleanerId });
+        return { ok: true, jobId: remote.jobId, message: remote.message };
+      } finally {
+        staffingSaveInFlightRef.current = false;
       }
     }
-    const now = new Date().toISOString();
-    const jobId = `job-${Date.now()}`;
-    const withSeries = Boolean(input.recurringSchedule);
-    const job: Job = {
-      jobId,
-      customerId: customer.customerId,
-      propertyId: property.propertyId,
-      serviceType: input.serviceType,
-      date: input.date,
-      headcountNeeded: input.headcountNeeded > 0 ? input.headcountNeeded : withSeries ? 1 : 0,
-      expectedDurationMinutes: input.expectedDurationMinutes,
-      arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-      arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-      draftCleanerIds: cleanerIds,
-      snapshot: snapshotVisit(customer, property),
-      specialInstructions: input.specialInstructions.trim(),
-      pricePerVisitCents: input.pricePerVisitCents,
-      status: withSeries ? "SCHEDULED" : "DRAFT",
-      createdAt: now,
-      createdBy: "kelsey",
-      updatedAt: now,
-      updatedBy: "kelsey",
-    };
-    if (!input.recurringSchedule) {
-      setState({ ...data, jobs: [job, ...data.jobs] });
-      return { ok: true, jobId, message: "Cleaning saved." };
-    }
-    const recurrence: RecurrenceRule = {
-      frequency: "WEEK",
-      interval: input.recurringSchedule.interval,
-      daysOfWeek: [dayOfWeek(input.date)],
-    };
-    const rule = validateRecurrenceRule(recurrence, input.date);
-    if (!rule.ok) return rule;
-    const seriesArrivalStart = arrivalTimes.arrivalWindowStart;
-    const seriesArrivalEnd = arrivalTimes.arrivalWindowEnd;
-    if (seriesArrivalStart === undefined || seriesArrivalEnd === undefined) {
-      return { ok: false, message: "Choose a start time before creating a recurring schedule." };
-    }
-    const seriesId = `series-${Date.now()}`;
-    const series: RecurringSeries = {
-      seriesId,
-      customerId: customer.customerId,
-      propertyId: property.propertyId,
-      recurrence,
-      startDate: input.date,
-      endMode: "UNTIL_CANCELED",
-      defaultHeadcountNeeded: job.headcountNeeded,
-      defaultArrivalWindowStart: seriesArrivalStart,
-      defaultArrivalWindowEnd: seriesArrivalEnd,
-      defaultExpectedDurationMinutes: input.expectedDurationMinutes,
-      defaultServiceType: "RECURRING",
-      defaultSpecialInstructions: input.specialInstructions.trim() || undefined,
-      defaultPricePerVisitCents: input.pricePerVisitCents,
-      staffingTemplateMode: "BLANK",
-      staffingTemplate: [],
-      status: "ACTIVE",
-      generatedThroughDate: input.date,
-      createdAt: now,
-      createdBy: "kelsey",
-      updatedAt: now,
-      updatedBy: "kelsey",
-    };
-    const linkedJob: Job = { ...job, seriesId };
-    const base = {
-      ...data,
-      series: [...data.series, series],
-      jobs: [linkedJob, ...data.jobs],
-    };
-    const generated = mergeRecurringHorizon({
-      ...base,
-      today: data.today,
-      nowIso: now,
-    });
-    setState({
-      ...base,
-      series: generated.series,
-      jobs: generated.jobs,
-      assignments: generated.assignments,
-    });
-    return { ok: true, jobId, message: "Recurring cleaning and schedule saved." };
+    const outcome = createJobOnHub(data, input, "kelsey");
+    if (!outcome.ok) return outcome;
+    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    return { ok: true, jobId: outcome.jobId, message: outcome.message };
   }
 
   function saveCleanerDetails(input: SaveCleanerDetailsInput): ActionResult {

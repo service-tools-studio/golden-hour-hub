@@ -45,8 +45,8 @@ export function CreateJobView({
     ? `/admin/jobs/new?cleanerId=${cleanerId}&date=${date}&start=${start}&end=${end}`
     : `/admin/jobs/new?date=${serviceDate}`;
 
-  function submit(values: CleaningValues, nextHref?: string) {
-    const result = hub.createJob({
+  async function submit(values: CleaningValues, nextHref?: string) {
+    const result = await hub.createJob({
       date: values.date,
       customerId: values.customerId,
       propertyId: values.propertyId,

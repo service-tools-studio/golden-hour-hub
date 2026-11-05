@@ -143,7 +143,7 @@ export function CleaningForm({
   allowRecurringSchedule?: boolean;
   newCustomerHref: string;
   customerEditReturnTo?: string;
-  onSubmit: (values: CleaningValues, nextHref?: string) => { ok: boolean; message?: string };
+  onSubmit: (values: CleaningValues, nextHref?: string) => { ok: boolean; message?: string } | Promise<{ ok: boolean; message?: string }>;
   onDateChange?: (date: string) => void;
   afterDate?: (date: string) => React.ReactNode;
   afterArrival?: (start: string, end: string) => React.ReactNode;
@@ -345,7 +345,7 @@ export function CleaningForm({
     return parseDollarsToCents(trimmed);
   }
 
-  function submit(nextHref?: string) {
+  async function submit(nextHref?: string) {
     if (duration === null || !Number.isInteger(duration) || duration < 30 || duration > 12 * 60) {
       setMessage("Choose an estimated cleaning time.");
       return false;
@@ -359,9 +359,8 @@ export function CleaningForm({
       setMessage("Enter a valid price per visit.");
       return false;
     }
-    const result = onSubmit(
-      { ...values(), expectedDurationMinutes: duration, pricePerVisitCents: parsedPrice },
-      nextHref,
+    const result = await Promise.resolve(
+      onSubmit({ ...values(), expectedDurationMinutes: duration, pricePerVisitCents: parsedPrice }, nextHref),
     );
     if (!result.ok) {
       setMessage(result.message ?? "The cleaning could not be saved.");
@@ -370,10 +369,10 @@ export function CleaningForm({
     return true;
   }
 
-  function runSubmit(nextHref?: string) {
+  async function runSubmit(nextHref?: string) {
     if (saving) return false;
     setSaving(true);
-    const ok = submit(nextHref);
+    const ok = await submit(nextHref);
     if (!ok) setSaving(false);
     return ok;
   }
