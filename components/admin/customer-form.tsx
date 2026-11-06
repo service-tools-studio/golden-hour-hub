@@ -376,9 +376,9 @@ export function CustomerForm({
         </div>
       ) : null}
       <fieldset
-        disabled={Boolean(duplicate)}
-        className="m-0 min-w-0 space-y-3 border-0 p-0 disabled:pointer-events-none disabled:opacity-50"
         disabled={Boolean(duplicate) || busy}
+        className="m-0 min-w-0 space-y-3 border-0 p-0 disabled:pointer-events-none disabled:opacity-50"
+      >
       <Field id="customer-phone" label="Phone" error={fieldMessage("phone")}>
         <input className={inputClass(Boolean(fieldMessage("phone")))} type="tel" inputMode="tel" value={form.phone} onChange={(event) => set("phone", formatPhoneInput(event.target.value, form.phone))} aria-invalid={Boolean(fieldMessage("phone"))} />
       </Field>
