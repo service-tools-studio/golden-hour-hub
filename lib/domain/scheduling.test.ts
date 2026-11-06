@@ -4,9 +4,11 @@ import {
   availabilityAgainstSpan,
   availabilityStaffingSortRank,
   cleaningTimeSpan,
+  availabilityWeekSignature,
   copyWeekWindows,
   listSubmissionStatus,
   mergeAdjacentWindows,
+  signedAvailabilityWeek,
   stripAllDayWhenSpecificExists,
 } from "./availability.ts";
 import {
@@ -584,6 +586,27 @@ describe("weekly submission", () => {
     const stripped = stripAllDayWhenSpecificExists(windows);
     assert.equal(stripped.length, 2);
     assert.equal(stripped.some((window) => window.availabilityId === "all-day"), false);
+  });
+
+  it("fingerprints a week by hours, ignoring ids and order", () => {
+    const left: AvailabilityWindow[] = [
+      { availabilityId: "a", cleanerId: "ada", date: "2026-11-03", start: "09:00", end: "12:00" },
+      { availabilityId: "b", cleanerId: "ada", date: "2026-11-04", start: "13:00", end: "17:00" },
+    ];
+    const right: AvailabilityWindow[] = [
+      { availabilityId: "z", cleanerId: "ada", date: "2026-11-04", start: "13:00", end: "17:00" },
+      { availabilityId: "y", cleanerId: "ada", date: "2026-11-03", start: "09:00", end: "12:00" },
+    ];
+    assert.equal(availabilityWeekSignature(left), availabilityWeekSignature(right));
+    assert.equal(signedAvailabilityWeek(left, "ada", "2026-11-02"), signedAvailabilityWeek(right, "ada", "2026-11-02"));
+    assert.notEqual(
+      signedAvailabilityWeek(left, "ada", "2026-11-02"),
+      signedAvailabilityWeek(
+        [...left, { availabilityId: "c", cleanerId: "ada", date: "2026-11-05", start: "08:00", end: "10:00" }],
+        "ada",
+        "2026-11-02",
+      ),
+    );
   });
 
   it("consolidates adjacent windows on the same day into one block", () => {

@@ -174,6 +174,27 @@ export function windowsInWeek(
     .sort((a, b) => (a.date === b.date ? a.start.localeCompare(b.start) : a.date.localeCompare(b.date)));
 }
 
+/** Stable fingerprint of a week's hours so client and persist can detect a stale editor. */
+export function availabilityWeekSignature(
+  windows: Array<Pick<AvailabilityWindow, "date" | "start" | "end">>,
+): string {
+  return [...windows]
+    .map((window) => `${window.date}|${window.start}|${window.end}`)
+    .sort()
+    .join("\n");
+}
+
+export function signedAvailabilityWeek(
+  windows: AvailabilityWindow[],
+  cleanerId: string,
+  weekStart: string,
+): string {
+  return availabilityWeekSignature(mergeAdjacentWindows(windowsInWeek(windows, cleanerId, weekStart)));
+}
+
+export const STALE_AVAILABILITY_WEEK_MESSAGE =
+  "This week was updated by someone else. Review the latest hours, then save again.";
+
 export function copyWeekWindows(
   windows: AvailabilityWindow[],
   cleanerId: string,

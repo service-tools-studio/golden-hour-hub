@@ -65,7 +65,13 @@ import {
   updateVisitOnHub,
   type AdminHubApplierResult,
 } from "@/lib/hub/admin-hub-appliers";
-import { hubMutationPatch, mergeHubPatchIntoHub, type HubPatchRemove } from "@/lib/hub/merge-hub-patch";
+import {
+  hubMutationPatch,
+  mergeAvailabilityWeekIntoHub,
+  mergeHubPatchIntoHub,
+  type HubPatchRemove,
+} from "@/lib/hub/merge-hub-patch";
+import { signedAvailabilityWeek, STALE_AVAILABILITY_WEEK_MESSAGE } from "@/lib/domain/availability";
 import type {
   CompleteAssignmentInput,
   CreateJobInput,
@@ -122,7 +128,7 @@ type HubState = HubData & {
 
 type ActionResult =
   | { ok: true; message?: string; customerId?: string; jobId?: string; assignmentId?: string }
-  | { ok: false; message: string };
+  | { ok: false; message: string; stale?: boolean };
 type AsyncActionResult = Promise<ActionResult>;
 
 type HubContextValue = HubState & {
@@ -148,7 +154,7 @@ type HubContextValue = HubState & {
     cleanerId: string,
     weekStart: string,
     windows: AvailabilityWindow[],
-    options?: { quiet?: boolean },
+    options?: { quiet?: boolean; expectedWeekSignature?: string },
   ) => AsyncActionResult;
   saveContractorQuestionnaireDraft: (
     input: ContractorQuestionnaireInput,
@@ -778,16 +784,39 @@ export function HubProvider({
     return { ok: true };
   }
 
+  function applyStaleAvailabilityWeek(cleanerId: string, weekStart: string, patch: HubData) {
+    skipPersistForRemoteSyncRef.current = true;
+    setState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...withCurrentHorizon(
+          mergeAvailabilityWeekIntoHub(prev, patch, cleanerId, weekStart, addDays(weekStart, 6)),
+        ),
+        role: prev.role,
+        cleanerId: prev.cleanerId,
+      };
+    });
+  }
+
   async function submitAvailability(
     cleanerId: string,
     weekStart: string,
     windows: AvailabilityWindow[],
-    options?: { quiet?: boolean },
+    options?: { quiet?: boolean; expectedWeekSignature?: string },
   ): AsyncActionResult {
     const toastMessage = "Availability submitted.";
+    const expectedWeekSignature = options?.expectedWeekSignature;
     if (sourceRef.current === "dynamodb" && data.role === "ADMIN") {
-      const remote = await submitCleanerAvailabilityAdminAction(cleanerId, weekStart, windows);
-      if (!remote.ok) return remote;
+      const remote = await submitCleanerAvailabilityAdminAction(
+        cleanerId,
+        weekStart,
+        windows,
+        expectedWeekSignature,
+      );
+      if (!remote.ok) {
+        if (remote.stale) applyStaleAvailabilityWeek(cleanerId, weekStart, remote.hub);
+        return remote;
+      }
       skipPersistForRemoteSyncRef.current = true;
       hubRevisionRef.current = remote.revision;
       applyAdminHubPatch(remote.hub, remote.remove);
@@ -798,8 +827,11 @@ export function HubProvider({
       if (data.cleanerId !== cleanerId) {
         return { ok: false, message: "You can only edit your own availability." };
       }
-      const remote = await submitAvailabilityAction(weekStart, windows);
-      if (!remote.ok) return remote;
+      const remote = await submitAvailabilityAction(weekStart, windows, expectedWeekSignature);
+      if (!remote.ok) {
+        if (remote.stale) applyStaleAvailabilityWeek(cleanerId, weekStart, remote.data);
+        return remote;
+      }
       skipPersistForRemoteSyncRef.current = true;
       hubRevisionRef.current = remote.revision;
       applyAdminHubPatch(remote.data, remote.remove);
@@ -807,6 +839,13 @@ export function HubProvider({
       return { ok: true, message: remote.message };
     }
     const snapshot = stateRef.current ?? data;
+    if (
+      expectedWeekSignature !== undefined &&
+      signedAvailabilityWeek(snapshot.availability, cleanerId, weekStart) !== expectedWeekSignature
+    ) {
+      applyStaleAvailabilityWeek(cleanerId, weekStart, snapshot);
+      return { ok: false, stale: true, message: STALE_AVAILABILITY_WEEK_MESSAGE };
+    }
     const preview = submitAvailabilityOnHub(snapshot, cleanerId, weekStart, windows);
     if (!preview.result.ok) return preview.result;
     setState((prev) => {

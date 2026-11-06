@@ -96,6 +96,8 @@ export function PendingNavigationOverlay({
 export function UnsavedChangesDialog({
   open,
   pendingHref,
+  title = "Unsaved changes",
+  description = "Save before leaving, or discard the edits.",
   onSave,
   onDiscard,
   onDismiss,
@@ -103,6 +105,8 @@ export function UnsavedChangesDialog({
 }: {
   open: boolean;
   pendingHref?: string | null;
+  title?: string;
+  description?: string;
   onSave: () => void | boolean | Promise<void | boolean>;
   onDiscard: () => void;
   onDismiss: () => void;
@@ -179,9 +183,9 @@ export function UnsavedChangesDialog({
         ) : (
           <>
             <h2 id="unsaved-title" className="text-lg font-semibold">
-              Unsaved changes
+              {title}
             </h2>
-            <p className="mt-1 text-sm leading-5 text-ink/70">Save before leaving, or discard the edits.</p>
+            <p className="mt-1 text-sm leading-5 text-ink/70">{description}</p>
             <div className="mt-4 space-y-2">
               <button
                 type="button"

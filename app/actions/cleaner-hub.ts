@@ -21,11 +21,13 @@ type CleanerHubMutationResult =
 
 type AvailabilityMutationResult =
   | { ok: true; message?: string; data: HubData; remove?: HubPatchRemove; revision: number }
-  | { ok: false; message: string };
+  | { ok: false; message: string; stale?: false }
+  | { ok: false; message: string; stale: true; data: HubData };
 
 export type AdminAvailabilityMutationResult =
   | { ok: true; message?: string; hub: HubData; remove?: HubPatchRemove; revision: number }
-  | { ok: false; message: string };
+  | { ok: false; message: string; stale?: false }
+  | { ok: false; message: string; stale: true; hub: HubData };
 
 async function persistCleanerHubMutation(
   cleanerId: string,
@@ -52,19 +54,9 @@ async function persistAvailabilityWeek(
   cleanerId: string,
   weekStart: string,
   windows: AvailabilityWindow[],
-): Promise<
-  | {
-      ok: true;
-      hub: HubData;
-      notifyHub: HubData;
-      remove?: HubPatchRemove;
-      revision: number;
-      message?: string;
-      notificationKind: "submitted" | "updated";
-    }
-  | { ok: false; message: string }
-> {
-  return persistAvailabilityWeekMutation(cleanerId, weekStart, windows);
+  expectedWeekSignature?: string,
+) {
+  return persistAvailabilityWeekMutation(cleanerId, weekStart, windows, expectedWeekSignature);
 }
 
 async function notifyAvailabilitySubmitted(
@@ -132,13 +124,22 @@ export async function declineInvitationAction(assignmentId: string): Promise<Cle
 export async function submitAvailabilityAction(
   weekStart: string,
   windows: AvailabilityWindow[],
+  expectedWeekSignature?: string,
 ): Promise<AvailabilityMutationResult> {
   try {
     const session = await requireCleaner();
     if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const saved = await persistAvailabilityWeek(session.cleanerId, weekStart, windows);
-    if (!saved.ok) return saved;
+    const saved = await persistAvailabilityWeek(
+      session.cleanerId,
+      weekStart,
+      windows,
+      expectedWeekSignature,
+    );
+    if (!saved.ok) {
+      if (saved.stale) return { ok: false, stale: true, message: saved.message, data: saved.hub };
+      return saved;
+    }
     await notifyAvailabilitySubmitted(saved.notifyHub, session.cleanerId, weekStart, saved.notificationKind);
     return {
       ok: true,
@@ -159,12 +160,16 @@ export async function submitCleanerAvailabilityAdminAction(
   cleanerId: string,
   weekStart: string,
   windows: AvailabilityWindow[],
+  expectedWeekSignature?: string,
 ): Promise<AdminAvailabilityMutationResult> {
   try {
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const saved = await persistAvailabilityWeek(cleanerId, weekStart, windows);
-    if (!saved.ok) return saved;
+    const saved = await persistAvailabilityWeek(cleanerId, weekStart, windows, expectedWeekSignature);
+    if (!saved.ok) {
+      if (saved.stale) return { ok: false, stale: true, message: saved.message, hub: saved.hub };
+      return saved;
+    }
     await notifyAvailabilitySubmitted(saved.notifyHub, cleanerId, weekStart, saved.notificationKind);
     return { ok: true, message: saved.message, hub: saved.hub, remove: saved.remove, revision: saved.revision };
   } catch (error) {
