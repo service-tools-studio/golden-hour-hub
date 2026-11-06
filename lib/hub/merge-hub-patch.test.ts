@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment } from "../domain/types.ts";
 import { emptyHub } from "../mock/seed.ts";
-import { hubMutationPatch, mergeAvailabilityWeekIntoHub, mergeHubPatchIntoHub } from "./merge-hub-patch.ts";
+import {
+  hubAvailabilityWeekPatch,
+  hubMutationPatch,
+  mergeAvailabilityWeekIntoHub,
+  mergeHubPatchIntoHub,
+} from "./merge-hub-patch.ts";
 
 function asJob(job: Pick<Job, "jobId"> & Partial<Job>): Job {
   return job as unknown as Job;
@@ -66,6 +71,66 @@ describe("mergeHubPatchIntoHub", () => {
     assert.ok(!merged.availability.some((window) => window.availabilityId === "ada-old"));
     assert.equal(merged.availability.find((window) => window.cleanerId === "bob")?.availabilityId, "bob-keep");
     assert.equal(merged.submissions.find((row) => row.cleanerId === "ada")?.submittedAt, "new");
+  });
+
+  it("keeps unchanged days and drops duplicate all-day rows when replacing a saved week", () => {
+    const monday = {
+      availabilityId: "mon-1",
+      cleanerId: "ada",
+      date: "2026-11-02",
+      start: "07:00",
+      end: "24:00",
+    } as AvailabilityWindow;
+    const tuesdaySaved = {
+      availabilityId: "tue-saved",
+      cleanerId: "ada",
+      date: "2026-11-03",
+      start: "07:00",
+      end: "24:00",
+    } as AvailabilityWindow;
+    const current = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        monday,
+        {
+          availabilityId: "tue-old-a",
+          cleanerId: "ada",
+          date: "2026-11-03",
+          start: "07:00",
+          end: "24:00",
+        },
+        {
+          availabilityId: "tue-old-b",
+          cleanerId: "ada",
+          date: "2026-11-03",
+          start: "07:00",
+          end: "24:00",
+        },
+        tuesdaySaved,
+        {
+          availabilityId: "bob-keep",
+          cleanerId: "bob",
+          date: "2026-11-03",
+          start: "09:00",
+          end: "17:00",
+        },
+      ] as AvailabilityWindow[],
+    };
+    const after = {
+      ...emptyHub("2026-11-05"),
+      availability: [monday, tuesdaySaved],
+    };
+    const { patch, remove } = hubAvailabilityWeekPatch(current, after, "ada", "2026-11-02", "2026-11-08");
+    const merged = mergeAvailabilityWeekIntoHub(current, patch, "ada", "2026-11-02", "2026-11-08", remove);
+    assert.deepEqual(
+      merged.availability
+        .filter((window) => window.cleanerId === "ada")
+        .map((window) => window.availabilityId)
+        .sort(),
+      ["mon-1", "tue-saved"],
+    );
+    assert.equal(merged.availability.filter((window) => window.date === "2026-11-03" && window.cleanerId === "ada").length, 1);
+    assert.equal(merged.availability.find((window) => window.cleanerId === "bob")?.availabilityId, "bob-keep");
   });
 
   it("applies deletes without replacing the rest of the hub", () => {

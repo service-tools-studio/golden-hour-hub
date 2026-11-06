@@ -198,24 +198,70 @@ export function mergeHubPatchIntoHub(
   };
 }
 
-/** Merge one cleaner's saved week without dropping other cleaners' availability. */
+function inAvailabilityWeek(
+  cleanerId: string,
+  weekStart: string,
+  weekEnd: string,
+  window: HubData["availability"][number],
+): boolean {
+  return window.cleanerId === cleanerId && window.date >= weekStart && window.date <= weekEnd;
+}
+
+/**
+ * Patch for one saved availability week: the full week of windows (not only changed rows)
+ * plus other hub diffs. Callers must merge with {@link mergeAvailabilityWeekIntoHub}.
+ */
+export function hubAvailabilityWeekPatch(
+  before: HubData,
+  after: HubData,
+  cleanerId: string,
+  weekStart: string,
+  weekEnd: string,
+): { patch: HubData; remove?: HubPatchRemove } {
+  const { patch, remove } = hubMutationPatch(before, after);
+  const weekWindows = after.availability.filter((window) =>
+    inAvailabilityWeek(cleanerId, weekStart, weekEnd, window),
+  );
+  const weekSubmissions = after.submissions.filter(
+    (row) => row.cleanerId === cleanerId && row.weekStart === weekStart,
+  );
+  const beforeWeekIds = before.availability
+    .filter((window) => inAvailabilityWeek(cleanerId, weekStart, weekEnd, window))
+    .map((window) => window.availabilityId);
+  return {
+    patch: {
+      ...patch,
+      availability: weekWindows,
+      submissions: weekSubmissions.length > 0 ? weekSubmissions : patch.submissions,
+    },
+    remove: compactRemove({
+      ...remove,
+      availabilityIds: [...new Set([...(remove?.availabilityIds ?? []), ...beforeWeekIds])],
+    }),
+  };
+}
+
+/** Replace one cleaner's week in the client hub without dropping other cleaners' availability. */
 export function mergeAvailabilityWeekIntoHub(
   current: HubData,
   patch: HubData,
   cleanerId: string,
   weekStart: string,
   weekEnd: string,
+  remove?: HubPatchRemove,
 ): HubData {
+  const { availabilityIds: _weekIds, ...otherRemove } = remove ?? {};
   return mergeHubPatchIntoHub(
     {
       ...current,
       availability: current.availability.filter(
-        (window) => !(window.cleanerId === cleanerId && window.date >= weekStart && window.date <= weekEnd),
+        (window) => !inAvailabilityWeek(cleanerId, weekStart, weekEnd, window),
       ),
       submissions: current.submissions.filter(
         (row) => !(row.cleanerId === cleanerId && row.weekStart === weekStart),
       ),
     },
     patch,
+    { remove: compactRemove(otherRemove) },
   );
 }

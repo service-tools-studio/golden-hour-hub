@@ -784,13 +784,18 @@ export function HubProvider({
     return { ok: true };
   }
 
-  function applyStaleAvailabilityWeek(cleanerId: string, weekStart: string, patch: HubData) {
+  function applyAvailabilityWeekPatch(
+    cleanerId: string,
+    weekStart: string,
+    patch: HubData,
+    remove?: HubPatchRemove,
+  ) {
     skipPersistForRemoteSyncRef.current = true;
     setState((prev) => {
       if (!prev) return prev;
       return {
         ...withCurrentHorizon(
-          mergeAvailabilityWeekIntoHub(prev, patch, cleanerId, weekStart, addDays(weekStart, 6)),
+          mergeAvailabilityWeekIntoHub(prev, patch, cleanerId, weekStart, addDays(weekStart, 6), remove),
         ),
         role: prev.role,
         cleanerId: prev.cleanerId,
@@ -814,12 +819,12 @@ export function HubProvider({
         expectedWeekSignature,
       );
       if (!remote.ok) {
-        if (remote.stale) applyStaleAvailabilityWeek(cleanerId, weekStart, remote.hub);
+        if (remote.stale) applyAvailabilityWeekPatch(cleanerId, weekStart, remote.hub);
         return remote;
       }
       skipPersistForRemoteSyncRef.current = true;
       hubRevisionRef.current = remote.revision;
-      applyAdminHubPatch(remote.hub, remote.remove);
+      applyAvailabilityWeekPatch(cleanerId, weekStart, remote.hub, remote.remove);
       if (!options?.quiet) setToast(toastMessage);
       return { ok: true, message: remote.message };
     }
@@ -829,12 +834,12 @@ export function HubProvider({
       }
       const remote = await submitAvailabilityAction(weekStart, windows, expectedWeekSignature);
       if (!remote.ok) {
-        if (remote.stale) applyStaleAvailabilityWeek(cleanerId, weekStart, remote.data);
+        if (remote.stale) applyAvailabilityWeekPatch(cleanerId, weekStart, remote.data);
         return remote;
       }
       skipPersistForRemoteSyncRef.current = true;
       hubRevisionRef.current = remote.revision;
-      applyAdminHubPatch(remote.data, remote.remove);
+      applyAvailabilityWeekPatch(cleanerId, weekStart, remote.data, remote.remove);
       if (!options?.quiet) setToast(toastMessage);
       return { ok: true, message: remote.message };
     }
@@ -843,7 +848,7 @@ export function HubProvider({
       expectedWeekSignature !== undefined &&
       signedAvailabilityWeek(snapshot.availability, cleanerId, weekStart) !== expectedWeekSignature
     ) {
-      applyStaleAvailabilityWeek(cleanerId, weekStart, snapshot);
+      applyAvailabilityWeekPatch(cleanerId, weekStart, snapshot);
       return { ok: false, stale: true, message: STALE_AVAILABILITY_WEEK_MESSAGE };
     }
     const preview = submitAvailabilityOnHub(snapshot, cleanerId, weekStart, windows);
