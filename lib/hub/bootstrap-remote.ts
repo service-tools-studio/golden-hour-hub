@@ -1,10 +1,11 @@
 import "server-only";
 
 import { unstable_noStore as noStore } from "next/cache";
-import { AuthError, requireSession } from "@/lib/auth/guards";
+import { AuthError } from "@/lib/auth/guards";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { cognitoConfigured, previewAuthEnabled } from "@/lib/auth/config";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
+import { getServerSession, type AuthSession } from "@/lib/auth/session";
 import { readHubChangeManifest } from "@/lib/data/hub-change-manifest";
 import { loadAdminHubRemainderSlice, loadAdminHubSlices, loadCleanerHubSlices, loadHubPartitions } from "@/lib/data/load-admin-hub";
 import { dynamoConfigured } from "@/lib/data/repository";
@@ -32,7 +33,7 @@ type RemoteAccess =
   | { source: "dynamodb"; role: "ADMIN" }
   | { source: "dynamodb"; role: "CLEANER"; cleanerId: string };
 
-async function remoteHubAccess(): Promise<RemoteAccess> {
+async function remoteHubAccess(sessionOverride?: AuthSession | null): Promise<RemoteAccess> {
   if (previewAuthEnabled()) {
     if (dynamoConfigured()) return { source: "dynamodb", role: "ADMIN" };
     return { source: "preview" };
@@ -41,7 +42,8 @@ async function remoteHubAccess(): Promise<RemoteAccess> {
     return { ok: false, message: "Sign-in is not configured." };
   }
   try {
-    const session = await requireSession();
+    const session = sessionOverride !== undefined ? sessionOverride : await getServerSession();
+    if (!session) return { ok: false, message: "Sign in required." };
     if (!dynamoConfigured()) {
       if (previewAuthAllowed()) return { source: "preview" };
       return { ok: false, message: "Hub database is not configured." };
@@ -73,11 +75,11 @@ async function loadHubForAccess(
   return hubDataForCleaner(data, access.cleanerId);
 }
 
-/** Fresh hub read for bootstrap and background sync (never cached). */
-export async function loadRemoteHub(): Promise<BootstrapResult> {
+/** Fresh hub read for bootstrap and background sync (never cached). Safe in Server Components (does not set cookies). */
+export async function loadRemoteHub(session?: AuthSession | null): Promise<BootstrapResult> {
   noStore();
   try {
-    const access = await remoteHubAccess();
+    const access = await remoteHubAccess(session);
     if ("ok" in access) return access;
     if (access.source === "preview") return { source: "preview" };
     const [data, { revision }] = await Promise.all([

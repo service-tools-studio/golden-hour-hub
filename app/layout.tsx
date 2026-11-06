@@ -23,7 +23,7 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const session = await getServerSession();
   const initialAuth = session ? { role: session.role, cleanerId: session.cleanerId } : null;
-  const initialBootstrap = session ? await loadRemoteHub() : null;
+  const initialBootstrap = session ? await loadRemoteHub(session) : null;
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full">
