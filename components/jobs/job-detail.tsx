@@ -4,6 +4,7 @@ import Link from "next/link";
 import { NavigatingLink } from "@/components/navigating-link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import { useHub } from "@/components/hub-provider";
 import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
 import { AssignmentSmsLogList } from "@/components/admin/assignment-sms-log-list";
@@ -696,7 +697,7 @@ function RemoveCleaner({
 
   async function remove() {
     if (removalBusy) return;
-    setRemovingCleanerId(cleanerId);
+    flushSync(() => setRemovingCleanerId(cleanerId));
     try {
       const job = hub.jobs.find((item) => item.jobId === jobId);
       const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);

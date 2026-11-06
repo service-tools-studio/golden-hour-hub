@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { CleanerSearchField, searchCleaners } from "@/components/admin/cleaner-search";
 import { useHub } from "@/components/hub-provider";
@@ -93,7 +94,7 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
 
   async function add(cleanerId: string) {
     if (busy) return;
-    setAddingCleanerId(cleanerId);
+    flushSync(() => setAddingCleanerId(cleanerId));
     try {
       const result = await hub.addJobCleaner(jobId, cleanerId);
       if (!result.ok) {
