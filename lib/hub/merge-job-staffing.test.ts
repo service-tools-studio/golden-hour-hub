@@ -8,22 +8,22 @@ describe("mergeJobStaffingIntoHub", () => {
     const current = {
       ...emptyHub("2026-11-05"),
       jobs: [
-        { jobId: "job-1", draftCleanerIds: [] } as (typeof emptyHub)["jobs"][number],
-        { jobId: "job-2", draftCleanerIds: ["ada"] } as (typeof emptyHub)["jobs"][number],
+        { jobId: "job-1", draftCleanerIds: [] } as ReturnType<typeof emptyHub>["jobs"][number],
+        { jobId: "job-2", draftCleanerIds: ["ada"] } as ReturnType<typeof emptyHub>["jobs"][number],
       ],
       assignments: [
-        { assignmentId: "a-1", jobId: "job-1", cleanerId: "bob", status: "INVITED" } as (typeof emptyHub)["assignments"][number],
-        { assignmentId: "a-2", jobId: "job-2", cleanerId: "ada", status: "INVITED" } as (typeof emptyHub)["assignments"][number],
+        { assignmentId: "a-1", jobId: "job-1", cleanerId: "bob", status: "INVITED" } as ReturnType<typeof emptyHub>["assignments"][number],
+        { assignmentId: "a-2", jobId: "job-2", cleanerId: "ada", status: "INVITED" } as ReturnType<typeof emptyHub>["assignments"][number],
       ],
-      cleaners: [{ cleanerId: "ada" } as (typeof emptyHub)["cleaners"][number]],
+      cleaners: [{ cleanerId: "ada" } as ReturnType<typeof emptyHub>["cleaners"][number]],
     };
     const patch = {
       ...emptyHub("2026-11-05"),
-      jobs: [{ jobId: "job-2", draftCleanerIds: ["ada", "bob"] } as (typeof emptyHub)["jobs"][number]],
+      jobs: [{ jobId: "job-2", draftCleanerIds: ["ada", "bob"] } as ReturnType<typeof emptyHub>["jobs"][number]],
       assignments: [
-        { assignmentId: "a-2", jobId: "job-2", cleanerId: "ada", status: "CANCELED" } as (typeof emptyHub)["assignments"][number],
+        { assignmentId: "a-2", jobId: "job-2", cleanerId: "ada", status: "CANCELED" } as ReturnType<typeof emptyHub>["assignments"][number],
       ],
-      cleaners: [{ cleanerId: "bob", firstName: "Bob" } as (typeof emptyHub)["cleaners"][number]],
+      cleaners: [{ cleanerId: "bob", firstName: "Bob" } as ReturnType<typeof emptyHub>["cleaners"][number]],
     };
 
     const merged = mergeJobStaffingIntoHub(current, patch);

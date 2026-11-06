@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
     if (plan.action === "opt_in" || plan.action === "opt_out") {
       const next = mergeInboundCleanerUpdates(hub, plan.cleaners);
-      await saveHub(next);
+      await persistHubDataDiff(hub, next);
       console.info(`[twilio:inbound] ${plan.action} from=${from} cleaners=${plan.cleaners.map((c) => c.cleanerId).join(",")}`);
     }
 
