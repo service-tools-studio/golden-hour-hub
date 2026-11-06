@@ -185,6 +185,37 @@ export type SaveHubRevisionResult =
   | { ok: true; revision: number }
   | { ok: false; kind: "conflict"; revision: number; hub: HubData };
 
+export type HubItemChangesResult = { ok: true; revision: number } | { ok: false; kind: "conflict"; revision: number };
+
+/** Targeted puts/deletes with revision check (does not scan/delete unrelated hub rows). */
+export async function writeHubItemChanges(
+  plan: { puts: DynamoItem[]; deletes: Array<{ pk: string; sk: string }> },
+  expectedRevision: number,
+): Promise<HubItemChangesResult> {
+  const current = await readHubRevision();
+  if (current !== expectedRevision) {
+    return { ok: false, kind: "conflict", revision: current };
+  }
+
+  const putsByKey = new Map<string, DynamoItem>();
+  for (const item of plan.puts) {
+    putsByKey.set(itemKey(item), item);
+  }
+  const putKeys = new Set(putsByKey.keys());
+  const deletes = plan.deletes.filter((key) => !putKeys.has(itemKey(key)));
+
+  const requests: Array<{ PutRequest: { Item: DynamoItem } } | { DeleteRequest: { Key: { pk: string; sk: string } } }> =
+    [
+      ...deletes.map((key) => ({ DeleteRequest: { Key: key } })),
+      ...[...putsByKey.values()].map((item) => ({ PutRequest: { Item: item } })),
+    ];
+  if (requests.length > 0) {
+    await writeBatches(requests);
+  }
+  const revision = await bumpHubRevision();
+  return { ok: true, revision };
+}
+
 /** Save only when hub revision still matches what the caller loaded. */
 export async function saveHubIfRevision(data: HubData, expectedRevision: number): Promise<SaveHubRevisionResult> {
   const current = await readHubRevision();

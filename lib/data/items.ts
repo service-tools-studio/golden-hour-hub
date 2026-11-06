@@ -93,6 +93,10 @@ function cleanerItem(cleaner: CleanerProfile): DynamoItem {
 }
 
 function availabilityItem(window: AvailabilityWindow): DynamoItem {
+  return availabilityToItem(window);
+}
+
+export function availabilityToItem(window: AvailabilityWindow): DynamoItem {
   return {
     pk: `CLEANER#${window.cleanerId}`,
     sk: `AVAIL#${window.date}#${window.start}#${window.availabilityId}`,
@@ -104,6 +108,10 @@ function availabilityItem(window: AvailabilityWindow): DynamoItem {
 }
 
 function submissionItem(submission: AvailabilitySubmission): DynamoItem {
+  return submissionToItem(submission);
+}
+
+export function submissionToItem(submission: AvailabilitySubmission): DynamoItem {
   return {
     pk: `CLEANER#${submission.cleanerId}`,
     sk: `SUBMISSION#${submission.weekStart}`,
@@ -224,6 +232,10 @@ function occurItem(job: Job): DynamoItem {
     seriesId: job.seriesId,
     date: job.date,
   };
+}
+
+export function assignmentToItem(assignment: JobAssignment): DynamoItem {
+  return assignmentItem(assignment);
 }
 
 function assignmentItem(assignment: JobAssignment): DynamoItem {

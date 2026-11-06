@@ -73,12 +73,7 @@ export function mergeHubPersistAttempt(server: HubData, localAttempt: HubData): 
       (a) => a.updatedAt,
     ),
     availability: mergePreferLocalOnTie(server.availability, localAttempt.availability, (w) => w.availabilityId),
-    submissions: mergeByUpdatedAt(
-      server.submissions,
-      localAttempt.submissions,
-      (s) => s.submissionId,
-      (s) => s.updatedAt,
-    ),
+    submissions: mergePreferLocalOnTie(server.submissions, localAttempt.submissions, (s) => s.submissionId),
     contractorQuestionnaireSubmissions: mergeQuestionnaireSubmissions(
       server.contractorQuestionnaireSubmissions,
       localAttempt.contractorQuestionnaireSubmissions,

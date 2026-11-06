@@ -76,4 +76,23 @@ describe("mergeHubPersistAttempt", () => {
     const merged = mergeHubPersistAttempt(server, local);
     assert.equal(merged.jobs[0]?.updatedAt, "2026-03-01T13:00:00.000Z");
   });
+
+  it("keeps server availability when the admin persist snapshot is stale", () => {
+    const server = baseHub({
+      availability: [
+        {
+          availabilityId: "win-1",
+          cleanerId: "ada",
+          date: "2026-03-10",
+          start: "09:00",
+          end: "17:00",
+        },
+      ],
+    });
+    const local = baseHub({ jobs: [job("job-new", "2026-03-01T11:00:00.000Z")] });
+    const merged = mergeHubPersistAttempt(server, local);
+    assert.equal(merged.availability.length, 1);
+    assert.equal(merged.availability[0]?.availabilityId, "win-1");
+    assert.ok(merged.jobs.some((item) => item.jobId === "job-new"));
+  });
 });

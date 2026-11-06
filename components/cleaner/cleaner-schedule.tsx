@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "@/lib/domain/scheduling";
-import { eachDate, editableAvailabilityHorizonEnd, formatTimeLabel } from "@/lib/domain/time";
+import { eachDate, editableAvailabilityHorizonEnd, editableAvailabilityWeeks, formatTimeLabel } from "@/lib/domain/time";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { cleanerServiceLabel, customerFirstNameForCleaner, formatArrival, formatLongDate } from "@/lib/format";
 
@@ -23,7 +23,6 @@ function ScheduleDayCard({
   assignments: JobAssignment[];
   jobsById: Map<string, Job>;
 }) {
-  if (assignments.length === 0 && open.length === 0) return null;
   return (
     <Card>
       <p className="text-base font-semibold">{formatLongDate(date)}</p>
@@ -53,6 +52,9 @@ function ScheduleDayCard({
             </Link>
           );
         })}
+        {open.length === 0 && assignments.length === 0 ? (
+          <p className="text-sm text-ink/45">Nothing scheduled</p>
+        ) : null}
       </div>
     </Card>
   );
@@ -76,8 +78,9 @@ export function CleanerSchedule() {
     confirmedForOpenTime.map(toAssignmentSchedule),
   );
 
+  const horizonStart = editableAvailabilityWeeks(hub.today)[0]?.weekStart ?? hub.today;
   const horizonEnd = editableAvailabilityHorizonEnd(hub.today);
-  const horizonDays = eachDate(hub.today, horizonEnd);
+  const horizonDays = eachDate(horizonStart, horizonEnd);
   const beyondHorizonDates = [
     ...new Set(committed.filter((assignment) => assignment.serviceDate > horizonEnd).map((item) => item.serviceDate)),
   ].sort();

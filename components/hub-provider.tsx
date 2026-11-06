@@ -7,6 +7,7 @@ import {
   acceptInvitationAction,
   declineInvitationAction,
   submitAvailabilityAction,
+  submitCleanerAvailabilityAdminAction,
 } from "@/app/actions/cleaner-hub";
 import {
   saveContractorQuestionnaireDraftAction,
@@ -18,81 +19,89 @@ import {
   queueSchedulingSmsDelivery,
   type ManualCleanerTextPrompt as ManualCleanerTextOffer,
 } from "@/lib/cleaner/deliver-scheduling-sms";
+import {
+  addJobCleanerAction,
+  deleteCustomerAction,
+  deleteJobAction,
+  deleteSeriesAction,
+  markAssignmentNotifiedAction,
+  moveAssignmentTimeAction,
+  removeJobCleanerAction,
+  saveCleanerDetailsAction,
+  saveCustomerAction,
+  saveSeriesAction,
+  staffCleanerAction,
+  undoDeleteCustomerAction,
+  undoDeleteJobAction,
+  updateCleanerAdminAction,
+  updateJobAction,
+  updateVisitAction,
+  type AdminHubActionResult,
+} from "@/app/actions/admin-hub";
 import { createJobAction } from "@/app/actions/admin-jobs";
 import { completeAssignmentAction } from "@/app/actions/admin-assignments";
-import { bootstrapHub, persistAdminHub } from "@/app/actions/hub-data";
+import { bootstrapHub } from "@/app/actions/hub-data";
+import {
+  addJobCleanerOnHub,
+  deleteCustomerOnHub,
+  deleteJobOnHub,
+  deleteSeriesOnHub,
+  markAssignmentNotifiedOnHub,
+  moveAssignmentTimeOnHub,
+  removeJobCleanerOnHub,
+  saveCleanerDetailsOnHub,
+  saveCustomerOnHub,
+  saveSeriesOnHub,
+  staffCleanerOnHub,
+  undoDeleteCustomerOnHub,
+  undoDeleteJobOnHub,
+  updateJobOnHub,
+  updateVisitOnHub,
+  type AdminHubApplierResult,
+} from "@/lib/hub/admin-hub-appliers";
+import type {
+  CompleteAssignmentInput,
+  CreateJobInput,
+  DeletedCustomerSnapshot,
+  DeletedJobSnapshot,
+  SaveCleanerDetailsInput,
+  SaveSeriesInput,
+  StaffCleanerInput,
+  UpdateJobInput,
+  UpdateVisitInput,
+} from "@/lib/hub/admin-hub-types";
+import { updateCleanerAdminOnHub, type UpdateCleanerAdminInput } from "@/lib/hub/admin-mutations";
 import { completeAssignmentOnHub } from "@/lib/hub/complete-assignment-mutations";
 import { createJobOnHub } from "@/lib/hub/create-job-mutations";
-import { mergeHubPersistAttempt } from "@/lib/hub/merge-hub-persist";
 import { purgeAssignmentSmsLogsOnCleanerRemoval } from "@/app/actions/assignment-sms-log-cleanup";
-import { updateCleanerAdminOnHub } from "@/lib/hub/admin-mutations";
 import { submitAvailabilityOnHub } from "@/lib/hub/cleaner-mutations";
 import { saveContractorQuestionnaireOnHub } from "@/lib/hub/contractor-questionnaire-mutations";
 import type { ContractorQuestionnaireInput } from "@/lib/domain/contractor-questionnaire";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 import { SIGNED_OUT_STORAGE_KEY } from "@/lib/auth/signed-out-guard";
-import { confirmedCompensationCents } from "@/lib/domain/compensation";
-import { deriveCrewSettings, validateProposedCrewSize } from "@/lib/domain/cleaners";
+import type { CustomerInput } from "@/lib/domain/customers";
 import {
-  findCustomerByExactName,
-  snapshotVisit,
-  validateCustomerInput,
-  type CustomerInput,
-} from "@/lib/domain/customers";
-import {
-  expireJobInvitesIfHeadcountMet,
   expireRemainingInvitationsWhenFilled,
   revalidatePendingAssignments,
-  clearStaleNotScheduledAttention,
   validateInvitationAcceptance,
   withAssignmentConfirmed,
   withAssignmentDeclined,
 } from "@/lib/domain/invitations";
-import {
-  assignmentScheduleNoticeInSync,
-  normalizeArrivalWindow,
-  validateArrivalWindow,
-  validateOptionalVisitArrival,
-} from "@/lib/domain/arrival";
-import {
-  dateMatchesRule,
-  effectiveWeekRecurrence,
-  mergeRecurringHorizon,
-  planOccurrenceStaffing,
-  removeStaleSeriesOccurrences,
-  seriesScheduleChanged,
-  validateRecurrenceRule,
-} from "@/lib/domain/recurrence";
-import {
-  availabilityCoversBlockedRange,
-  calculateBlockedRange,
-  calculateConfirmedHeadcount,
-  CLEANING_DELETE_BLOCKED_MESSAGE,
-  jobHasCleanerBlockingDeletion,
-  applyScheduleConflictWarning,
-  detectConfirmedAssignmentConflict,
-  isConfirmedScheduleConflictReason,
-  reconcileScheduleConflictWarnings,
-} from "@/lib/domain/scheduling";
-import { addDays, dayOfWeek, isValidDate, isValidLocalTime, minutesFromTime, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
+import { mergeRecurringHorizon } from "@/lib/domain/recurrence";
+import { reconcileScheduleConflictWarnings } from "@/lib/domain/scheduling";
+import { addDays, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
 import { emptyHub, type HubData } from "@/lib/mock/seed";
-import type {
-  AppRole,
-  AvailabilityWindow,
-  CleanerProfile,
-  CleanerStatus,
-  Customer,
-  AssignmentNotice,
-  Job,
-  JobAssignment,
-  PayType,
-  Property,
-  RecurrenceRule,
-  RecurringSeries,
-  SeriesStatus,
-  ServiceType,
-} from "@/lib/domain/types";
+import type { AppRole, AvailabilityWindow } from "@/lib/domain/types";
+
+export type {
+  CompleteAssignmentInput,
+  CreateJobInput,
+  SaveCleanerDetailsInput,
+  StaffCleanerInput,
+  UpdateJobInput,
+  UpdateVisitInput,
+} from "@/lib/hub/admin-hub-types";
 
 const STORAGE_KEY = "ghh-preview-v2";
 const SESSION_KEY = "ghh-session-v2";
@@ -108,76 +117,6 @@ type ActionResult =
   | { ok: true; message?: string; customerId?: string; jobId?: string; assignmentId?: string }
   | { ok: false; message: string };
 type AsyncActionResult = Promise<ActionResult>;
-
-export type CreateJobInput = {
-  date: string;
-  customerId: string;
-  propertyId: string;
-  serviceType: ServiceType;
-  arrivalWindowStart?: string;
-  arrivalWindowEnd?: string;
-  headcountNeeded: number;
-  expectedDurationMinutes: number;
-  cleanerIds: string[];
-  specialInstructions: string;
-  pricePerVisitCents?: number;
-  recurringSchedule?: { interval: 1 | 2 | 4 };
-};
-
-export type SaveCleanerDetailsInput = {
-  jobId: string;
-  cleanerId: string;
-  propertyId: string;
-  arrivalWindowStart?: string;
-  arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
-  proposedCrewSize: number;
-  payType: PayType;
-  payPerPersonCents: number;
-  specialInstructions: string;
-};
-
-export type StaffCleanerInput = {
-  jobId: string;
-  cleanerId: string;
-  mode: "INVITE" | "DIRECT";
-};
-
-export type CompleteAssignmentInput = SaveCleanerDetailsInput & {
-  assignmentId?: string;
-  mode: "DRAFT" | "INVITE" | "DIRECT";
-};
-
-export type UpdateVisitInput = {
-  jobId: string;
-  date: string;
-  customerId: string;
-  propertyId: string;
-  serviceType: ServiceType;
-  arrivalWindowStart?: string;
-  arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
-  headcountNeeded: number;
-  specialInstructions: string;
-  cleanerIds: string[];
-  cleanerArrivals?: { cleanerId: string; arrivalWindowStart: string; arrivalWindowEnd: string }[];
-  pricePerVisitCents?: number;
-  recurringSchedule?: { interval: 1 | 2 | 4 };
-};
-
-export type UpdateJobInput = {
-  jobId: string;
-  assignmentId: string;
-  propertyId: string;
-  arrivalWindowStart: string;
-  arrivalWindowEnd: string;
-  expectedDurationMinutes: number;
-  headcountNeeded: number;
-  proposedCrewSize: number;
-  payType: PayType;
-  payPerPersonCents: number;
-  specialInstructions: string;
-};
 
 type HubContextValue = HubState & {
   ready: boolean;
@@ -215,39 +154,22 @@ type HubContextValue = HubState & {
     | { ok: false; message: string; fieldErrors?: Record<string, string> }
   >;
   mergeAdminHub: (remote: HubData) => void;
-  saveCustomer: (input: CustomerInput, customerId?: string) => ActionResult;
-  deleteCustomer: (customerId: string) => ActionResult;
-  saveSeries: (
-    seriesId: string,
-    input: {
-      propertyId: string;
-      recurrence: RecurrenceRule;
-      defaultHeadcountNeeded: number;
-      defaultPricePerVisitCents?: number;
-      status: SeriesStatus;
-    },
-  ) => ActionResult;
-  updateCleanerAdmin: (
-    cleanerId: string,
-    input: {
-      typicalHelperCount: number;
-      maxHelperCount: number;
-      typicalHourlyRateCents: number;
-      status: CleanerStatus;
-    },
-  ) => ActionResult;
+  saveCustomer: (input: CustomerInput, customerId?: string) => AsyncActionResult;
+  deleteCustomer: (customerId: string) => AsyncActionResult;
+  saveSeries: (seriesId: string, input: SaveSeriesInput) => AsyncActionResult;
+  updateCleanerAdmin: (cleanerId: string, input: UpdateCleanerAdminInput) => AsyncActionResult;
   createJob: (input: CreateJobInput) => AsyncActionResult;
-  saveCleanerDetails: (input: SaveCleanerDetailsInput) => ActionResult;
-  staffCleaner: (input: StaffCleanerInput) => ActionResult;
+  saveCleanerDetails: (input: SaveCleanerDetailsInput) => AsyncActionResult;
+  staffCleaner: (input: StaffCleanerInput) => AsyncActionResult;
   completeAssignment: (input: CompleteAssignmentInput) => AsyncActionResult;
-  addJobCleaner: (jobId: string, cleanerId: string) => ActionResult;
-  removeJobCleaner: (jobId: string, cleanerId: string) => ActionResult;
-  updateVisit: (input: UpdateVisitInput) => ActionResult;
-  updateJob: (input: UpdateJobInput) => ActionResult;
-  moveAssignmentTime: (assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string) => ActionResult;
-  markAssignmentNotified: (assignmentId: string) => ActionResult;
-  deleteJob: (jobId: string) => ActionResult;
-  deleteSeries: (seriesId: string) => ActionResult;
+  addJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
+  removeJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
+  updateVisit: (input: UpdateVisitInput) => AsyncActionResult;
+  updateJob: (input: UpdateJobInput) => AsyncActionResult;
+  moveAssignmentTime: (assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string) => AsyncActionResult;
+  markAssignmentNotified: (assignmentId: string) => AsyncActionResult;
+  deleteJob: (jobId: string) => AsyncActionResult;
+  deleteSeries: (seriesId: string) => AsyncActionResult;
   /** Extend recurring job occurrences through the current horizon (safe to call often). */
   refreshRecurringHorizon: () => void;
   applyCleanerSmsConsent: (input: {
@@ -259,76 +181,51 @@ type HubContextValue = HubState & {
     smsConsentDisclosureVersion?: string;
     smsConsentMethod?: string;
   }) => void;
-  undoDeleteJob: () => ActionResult;
-  undoDeleteCustomer: () => ActionResult;
-};
-
-type DeletedJobSnapshot = {
-  job: Job;
-  assignments: JobAssignment[];
-  seriesSkippedDatesBefore?: { seriesId: string; skippedDates: string[] };
-};
-
-type DeletedCustomerSnapshot = {
-  customer: Customer;
-  properties: Property[];
+  undoDeleteJob: () => AsyncActionResult;
+  undoDeleteCustomer: () => AsyncActionResult;
 };
 
 const HubContext = createContext<HubContextValue | null>(null);
 
-function validatePricePerVisitCents(cents?: number): ActionResult | null {
-  if (cents === undefined) return null;
-  if (!Number.isInteger(cents) || cents < 0) {
-    return { ok: false, message: "Enter a valid price per visit." };
+function deletedCustomerSnapshotFromHub(hub: HubData, customerId: string): DeletedCustomerSnapshot | null {
+  const customer = hub.customers.find((item) => item.customerId === customerId);
+  if (!customer) return null;
+  return {
+    customer,
+    properties: hub.properties.filter((item) => item.customerId === customerId),
+  };
+}
+
+function deletedJobSnapshotFromHub(hub: HubData, jobId: string): DeletedJobSnapshot | null {
+  const job = hub.jobs.find((item) => item.jobId === jobId);
+  if (!job) return null;
+  const snapshot: DeletedJobSnapshot = {
+    job,
+    assignments: hub.assignments.filter((item) => item.jobId === jobId),
+  };
+  if (job.seriesId) {
+    const series = hub.series.find((item) => item.seriesId === job.seriesId);
+    if (series) {
+      snapshot.seriesSkippedDatesBefore = {
+        seriesId: series.seriesId,
+        skippedDates: [...(series.skippedDates ?? [])],
+      };
+    }
   }
-  return null;
+  return snapshot;
 }
 
-function assignmentNotice(input: {
-  arrivalWindowStart?: string;
-  arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
-  proposedCrewSize: number;
-  payType: PayType;
-  payPerPersonCents: number;
-}): AssignmentNotice {
-  return {
-    arrivalWindowStart: input.arrivalWindowStart,
-    arrivalWindowEnd: input.arrivalWindowEnd,
-    expectedDurationMinutes: input.expectedDurationMinutes,
-    proposedCrewSize: input.proposedCrewSize,
-    payType: input.payType,
-    payPerPersonCents: input.payPerPersonCents,
-  };
-}
-
-function withEarliestArrival(job: Job, _assignments: JobAssignment[]): Job {
-  return job;
-}
-
-function jobWithCleaningArrival(job: Job, arrivalWindowStart: string, arrivalWindowEnd: string, now: string): Job {
-  return {
-    ...job,
-    arrivalWindowStart,
-    arrivalWindowEnd,
-    updatedAt: now,
-    updatedBy: "kelsey",
-  };
-}
-
-function syncJobAssignmentsToCleaningArrival(
-  assignments: JobAssignment[],
-  jobId: string,
-  arrivalWindowStart: string,
-  arrivalWindowEnd: string,
-  now: string,
-): JobAssignment[] {
-  return assignments.map((item) => {
-    if (item.jobId !== jobId) return item;
-    if (item.status === "CANCELED" || item.status === "EXPIRED_JOB_FILLED") return item;
-    if (item.arrivalWindowStart === arrivalWindowStart && item.arrivalWindowEnd === arrivalWindowEnd) return item;
-    return { ...item, arrivalWindowStart, arrivalWindowEnd, updatedAt: now };
-  });
+function assignmentIdsRemovedByVisitUpdate(hub: HubData, jobId: string, cleanerIds: string[]): string[] {
+  const selected = new Set(cleanerIds);
+  return hub.assignments
+    .filter(
+      (item) =>
+        item.jobId === jobId &&
+        !selected.has(item.cleanerId) &&
+        item.status !== "CANCELED" &&
+        item.status !== "EXPIRED_JOB_FILLED",
+    )
+    .map((item) => item.assignmentId);
 }
 
 function withReconciledScheduleConflicts(state: HubState): HubState {
@@ -336,19 +233,6 @@ function withReconciledScheduleConflicts(state: HubState): HubState {
     ...state,
     assignments: reconcileScheduleConflictWarnings(state.assignments, state.cleaners),
   };
-}
-
-function assignmentSavedMessage(
-  cleaner: CleanerProfile,
-  assignment: Pick<JobAssignment, "status" | "attentionReason">,
-  mode: "INVITE" | "DIRECT",
-): string {
-  if (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)) {
-    return `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`;
-  }
-  if (assignment.status === "CONFIRMED") return "Cleaning assigned.";
-  if (assignment.status === "INVITED") return "Invitation sent.";
-  return `Saved. Waiting for ${cleaner.firstName} to confirm.`;
 }
 
 function readSession(): { role: AppRole | null; cleanerId: string | null } {
@@ -461,8 +345,6 @@ export function HubProvider({
   const bootstrappedRef = useRef(false);
   /** Full hub from Dynamo when using preview auth (role picker without Cognito session). */
   const previewDynamoHubRef = useRef<HubData | null>(null);
-  const persistQueueRef = useRef<HubData | null>(null);
-  const persistRunningRef = useRef(false);
   const syncBlockersRef = useRef(new Set<() => boolean>());
   const syncInFlightRef = useRef(false);
   const hubRevisionRef = useRef<number | null>(null);
@@ -485,7 +367,6 @@ export function HubProvider({
     for (const check of syncBlockersRef.current) {
       if (check()) return true;
     }
-    if (persistRunningRef.current) return true;
     if (staffingSaveInFlightRef.current) return true;
     if (actionLoadingRef.current > 0) return true;
     return false;
@@ -537,47 +418,6 @@ export function HubProvider({
       syncInFlightRef.current = false;
     }
   }, [hubDataSource]);
-
-  async function drainPersistQueue() {
-    if (persistRunningRef.current) return;
-    persistRunningRef.current = true;
-    try {
-      while (persistQueueRef.current) {
-        const payload = persistQueueRef.current;
-        persistQueueRef.current = null;
-        let attempt = payload;
-        let expectedRevision = hubRevisionRef.current ?? 0;
-
-        for (let tries = 0; tries < 3; tries++) {
-          const result = await persistAdminHub(attempt, expectedRevision);
-          if (result.ok) {
-            hubRevisionRef.current = result.revision;
-            break;
-          }
-          if ("conflict" in result && result.conflict) {
-            hubRevisionRef.current = result.revision;
-            attempt = mergeHubPersistAttempt(result.hub, payload);
-            expectedRevision = result.revision;
-            const prev = stateRef.current;
-            if (prev?.role) {
-              skipPersistForRemoteSyncRef.current = true;
-              setState({
-                ...withCurrentHorizon(attempt),
-                role: prev.role,
-                cleanerId: prev.cleanerId,
-              });
-            }
-            continue;
-          }
-          setToast("message" in result ? result.message : "Could not save Hub data.");
-          break;
-        }
-      }
-    } finally {
-      persistRunningRef.current = false;
-      if (persistQueueRef.current) void drainPersistQueue();
-    }
-  }
 
   useEffect(() => {
     setActionLoading(0);
@@ -773,25 +613,6 @@ export function HubProvider({
     if (!state || !sourceRef.current || !bootstrappedRef.current) return;
     if (sourceRef.current === "dynamodb") {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, cleanerId: state.cleanerId }));
-      if (skipPersistForRemoteSyncRef.current) {
-        skipPersistForRemoteSyncRef.current = false;
-        return;
-      }
-      if (state.role === "ADMIN") {
-        persistQueueRef.current = {
-          today: state.today,
-          cleaners: state.cleaners,
-          customers: state.customers,
-          properties: state.properties,
-          series: state.series,
-          jobs: state.jobs,
-          assignments: state.assignments,
-          availability: state.availability,
-          submissions: state.submissions,
-          contractorQuestionnaireSubmissions: state.contractorQuestionnaireSubmissions,
-        };
-        void drainPersistQueue();
-      }
       return;
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -813,6 +634,8 @@ export function HubProvider({
     if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
       const remote = await acceptInvitationAction(assignmentId, crewSize);
       if (!remote.ok) return remote;
+      skipPersistForRemoteSyncRef.current = true;
+      hubRevisionRef.current = remote.revision;
       setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
       return { ok: true };
     }
@@ -879,6 +702,8 @@ export function HubProvider({
     if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
       const remote = await declineInvitationAction(assignmentId);
       if (!remote.ok) return remote;
+      skipPersistForRemoteSyncRef.current = true;
+      hubRevisionRef.current = remote.revision;
       setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
       return { ok: true };
     }
@@ -900,12 +725,23 @@ export function HubProvider({
     options?: { quiet?: boolean },
   ): AsyncActionResult {
     const toastMessage = "Availability submitted.";
+    if (sourceRef.current === "dynamodb" && data.role === "ADMIN") {
+      const remote = await submitCleanerAvailabilityAdminAction(cleanerId, weekStart, windows);
+      if (!remote.ok) return remote;
+      skipPersistForRemoteSyncRef.current = true;
+      hubRevisionRef.current = remote.revision;
+      setState({ ...withCurrentHorizon(remote.hub), role: data.role, cleanerId: data.cleanerId });
+      if (!options?.quiet) setToast(toastMessage);
+      return { ok: true, message: remote.message };
+    }
     if (sourceRef.current === "dynamodb" && data.role === "CLEANER") {
       if (data.cleanerId !== cleanerId) {
         return { ok: false, message: "You can only edit your own availability." };
       }
       const remote = await submitAvailabilityAction(weekStart, windows);
       if (!remote.ok) return remote;
+      skipPersistForRemoteSyncRef.current = true;
+      hubRevisionRef.current = remote.revision;
       setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
       if (!options?.quiet) setToast(toastMessage);
       return { ok: true, message: remote.message };
@@ -1020,6 +856,7 @@ export function HubProvider({
     return { ok: true, message: "Submitted." };
   }
 
+
   function mergeAdminHub(remote: HubData) {
     setState((prev) => {
       if (!prev) return prev;
@@ -1027,89 +864,41 @@ export function HubProvider({
     });
   }
 
-  function saveCustomer(input: CustomerInput, customerId?: string): ActionResult {
-    const decision = validateCustomerInput(input);
-    if (!decision.ok) return decision;
-    const nameCollision = findCustomerByExactName(
-      data.customers,
-      decision.value.firstName,
-      decision.value.lastName,
-      customerId,
-    );
-    if (nameCollision) {
-      return {
-        ok: false,
-        message: `${nameCollision.firstName} ${nameCollision.lastName} is already a customer.`,
-      };
-    }
-    const now = new Date().toISOString();
-    const id = customerId ?? `cust-${Date.now()}`;
-    const existing = data.properties.filter((item) => item.customerId === id);
-    const kept = new Set(
-      decision.value.properties.flatMap((item) => (item.propertyId ? [item.propertyId] : [])),
-    );
-    const removed = existing.filter((item) => !kept.has(item.propertyId));
-    const blocked = removed.find(
-      (item) =>
-        data.jobs.some((job) => job.propertyId === item.propertyId) ||
-        data.series.some((series) => series.propertyId === item.propertyId),
-    );
-    if (blocked) {
-      return { ok: false, message: "A property with scheduled cleanings cannot be removed." };
-    }
-    const { properties: propertyInputs, ...person } = decision.value;
-    const nextProperties: Property[] = propertyInputs.map((item, index) => {
-      const prior = item.propertyId
-        ? existing.find((property) => property.propertyId === item.propertyId)
-        : undefined;
-      return {
-        propertyId: prior?.propertyId ?? `prop-${Date.now()}-${index}`,
-        customerId: id,
-        label: item.label,
-        streetAddress: item.streetAddress,
-        unit: item.unit,
-        city: item.city,
-        state: item.state,
-        zip: item.zip,
-        bedrooms: item.bedrooms,
-        bathrooms: item.bathrooms,
-        squareFeet: item.squareFeet,
-        preferences: item.preferences,
-        status: prior?.status ?? "ACTIVE",
-        createdAt: prior?.createdAt ?? now,
-        createdBy: prior?.createdBy ?? "kelsey",
-        updatedAt: now,
-        updatedBy: "kelsey",
-      };
-    });
-    const priorCustomer = data.customers.find((item) => item.customerId === id);
-    const saved: Customer = {
-      customerId: id,
-      firstName: person.firstName,
-      lastName: person.lastName,
-      phone: person.phone,
-      email: person.email,
-      notes: person.notes,
-      status: priorCustomer?.status ?? "ACTIVE",
-      createdAt: priorCustomer?.createdAt ?? now,
-      createdBy: priorCustomer?.createdBy ?? "kelsey",
-      updatedAt: now,
-      updatedBy: "kelsey",
+  function applyPreviewMutation(outcome: AdminHubApplierResult): ActionResult {
+    if (!outcome.ok) return outcome;
+    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    return {
+      ok: true,
+      message: outcome.message,
+      customerId: outcome.customerId,
+      jobId: outcome.jobId,
+      assignmentId: outcome.assignmentId,
     };
-    setState({
-      ...data,
-      customers: priorCustomer
-        ? data.customers.map((item) => (item.customerId === id ? saved : item))
-        : [saved, ...data.customers],
-      properties: [...data.properties.filter((item) => item.customerId !== id), ...nextProperties],
-      jobs: data.jobs.map((job) => {
-        if (job.customerId !== id) return job;
-        const home = nextProperties.find((property) => property.propertyId === job.propertyId);
-        if (!home) return job;
-        return { ...job, snapshot: snapshotVisit(saved, home), updatedAt: now, updatedBy: "kelsey" };
-      }),
+  }
+
+  async function applyAdminActionResult(remote: AdminHubActionResult): Promise<ActionResult> {
+    if (!remote.ok) return remote;
+    skipPersistForRemoteSyncRef.current = true;
+    hubRevisionRef.current = remote.revision;
+    setState({ ...withCurrentHorizon(remote.hub), role: data.role, cleanerId: data.cleanerId });
+    return {
+      ok: true,
+      message: remote.message,
+      customerId: remote.customerId,
+      jobId: remote.jobId,
+      assignmentId: remote.assignmentId,
+    };
+  }
+
+  function isDynamoAdmin(): boolean {
+    return sourceRef.current === "dynamodb" && data.role === "ADMIN";
+  }
+
+  function scheduleAssignmentSmsLogPurge(assignmentId: string) {
+    if (sourceRef.current !== "dynamodb") return;
+    void purgeAssignmentSmsLogsOnCleanerRemoval(assignmentId).then((result) => {
+      if (!result.ok) console.error(result.message ?? "Could not clear assignment text history.");
     });
-    return { ok: true, customerId: id };
   }
 
   function clearDeletedCustomerUndo() {
@@ -1127,855 +916,6 @@ export function HubProvider({
     deletedCustomerUndoTimerRef.current = window.setTimeout(() => clearDeletedCustomerUndo(), 8000);
   }
 
-  function undoDeleteCustomer(): ActionResult {
-    if (!deletedCustomerUndo) return { ok: false, message: "That customer could not be restored." };
-    const { customer, properties } = deletedCustomerUndo;
-    clearDeletedCustomerUndo();
-    setState({
-      ...data,
-      customers: [...data.customers, customer].sort(
-        (a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName),
-      ),
-      properties: [...data.properties, ...properties],
-    });
-    return { ok: true, message: "Customer restored." };
-  }
-
-  function deleteCustomer(customerId: string): ActionResult {
-    const customer = data.customers.find((item) => item.customerId === customerId);
-    if (!customer) return { ok: false, message: "That customer could not be found." };
-    if (data.jobs.some((job) => job.customerId === customerId)) {
-      return { ok: false, message: "Remove or reassign this customer's cleanings before deleting them." };
-    }
-    if (data.series.some((series) => series.customerId === customerId)) {
-      return { ok: false, message: "Delete this customer's recurring schedules before deleting them." };
-    }
-    const snapshot: DeletedCustomerSnapshot = {
-      customer,
-      properties: data.properties.filter((item) => item.customerId === customerId),
-    };
-    setState({
-      ...data,
-      customers: data.customers.filter((item) => item.customerId !== customerId),
-      properties: data.properties.filter((item) => item.customerId !== customerId),
-    });
-    scheduleDeletedCustomerUndo(snapshot);
-    return { ok: true, message: "Customer deleted." };
-  }
-
-  function saveSeries(
-    seriesId: string,
-    input: {
-      propertyId: string;
-      recurrence: RecurrenceRule;
-      defaultHeadcountNeeded: number;
-      defaultPricePerVisitCents?: number;
-      status: SeriesStatus;
-    },
-  ): ActionResult {
-    const priceCheck = validatePricePerVisitCents(input.defaultPricePerVisitCents);
-    if (priceCheck && !priceCheck.ok) return priceCheck;
-    const series = data.series.find((item) => item.seriesId === seriesId);
-    if (!series) return { ok: false, message: "That recurring service could not be found." };
-    const home = data.properties.find(
-      (property) => property.propertyId === input.propertyId && property.customerId === series.customerId,
-    );
-    if (!home) return { ok: false, message: "Choose one of this customer's properties." };
-    if (!Number.isInteger(input.defaultHeadcountNeeded) || input.defaultHeadcountNeeded < 1 || input.defaultHeadcountNeeded > 12) {
-      return { ok: false, message: "Enter how many cleaners are needed." };
-    }
-    const normalizedRecurrence = effectiveWeekRecurrence(input.recurrence, series.startDate, data.jobs
-      .filter((job) => job.seriesId === seriesId && job.status !== "CANCELED")
-      .map((job) => job.date));
-    const rule = validateRecurrenceRule(normalizedRecurrence);
-    if (!rule.ok) return rule;
-    let startDate = series.startDate;
-    for (let offset = 0; offset < 14; offset += 1) {
-      const candidate = addDays(series.startDate, offset);
-      if (dateMatchesRule(normalizedRecurrence, candidate, candidate)) {
-        startDate = candidate;
-        break;
-      }
-    }
-    const now = new Date().toISOString();
-    const nextSeries = data.series.map((item) =>
-      item.seriesId === seriesId
-        ? {
-            ...item,
-            propertyId: input.propertyId,
-            recurrence: normalizedRecurrence,
-            defaultHeadcountNeeded: input.defaultHeadcountNeeded,
-            defaultPricePerVisitCents: input.defaultPricePerVisitCents,
-            status: input.status,
-            startDate,
-            updatedAt: now,
-            updatedBy: "kelsey",
-          }
-        : item,
-    );
-    const updated = nextSeries.find((item) => item.seriesId === seriesId)!;
-    let jobs = data.jobs;
-    let assignments = data.assignments;
-    if (seriesScheduleChanged(series, updated)) {
-      const pruned = removeStaleSeriesOccurrences({
-        today: data.today,
-        series: updated,
-        jobs,
-        assignments,
-      });
-      jobs = pruned.jobs;
-      assignments = pruned.assignments;
-    }
-    const base = { ...data, series: nextSeries, jobs, assignments };
-    const generated = mergeRecurringHorizon({
-      ...base,
-      today: data.today,
-      nowIso: now,
-    });
-    setState({
-      ...base,
-      series: generated.series,
-      jobs: generated.jobs,
-      assignments: generated.assignments,
-    });
-    return { ok: true };
-  }
-
-  function updateCleanerAdmin(
-    cleanerId: string,
-    input: {
-      typicalHelperCount: number;
-      maxHelperCount: number;
-      typicalHourlyRateCents: number;
-      status: CleanerStatus;
-    },
-  ): ActionResult {
-    const crew = deriveCrewSettings(input);
-    if (!crew.ok) return crew;
-    if (!Number.isInteger(input.typicalHourlyRateCents) || input.typicalHourlyRateCents < 0) {
-      return { ok: false, message: "Enter a valid hourly rate." };
-    }
-    setState((prev) => {
-      if (!prev) return prev;
-      const outcome = updateCleanerAdminOnHub(prev, cleanerId, input);
-      return { ...outcome.hub, role: prev.role, cleanerId: prev.cleanerId };
-    });
-    return { ok: true };
-  }
-
-  async function createJob(input: CreateJobInput): AsyncActionResult {
-    if (sourceRef.current === "dynamodb" && data.role === "ADMIN") {
-      staffingSaveInFlightRef.current = true;
-      try {
-        const remote = await createJobAction(input);
-        if (!remote.ok) return remote;
-        skipPersistForRemoteSyncRef.current = true;
-        hubRevisionRef.current = remote.revision;
-        setState({ ...remote.hub, role: data.role, cleanerId: data.cleanerId });
-        return { ok: true, jobId: remote.jobId, message: remote.message };
-      } finally {
-        staffingSaveInFlightRef.current = false;
-      }
-    }
-    const outcome = createJobOnHub(data, input, "kelsey");
-    if (!outcome.ok) return outcome;
-    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
-    return { ok: true, jobId: outcome.jobId, message: outcome.message };
-  }
-
-  function saveCleanerDetails(input: SaveCleanerDetailsInput): ActionResult {
-    const job = data.jobs.find((item) => item.jobId === input.jobId);
-    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
-    if (!(job.draftCleanerIds ?? []).includes(input.cleanerId)) {
-      return { ok: false, message: "Add that cleaner to the cleaning before saving their details." };
-    }
-    const already = data.assignments.some(
-      (assignment) =>
-        assignment.jobId === job.jobId &&
-        assignment.cleanerId === input.cleanerId &&
-        assignment.status !== "CANCELED" &&
-        assignment.status !== "EXPIRED_JOB_FILLED",
-    );
-    if (already) return { ok: false, message: "That cleaner is already assigned on this cleaning." };
-    const cleaner = data.cleaners.find((item) => item.cleanerId === input.cleanerId);
-    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
-    const customer = data.customers.find((item) => item.customerId === job.customerId && item.status === "ACTIVE");
-    if (!customer) return { ok: false, message: "Choose a customer." };
-    const property = data.properties.find(
-      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
-    );
-    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
-    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
-    if (!arrivalTimes.ok) return arrivalTimes;
-    if (
-      !Number.isInteger(input.expectedDurationMinutes) ||
-      input.expectedDurationMinutes < 30 ||
-      input.expectedDurationMinutes > 12 * 60
-    ) {
-      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-    }
-    if (job.headcountNeeded < 1) {
-      return { ok: false, message: "Set the headcount on this cleaning first." };
-    }
-    const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
-    if (!crew.ok) return crew;
-    if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
-      return { ok: false, message: "Enter the pay per person." };
-    }
-    const now = new Date().toISOString();
-    const detail = {
-      cleanerId: cleaner.cleanerId,
-      arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-      arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-      expectedDurationMinutes: input.expectedDurationMinutes,
-      proposedCrewSize: input.proposedCrewSize,
-      payType: input.payType,
-      payPerPersonCents: input.payPerPersonCents,
-    };
-    const details = job.draftCleanerDetails ?? [];
-    const next = withEarliestArrival(
-      {
-        ...job,
-        draftCleanerDetails: [...details.filter((item) => item.cleanerId !== cleaner.cleanerId), detail],
-        updatedAt: now,
-        updatedBy: "kelsey",
-      },
-      data.assignments,
-    );
-    setState({
-      ...data,
-      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-    });
-    return { ok: true, jobId: job.jobId, message: "Details saved." };
-  }
-
-  function staffCleaner(input: StaffCleanerInput): ActionResult {
-    const job = data.jobs.find((item) => item.jobId === input.jobId);
-    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
-    const detail = job.draftCleanerDetails?.find((item) => item.cleanerId === input.cleanerId);
-    if (!detail) return { ok: false, message: "Save this cleaner's details before staffing them." };
-    const cleaner = data.cleaners.find((item) => item.cleanerId === input.cleanerId);
-    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
-    const already = data.assignments.some(
-      (assignment) =>
-        assignment.jobId === job.jobId &&
-        assignment.cleanerId === cleaner.cleanerId &&
-        assignment.status !== "CANCELED" &&
-        assignment.status !== "EXPIRED_JOB_FILLED",
-    );
-    if (already) return { ok: false, message: "That cleaner is already assigned on this cleaning." };
-    const now = new Date().toISOString();
-    const weekStart = mondayOf(job.date);
-    const availabilityByCleaner: Record<string, { submitted: boolean; windows: { date: string; start: string; end: string }[] }> = {};
-    for (const candidate of data.cleaners) {
-      availabilityByCleaner[candidate.cleanerId] = {
-        submitted: data.submissions.some(
-          (submission) => submission.cleanerId === candidate.cleanerId && submission.weekStart === weekStart,
-        ),
-        windows: data.availability
-          .filter((window) => window.cleanerId === candidate.cleanerId)
-          .map((window) => ({ date: window.date, start: window.start, end: window.end })),
-      };
-    }
-    const plan = planOccurrenceStaffing({
-      jobId: job.jobId,
-      serviceDate: job.date,
-      headcountNeeded: job.headcountNeeded,
-      mode: input.mode,
-      template: [
-        {
-          cleanerId: cleaner.cleanerId,
-          proposedCrewSize: detail.proposedCrewSize,
-          arrivalWindowStart: detail.arrivalWindowStart,
-          arrivalWindowEnd: detail.arrivalWindowEnd,
-          expectedDurationMinutes: detail.expectedDurationMinutes,
-          payType: detail.payType,
-          payPerPersonCents: detail.payPerPersonCents,
-        },
-      ],
-      cleaners: data.cleaners,
-      availabilityByCleaner,
-      confirmedAssignments: data.assignments.filter((assignment) => assignment.status === "CONFIRMED"),
-      nowIso: now,
-      newId: () => `as-${Date.now()}`,
-    });
-    if (plan.attention.length > 0) return { ok: false, message: plan.attention[0].reason };
-    const planned = plan.assignments[0];
-    if (!planned) return { ok: false, message: "The cleaning could not be assigned." };
-    const assignment: JobAssignment = {
-      ...planned,
-      lastNotified: assignmentNotice(detail),
-      notifiedServiceDate: job.date,
-    };
-    let nextAssignments = [...data.assignments, assignment];
-    if (input.mode === "DIRECT" || assignment.status === "CONFIRMED") {
-      nextAssignments = expireJobInvitesIfHeadcountMet(nextAssignments, job.jobId, job.headcountNeeded, now);
-    }
-    const next = withEarliestArrival(
-      {
-        ...job,
-        draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
-        draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
-        status: "SCHEDULED" as const,
-        updatedAt: now,
-        updatedBy: "kelsey",
-      },
-      nextAssignments,
-    );
-    setState({
-      ...data,
-      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-      assignments: nextAssignments,
-    });
-    const message = assignmentSavedMessage(cleaner, assignment, input.mode);
-    return { ok: true, jobId: job.jobId, message };
-  }
-
-  async function completeAssignment(input: CompleteAssignmentInput): AsyncActionResult {
-    if (sourceRef.current === "dynamodb" && data.role === "ADMIN") {
-      staffingSaveInFlightRef.current = true;
-      try {
-        const remote = await completeAssignmentAction(input);
-        if (!remote.ok) return remote;
-        skipPersistForRemoteSyncRef.current = true;
-        hubRevisionRef.current = remote.revision;
-        setState({ ...remote.hub, role: data.role, cleanerId: data.cleanerId });
-        return {
-          ok: true,
-          jobId: remote.jobId,
-          message: remote.message,
-          assignmentId: remote.assignmentId,
-        };
-      } finally {
-        staffingSaveInFlightRef.current = false;
-      }
-    }
-    const outcome = completeAssignmentOnHub(data, input);
-    if (!outcome.ok) return outcome;
-    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
-    return {
-      ok: true,
-      jobId: outcome.jobId,
-      message: outcome.message,
-      assignmentId: outcome.assignmentId,
-    };
-  }
-
-  function addJobCleaner(jobId: string, cleanerId: string): ActionResult {
-    const job = data.jobs.find((item) => item.jobId === jobId);
-    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
-    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
-    if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
-    const named = (job.draftCleanerIds ?? []).includes(cleaner.cleanerId);
-    const assigned = data.assignments.some(
-      (assignment) =>
-        assignment.jobId === job.jobId &&
-        assignment.cleanerId === cleaner.cleanerId &&
-        assignment.status !== "CANCELED" &&
-        assignment.status !== "EXPIRED_JOB_FILLED",
-    );
-    if (named || assigned) return { ok: false, message: `${cleaner.firstName} is already on this cleaning.` };
-    const now = new Date().toISOString();
-    setState({
-      ...data,
-      jobs: data.jobs.map((item) =>
-        item.jobId === job.jobId
-          ? {
-              ...item,
-              draftCleanerIds: [...(item.draftCleanerIds ?? []), cleaner.cleanerId],
-              updatedAt: now,
-              updatedBy: "kelsey",
-            }
-          : item,
-      ),
-    });
-    return { ok: true, message: `${cleaner.firstName} added.` };
-  }
-
-  function scheduleAssignmentSmsLogPurge(assignmentId: string) {
-    if (sourceRef.current !== "dynamodb") return;
-    void purgeAssignmentSmsLogsOnCleanerRemoval(assignmentId).then((result) => {
-      if (!result.ok) console.error(result.message ?? "Could not clear assignment text history.");
-    });
-  }
-
-  function removeJobCleaner(jobId: string, cleanerId: string): ActionResult {
-    const job = data.jobs.find((item) => item.jobId === jobId);
-    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
-    const cleaner = data.cleaners.find((item) => item.cleanerId === cleanerId);
-    const assignment = data.assignments.find(
-      (item) =>
-        item.jobId === job.jobId &&
-        item.cleanerId === cleanerId &&
-        item.status !== "CANCELED" &&
-        item.status !== "EXPIRED_JOB_FILLED",
-    );
-    if (assignment) scheduleAssignmentSmsLogPurge(assignment.assignmentId);
-    const now = new Date().toISOString();
-    const nextAssignments = data.assignments.map((assignment) =>
-      assignment.jobId === job.jobId &&
-      assignment.cleanerId === cleanerId &&
-      assignment.status !== "CANCELED" &&
-      assignment.status !== "EXPIRED_JOB_FILLED"
-        ? { ...assignment, status: "CANCELED" as const, updatedAt: now }
-        : assignment,
-    );
-    const next = withEarliestArrival(
-      {
-        ...job,
-        draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleanerId),
-        draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleanerId),
-        updatedAt: now,
-        updatedBy: "kelsey",
-      },
-      nextAssignments,
-    );
-    setState({
-      ...data,
-      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-      assignments: nextAssignments,
-    });
-    return { ok: true, message: cleaner ? `${cleaner.firstName} removed.` : "Cleaner removed." };
-  }
-
-  function updateVisit(input: UpdateVisitInput): ActionResult {
-    const priceCheck = validatePricePerVisitCents(input.pricePerVisitCents);
-    if (priceCheck && !priceCheck.ok) return priceCheck;
-    const job = data.jobs.find((item) => item.jobId === input.jobId);
-    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be edited." };
-    const customer = data.customers.find((item) => item.customerId === input.customerId && item.status === "ACTIVE");
-    if (!customer) return { ok: false, message: "Choose a customer." };
-    const cleanerIds = [...new Set(input.cleanerIds)];
-    const cleaners = cleanerIds.map((cleanerId) => data.cleaners.find((item) => item.cleanerId === cleanerId));
-    if (cleaners.some((cleaner) => !cleaner || cleaner.status !== "ACTIVE")) {
-      return { ok: false, message: "Choose an active cleaner." };
-    }
-    const property = data.properties.find(
-      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
-    );
-    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
-    if (!isValidDate(input.date)) return { ok: false, message: "Choose a date." };
-    const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
-    if (!arrivalTimes.ok) return arrivalTimes;
-    if (
-      !Number.isInteger(input.expectedDurationMinutes) ||
-      input.expectedDurationMinutes < 30 ||
-      input.expectedDurationMinutes > 12 * 60
-    ) {
-      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-    }
-    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
-      return { ok: false, message: "Enter how many cleaners are needed." };
-    }
-    if (input.recurringSchedule) {
-      if (job.seriesId) {
-        return { ok: false, message: "This cleaning already belongs to a recurring schedule." };
-      }
-      if (input.serviceType !== "RECURRING") {
-        return { ok: false, message: "Recurring schedule applies only to recurring cleans." };
-      }
-      if (arrivalTimes.arrivalWindowStart === undefined) {
-        return { ok: false, message: "Choose a start time before creating a recurring schedule." };
-      }
-      const headcountForSeries = input.headcountNeeded > 0 ? input.headcountNeeded : 1;
-      if (headcountForSeries < 1) {
-        return { ok: false, message: "Choose headcount before creating a recurring schedule." };
-      }
-    }
-    const activeAssignments = data.assignments.filter(
-      (assignment) =>
-        assignment.jobId === job.jobId &&
-        cleanerIds.includes(assignment.cleanerId) &&
-        assignment.status !== "CANCELED" &&
-        assignment.status !== "EXPIRED_JOB_FILLED" &&
-        assignment.status !== "DECLINED",
-    );
-    const covered = new Set(activeAssignments.map((assignment) => assignment.cleanerId));
-    const crews = [
-      ...activeAssignments.map((assignment) => assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize),
-      ...(job.draftCleanerDetails ?? [])
-        .filter((detail) => cleanerIds.includes(detail.cleanerId) && !covered.has(detail.cleanerId))
-        .map((detail) => detail.proposedCrewSize),
-    ];
-    if (crews.some((size) => size > input.headcountNeeded)) {
-      return { ok: false, message: "The headcount is smaller than a cleaner's crew on this cleaning." };
-    }
-    const dateChanged = input.date !== job.date;
-    if (
-      dateChanged &&
-      job.seriesId &&
-      data.jobs.some(
-        (item) => item.seriesId === job.seriesId && item.jobId !== job.jobId && item.date === input.date && item.status !== "CANCELED",
-      )
-    ) {
-      return { ok: false, message: "This schedule already has a cleaning on that date." };
-    }
-    const requestedArrivals = new Map((input.cleanerArrivals ?? []).map((arrival) => [arrival.cleanerId, arrival]));
-    for (const arrival of requestedArrivals.values()) {
-      const perCleaner = validateArrivalWindow(arrival.arrivalWindowStart, arrival.arrivalWindowEnd);
-      if (!perCleaner.ok) return perCleaner;
-    }
-    const now = new Date().toISOString();
-    const arrival = {
-      start: arrivalTimes.arrivalWindowStart,
-      end: arrivalTimes.arrivalWindowEnd,
-    };
-    const selected = new Set(cleanerIds);
-    const nextAssignments = data.assignments.map((item) => {
-      if (item.jobId !== job.jobId) return item;
-      const removed =
-        !selected.has(item.cleanerId) && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED";
-      if (removed) {
-        scheduleAssignmentSmsLogPurge(item.assignmentId);
-        return { ...item, status: "CANCELED" as const, updatedAt: now };
-      }
-      const tracksDate = item.status === "INVITED" || item.status === "CONFIRMED";
-      const baseline = item.notifiedServiceDate ?? item.serviceDate;
-      const needsReinvite = tracksDate && input.date !== baseline;
-      const notifiedServiceDate = tracksDate ? baseline : item.notifiedServiceDate;
-      const requested = requestedArrivals.get(item.cleanerId);
-      const normalizedRequested = requested ? normalizeArrivalWindow(requested.arrivalWindowStart) : null;
-      const arrivalChanged = Boolean(
-        normalizedRequested &&
-          (normalizedRequested.arrivalWindowStart !== item.arrivalWindowStart ||
-            normalizedRequested.arrivalWindowEnd !== item.arrivalWindowEnd),
-      );
-      const dateChangedForCleaner =
-        item.serviceDate !== input.date ||
-        Boolean(item.needsDateReinvite) !== needsReinvite ||
-        item.notifiedServiceDate !== notifiedServiceDate;
-      const onVisit =
-        selected.has(item.cleanerId) &&
-        item.status !== "CANCELED" &&
-        item.status !== "EXPIRED_JOB_FILLED";
-      const durationOutOfSync = onVisit && item.expectedDurationMinutes !== input.expectedDurationMinutes;
-      if (!dateChangedForCleaner && !arrivalChanged && !durationOutOfSync) return item;
-      const nextArrivalStart = normalizedRequested?.arrivalWindowStart ?? item.arrivalWindowStart;
-      const nextArrivalEnd = normalizedRequested?.arrivalWindowEnd ?? item.arrivalWindowEnd;
-      let nextLastNotified = item.lastNotified;
-      if (arrivalChanged && nextLastNotified && nextLastNotified.arrivalWindowStart === nextArrivalStart) {
-        nextLastNotified = { ...nextLastNotified, arrivalWindowEnd: nextArrivalEnd };
-      }
-      return {
-        ...item,
-        serviceDate: input.date,
-        notifiedServiceDate,
-        needsDateReinvite: needsReinvite ? true : undefined,
-        arrivalWindowStart: nextArrivalStart,
-        arrivalWindowEnd: nextArrivalEnd,
-        expectedDurationMinutes: onVisit ? input.expectedDurationMinutes : item.expectedDurationMinutes,
-        lastNotified:
-          durationOutOfSync && !item.lastNotified ? assignmentNotice(item) : nextLastNotified,
-        updatedAt: now,
-      };
-    });
-    const stillOnJob = new Set(
-      nextAssignments
-        .filter(
-          (item) =>
-            item.jobId === job.jobId && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED",
-        )
-        .map((item) => item.cleanerId),
-    );
-    const draftCleanerIds = cleanerIds.filter((id) => !stillOnJob.has(id));
-    const headcountNeeded =
-      input.headcountNeeded > 0 ? input.headcountNeeded : input.recurringSchedule ? 1 : input.headcountNeeded;
-    const updatedJob: Job = {
-      ...job,
-      customerId: customer.customerId,
-      date: input.date,
-      propertyId: property.propertyId,
-      serviceType: input.serviceType,
-      arrivalWindowStart: arrival.start,
-      arrivalWindowEnd: arrival.end,
-      expectedDurationMinutes: input.expectedDurationMinutes,
-      headcountNeeded,
-      draftCleanerIds,
-      draftCleanerDetails: (job.draftCleanerDetails ?? [])
-        .filter((detail) => draftCleanerIds.includes(detail.cleanerId))
-        .map((detail) => {
-          const requested = requestedArrivals.get(detail.cleanerId);
-          const normalized = requested ? normalizeArrivalWindow(requested.arrivalWindowStart) : null;
-          return {
-            ...detail,
-            arrivalWindowStart: normalized?.arrivalWindowStart ?? detail.arrivalWindowStart,
-            arrivalWindowEnd: normalized?.arrivalWindowEnd ?? detail.arrivalWindowEnd,
-            expectedDurationMinutes: input.expectedDurationMinutes,
-          };
-        }),
-      snapshot: snapshotVisit(customer, property),
-      specialInstructions: input.specialInstructions.trim(),
-      pricePerVisitCents: input.pricePerVisitCents,
-      status: input.recurringSchedule && job.status === "DRAFT" ? "SCHEDULED" : job.status,
-      updatedAt: now,
-      updatedBy: "kelsey",
-    };
-    const seriesPatch =
-      dateChanged && job.seriesId
-        ? data.series.map((item) => {
-            if (item.seriesId !== job.seriesId) return item;
-            const skipped = new Set([...(item.skippedDates ?? []), job.date]);
-            skipped.delete(input.date);
-            return { ...item, skippedDates: [...skipped], updatedAt: now, updatedBy: "kelsey" };
-          })
-        : data.series;
-
-    if (input.recurringSchedule && !job.seriesId) {
-      const recurrence: RecurrenceRule = {
-        frequency: "WEEK",
-        interval: input.recurringSchedule.interval,
-        daysOfWeek: [dayOfWeek(input.date)],
-      };
-      const rule = validateRecurrenceRule(recurrence, input.date);
-      if (!rule.ok) return rule;
-      const seriesArrivalStart = arrivalTimes.arrivalWindowStart;
-      const seriesArrivalEnd = arrivalTimes.arrivalWindowEnd;
-      if (seriesArrivalStart === undefined || seriesArrivalEnd === undefined) {
-        return { ok: false, message: "Choose a start time before creating a recurring schedule." };
-      }
-      const seriesId = `series-${Date.now()}`;
-      const series: RecurringSeries = {
-        seriesId,
-        customerId: customer.customerId,
-        propertyId: property.propertyId,
-        recurrence,
-        startDate: input.date,
-        endMode: "UNTIL_CANCELED",
-        defaultHeadcountNeeded: headcountNeeded,
-        defaultArrivalWindowStart: seriesArrivalStart,
-        defaultArrivalWindowEnd: seriesArrivalEnd,
-        defaultExpectedDurationMinutes: input.expectedDurationMinutes,
-        defaultServiceType: "RECURRING",
-        defaultSpecialInstructions: input.specialInstructions.trim() || undefined,
-        defaultPricePerVisitCents: input.pricePerVisitCents,
-        staffingTemplateMode: "BLANK",
-        staffingTemplate: [],
-        status: "ACTIVE",
-        generatedThroughDate: input.date,
-        createdAt: now,
-        createdBy: "kelsey",
-        updatedAt: now,
-        updatedBy: "kelsey",
-      };
-      const linkedJob: Job = { ...updatedJob, seriesId };
-      const base = {
-        ...data,
-        series: [...seriesPatch, series],
-        jobs: data.jobs.map((item) => (item.jobId === job.jobId ? linkedJob : item)),
-        assignments: nextAssignments,
-      };
-      const generated = mergeRecurringHorizon({
-        ...base,
-        today: data.today,
-        nowIso: now,
-      });
-      setState({
-        ...base,
-        series: generated.series,
-        jobs: generated.jobs,
-        assignments: generated.assignments,
-      });
-      return { ok: true, message: "Recurring schedule created." };
-    }
-
-    setState({
-      ...data,
-      series: seriesPatch,
-      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? updatedJob : item)),
-      assignments: nextAssignments,
-    });
-    return { ok: true, message: "Cleaning updated." };
-  }
-
-  function updateJob(input: UpdateJobInput): ActionResult {
-    const job = data.jobs.find((item) => item.jobId === input.jobId);
-    if (!job || job.status !== "SCHEDULED") return { ok: false, message: "That cleaning could not be edited." };
-    const assignment = data.assignments.find(
-      (item) => item.assignmentId === input.assignmentId && item.jobId === job.jobId,
-    );
-    if (!assignment) return { ok: false, message: "That cleaner assignment could not be found." };
-    const cleaner = data.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
-    if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
-    const customer = data.customers.find((item) => item.customerId === job.customerId);
-    if (!customer) return { ok: false, message: "That customer could not be found." };
-    const property = data.properties.find(
-      (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
-    );
-    if (!property) return { ok: false, message: "Choose one of this customer's properties." };
-    const arrivalTimes = validateArrivalWindow(input.arrivalWindowStart, input.arrivalWindowEnd);
-    if (!arrivalTimes.ok) return arrivalTimes;
-    if (
-      !Number.isInteger(input.expectedDurationMinutes) ||
-      input.expectedDurationMinutes < 30 ||
-      input.expectedDurationMinutes > 12 * 60
-    ) {
-      return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-    }
-    if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 1 || input.headcountNeeded > 12) {
-      return { ok: false, message: "Enter how many cleaners are needed." };
-    }
-    const crew = validateProposedCrewSize(cleaner.maxHelperCount, input.proposedCrewSize);
-    if (!crew.ok) return crew;
-    if (input.proposedCrewSize > input.headcountNeeded) {
-      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
-    }
-    if (!Number.isInteger(input.payPerPersonCents) || input.payPerPersonCents < 0) {
-      return { ok: false, message: "Enter the pay per person." };
-    }
-    const others = data.assignments.filter(
-      (item) => item.jobId === job.jobId && item.assignmentId !== assignment.assignmentId,
-    );
-    if (
-      assignment.status === "CONFIRMED" &&
-      calculateConfirmedHeadcount(others) + input.proposedCrewSize > input.headcountNeeded
-    ) {
-      return { ok: false, message: "The crew is larger than the headcount for this cleaning." };
-    }
-    if (assignment.status === "CONFIRMED") {
-      const weekStart = mondayOf(job.date);
-      const submitted = data.submissions.some(
-        (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
-      );
-      if (!submitted) return { ok: false, message: `${cleaner.firstName} has not submitted this week.` };
-      const blocked = calculateBlockedRange({
-        date: job.date,
-        arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-        arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-        expectedDurationMinutes: input.expectedDurationMinutes,
-      });
-      const windows = data.availability
-        .filter((window) => window.cleanerId === cleaner.cleanerId)
-        .map((window) => ({ date: window.date, start: window.start, end: window.end }));
-      if (!availabilityCoversBlockedRange(windows, blocked)) {
-        return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
-      }
-    }
-    const now = new Date().toISOString();
-    const pay = confirmedCompensationCents({
-      payType: input.payType,
-      payPerPersonCents: input.payPerPersonCents,
-      confirmedCrewSize: input.proposedCrewSize,
-    });
-    const blocked =
-      assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION"
-        ? calculateBlockedRange({
-            date: job.date,
-            arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-            arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-            expectedDurationMinutes: input.expectedDurationMinutes,
-          })
-        : null;
-    const nextAssignments = data.assignments.map((item) => {
-      if (item.assignmentId !== assignment.assignmentId) return item;
-      let nextItem: JobAssignment = {
-        ...item,
-        proposedCrewSize: input.proposedCrewSize,
-        confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
-        arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-        arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-        expectedDurationMinutes: input.expectedDurationMinutes,
-        payType: input.payType,
-        payPerPersonCents: input.payPerPersonCents,
-        proposedTotalPayCents: pay,
-        confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
-        updatedAt: now,
-      };
-      if (blocked) {
-        const merged = data.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
-        nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
-      }
-      return nextItem;
-    });
-    const next = withEarliestArrival(
-      {
-        ...job,
-        headcountNeeded: input.headcountNeeded,
-        updatedAt: now,
-        updatedBy: "kelsey",
-      },
-      nextAssignments,
-    );
-    setState({
-      ...data,
-      jobs: data.jobs.map((item) => (item.jobId === job.jobId ? next : item)),
-      assignments: nextAssignments,
-    });
-    return { ok: true, message: "Assignment saved." };
-  }
-
-  function moveAssignmentTime(assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string): ActionResult {
-    const assignment = data.assignments.find((item) => item.assignmentId === assignmentId);
-    if (
-      !assignment ||
-      assignment.status === "CANCELED" ||
-      assignment.status === "DECLINED" ||
-      assignment.status === "EXPIRED_JOB_FILLED"
-    ) {
-      return { ok: false, message: "That cleaning could not be moved." };
-    }
-    const moved = validateArrivalWindow(arrivalWindowStart, arrivalWindowEnd);
-    if (!moved.ok) return moved;
-    const job = data.jobs.find((item) => item.jobId === assignment.jobId);
-    if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be moved." };
-    const cleaner = data.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
-    if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
-    const now = new Date().toISOString();
-    const blocked =
-      assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION"
-        ? calculateBlockedRange({
-            date: assignment.serviceDate,
-            arrivalWindowStart: moved.arrivalWindowStart,
-            arrivalWindowEnd: moved.arrivalWindowEnd,
-            expectedDurationMinutes: assignment.expectedDurationMinutes,
-          })
-        : null;
-    setState({
-      ...data,
-      assignments: data.assignments.map((item) => {
-        if (item.assignmentId !== assignment.assignmentId) return item;
-        let nextItem: JobAssignment = {
-          ...item,
-          arrivalWindowStart: moved.arrivalWindowStart,
-          arrivalWindowEnd: moved.arrivalWindowEnd,
-          updatedAt: now,
-        };
-        if (blocked) {
-          const merged = data.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
-          nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
-        }
-        return nextItem;
-      }),
-    });
-    return { ok: true };
-  }
-
-  function markAssignmentNotified(assignmentId: string): ActionResult {
-    const assignment = data.assignments.find((item) => item.assignmentId === assignmentId);
-    if (
-      !assignment ||
-      assignment.status === "CANCELED" ||
-      assignment.status === "DECLINED" ||
-      assignment.status === "EXPIRED_JOB_FILLED"
-    ) {
-      return { ok: false, message: "That assignment could not be updated." };
-    }
-    const now = new Date().toISOString();
-    setState({
-      ...data,
-      assignments: data.assignments.map((item) =>
-        item.assignmentId === assignment.assignmentId
-          ? {
-              ...item,
-              lastNotified: assignmentNotice(item),
-              notifiedServiceDate: item.serviceDate,
-              updatedAt: now,
-            }
-          : item,
-      ),
-    });
-    return { ok: true };
-  }
-
   function clearDeletedJobUndo() {
     if (deletedJobUndoTimerRef.current !== null) {
       window.clearTimeout(deletedJobUndoTimerRef.current);
@@ -1991,66 +931,163 @@ export function HubProvider({
     deletedJobUndoTimerRef.current = window.setTimeout(() => clearDeletedJobUndo(), 8000);
   }
 
-  function undoDeleteJob(): ActionResult {
-    if (!deletedJobUndo) return { ok: false, message: "That cleaning could not be restored." };
-    const { job, assignments, seriesSkippedDatesBefore } = deletedJobUndo;
-    clearDeletedJobUndo();
-    setState({
-      ...data,
-      jobs: [...data.jobs, job].sort(
-        (a, b) => a.date.localeCompare(b.date) || a.jobId.localeCompare(b.jobId),
-      ),
-      assignments: [...data.assignments, ...assignments],
-      series: seriesSkippedDatesBefore
-        ? data.series.map((item) =>
-            item.seriesId === seriesSkippedDatesBefore.seriesId
-              ? { ...item, skippedDates: seriesSkippedDatesBefore.skippedDates }
-              : item,
-          )
-        : data.series,
-    });
-    return { ok: true, message: "Cleaning restored." };
+  async function saveCustomer(input: CustomerInput, customerId?: string): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await saveCustomerAction(input, customerId));
+    return applyPreviewMutation(saveCustomerOnHub(data, input, customerId));
   }
 
-  function deleteJob(jobId: string): ActionResult {
-    const job = data.jobs.find((item) => item.jobId === jobId);
-    if (!job) return { ok: false, message: "That cleaning could not be deleted." };
-    if (jobHasCleanerBlockingDeletion(data.assignments, jobId)) {
-      return { ok: false, message: CLEANING_DELETE_BLOCKED_MESSAGE };
+  async function deleteCustomer(customerId: string): AsyncActionResult {
+    const snapshot = deletedCustomerSnapshotFromHub(data, customerId);
+    if (isDynamoAdmin()) {
+      const result = await applyAdminActionResult(await deleteCustomerAction(customerId));
+      if (result.ok && snapshot) scheduleDeletedCustomerUndo(snapshot);
+      return result;
     }
-    const snapshot: DeletedJobSnapshot = {
-      job,
-      assignments: data.assignments.filter((item) => item.jobId === jobId),
-    };
-    if (job.seriesId) {
-      const series = data.series.find((item) => item.seriesId === job.seriesId);
-      if (series) {
-        snapshot.seriesSkippedDatesBefore = {
-          seriesId: series.seriesId,
-          skippedDates: [...(series.skippedDates ?? [])],
-        };
+    const outcome = deleteCustomerOnHub(data, customerId);
+    if (!outcome.ok) return outcome;
+    if (snapshot) scheduleDeletedCustomerUndo(snapshot);
+    return applyPreviewMutation(outcome);
+  }
+
+  async function undoDeleteCustomer(): AsyncActionResult {
+    if (!deletedCustomerUndo) return { ok: false, message: "That customer could not be restored." };
+    const snapshot = deletedCustomerUndo;
+    clearDeletedCustomerUndo();
+    if (isDynamoAdmin()) return applyAdminActionResult(await undoDeleteCustomerAction(snapshot));
+    return applyPreviewMutation(undoDeleteCustomerOnHub(data, snapshot));
+  }
+
+  async function saveSeries(seriesId: string, input: SaveSeriesInput): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await saveSeriesAction(seriesId, input));
+    return applyPreviewMutation(saveSeriesOnHub(data, seriesId, input));
+  }
+
+  async function updateCleanerAdmin(cleanerId: string, input: UpdateCleanerAdminInput): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await updateCleanerAdminAction(cleanerId, input));
+    const outcome = updateCleanerAdminOnHub(data, cleanerId, input);
+    if (!outcome.result.ok) return outcome.result;
+    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    return { ok: true };
+  }
+
+  async function createJob(input: CreateJobInput): AsyncActionResult {
+    if (isDynamoAdmin()) {
+      staffingSaveInFlightRef.current = true;
+      try {
+        return applyAdminActionResult(await createJobAction(input));
+      } finally {
+        staffingSaveInFlightRef.current = false;
       }
     }
-    const now = new Date().toISOString();
-    setState({
-      ...data,
-      series: job.seriesId
-        ? data.series.map((item) =>
-            item.seriesId === job.seriesId
-              ? {
-                  ...item,
-                  skippedDates: [...new Set([...(item.skippedDates ?? []), job.date])],
-                  updatedAt: now,
-                  updatedBy: "kelsey",
-                }
-              : item,
-          )
-        : data.series,
-      jobs: data.jobs.filter((item) => item.jobId !== job.jobId),
-      assignments: data.assignments.filter((item) => item.jobId !== job.jobId),
-    });
-    scheduleDeletedJobUndo(snapshot);
-    return { ok: true, message: "Cleaning deleted." };
+    const outcome = createJobOnHub(data, input, "kelsey");
+    if (!outcome.ok) return outcome;
+    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    return { ok: true, jobId: outcome.jobId, message: outcome.message };
+  }
+
+  async function saveCleanerDetails(input: SaveCleanerDetailsInput): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await saveCleanerDetailsAction(input));
+    return applyPreviewMutation(saveCleanerDetailsOnHub(data, input));
+  }
+
+  async function staffCleaner(input: StaffCleanerInput): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await staffCleanerAction(input));
+    return applyPreviewMutation(staffCleanerOnHub(data, input));
+  }
+
+  async function completeAssignment(input: CompleteAssignmentInput): AsyncActionResult {
+    if (isDynamoAdmin()) {
+      staffingSaveInFlightRef.current = true;
+      try {
+        return applyAdminActionResult(await completeAssignmentAction(input));
+      } finally {
+        staffingSaveInFlightRef.current = false;
+      }
+    }
+    const outcome = completeAssignmentOnHub(data, input);
+    if (!outcome.ok) return outcome;
+    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    return {
+      ok: true,
+      jobId: outcome.jobId,
+      message: outcome.message,
+      assignmentId: outcome.assignmentId,
+    };
+  }
+
+  async function addJobCleaner(jobId: string, cleanerId: string): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await addJobCleanerAction(jobId, cleanerId));
+    return applyPreviewMutation(addJobCleanerOnHub(data, jobId, cleanerId));
+  }
+
+  async function removeJobCleaner(jobId: string, cleanerId: string): AsyncActionResult {
+    const assignment = data.assignments.find(
+      (item) =>
+        item.jobId === jobId &&
+        item.cleanerId === cleanerId &&
+        item.status !== "CANCELED" &&
+        item.status !== "EXPIRED_JOB_FILLED",
+    );
+    if (isDynamoAdmin()) {
+      const result = await applyAdminActionResult(await removeJobCleanerAction(jobId, cleanerId));
+      if (result.ok && assignment) scheduleAssignmentSmsLogPurge(assignment.assignmentId);
+      return result;
+    }
+    return applyPreviewMutation(removeJobCleanerOnHub(data, jobId, cleanerId));
+  }
+
+  async function updateVisit(input: UpdateVisitInput): AsyncActionResult {
+    const removedAssignmentIds = assignmentIdsRemovedByVisitUpdate(data, input.jobId, input.cleanerIds);
+    if (isDynamoAdmin()) {
+      const result = await applyAdminActionResult(await updateVisitAction(input));
+      if (result.ok) {
+        for (const assignmentId of removedAssignmentIds) scheduleAssignmentSmsLogPurge(assignmentId);
+      }
+      return result;
+    }
+    return applyPreviewMutation(updateVisitOnHub(data, input));
+  }
+
+  async function updateJob(input: UpdateJobInput): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await updateJobAction(input));
+    return applyPreviewMutation(updateJobOnHub(data, input));
+  }
+
+  async function moveAssignmentTime(
+    assignmentId: string,
+    arrivalWindowStart: string,
+    arrivalWindowEnd: string,
+  ): AsyncActionResult {
+    if (isDynamoAdmin()) {
+      return applyAdminActionResult(await moveAssignmentTimeAction(assignmentId, arrivalWindowStart, arrivalWindowEnd));
+    }
+    return applyPreviewMutation(moveAssignmentTimeOnHub(data, assignmentId, arrivalWindowStart, arrivalWindowEnd));
+  }
+
+  async function markAssignmentNotified(assignmentId: string): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await markAssignmentNotifiedAction(assignmentId));
+    return applyPreviewMutation(markAssignmentNotifiedOnHub(data, assignmentId));
+  }
+
+  async function undoDeleteJob(): AsyncActionResult {
+    if (!deletedJobUndo) return { ok: false, message: "That cleaning could not be restored." };
+    const snapshot = deletedJobUndo;
+    clearDeletedJobUndo();
+    if (isDynamoAdmin()) return applyAdminActionResult(await undoDeleteJobAction(snapshot));
+    return applyPreviewMutation(undoDeleteJobOnHub(data, snapshot));
+  }
+
+  async function deleteJob(jobId: string): AsyncActionResult {
+    const snapshot = deletedJobSnapshotFromHub(data, jobId);
+    if (isDynamoAdmin()) {
+      const result = await applyAdminActionResult(await deleteJobAction(jobId));
+      if (result.ok && snapshot) scheduleDeletedJobUndo(snapshot);
+      return result;
+    }
+    const outcome = deleteJobOnHub(data, jobId);
+    if (!outcome.ok) return outcome;
+    if (snapshot) scheduleDeletedJobUndo(snapshot);
+    return applyPreviewMutation(outcome);
   }
 
   function applyCleanerSmsConsent(input: {
@@ -2109,19 +1146,9 @@ export function HubProvider({
     });
   }
 
-  function deleteSeries(seriesId: string): ActionResult {
-    const series = data.series.find((item) => item.seriesId === seriesId);
-    if (!series) return { ok: false, message: "That recurring schedule could not be deleted." };
-    const removedJobIds = new Set(
-      data.jobs.filter((job) => job.seriesId === series.seriesId && job.date >= data.today).map((job) => job.jobId),
-    );
-    setState({
-      ...data,
-      series: data.series.filter((item) => item.seriesId !== series.seriesId),
-      jobs: data.jobs.filter((job) => !removedJobIds.has(job.jobId)),
-      assignments: data.assignments.filter((assignment) => !removedJobIds.has(assignment.jobId)),
-    });
-    return { ok: true, message: "Recurring schedule deleted." };
+  async function deleteSeries(seriesId: string): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await deleteSeriesAction(seriesId));
+    return applyPreviewMutation(deleteSeriesOnHub(data, seriesId));
   }
 
   const value: HubContextValue = {
@@ -2260,8 +1287,9 @@ export function HubProvider({
                 type="button"
                 className="shrink-0 font-semibold text-ink underline decoration-ink/40 underline-offset-2"
                 onClick={() => {
-                  const result = undoDeleteJob();
-                  if (result.message) setToast(result.message);
+                  void undoDeleteJob().then((result) => {
+                    if (result.message) setToast(result.message);
+                  });
                 }}
               >
                 Undo
@@ -2277,8 +1305,9 @@ export function HubProvider({
                 type="button"
                 className="shrink-0 font-semibold text-ink underline decoration-ink/40 underline-offset-2"
                 onClick={() => {
-                  const result = undoDeleteCustomer();
-                  if (result.message) setToast(result.message);
+                  void undoDeleteCustomer().then((result) => {
+                    if (result.message) setToast(result.message);
+                  });
                 }}
               >
                 Undo

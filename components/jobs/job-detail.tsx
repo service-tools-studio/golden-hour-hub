@@ -346,9 +346,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                                 kind: "start_time_update",
                               },
                             })
-                              .then((outcome) => {
+                              .then(async (outcome) => {
                                 if (!outcome.manual) {
-                                  hub.markAssignmentNotified(assignment.assignmentId);
+                                  await hub.markAssignmentNotified(assignment.assignmentId);
                                 }
                                 return outcome;
                               })
@@ -356,8 +356,9 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                           );
                         }}
                         onDismiss={() => {
-                          const result = hub.markAssignmentNotified(assignment.assignmentId);
-                          if (!result.ok && result.message) hub.flash(result.message);
+                          void hub.markAssignmentNotified(assignment.assignmentId).then((result) => {
+                            if (!result.ok && result.message) hub.flash(result.message);
+                          });
                         }}
                       />
                     ) : null}
@@ -401,29 +402,33 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             onCloseDelete={() => setConfirmDelete(false)}
             deleteCleaningBlocked={deleteCleaningBlocked}
             onDeleteCleaning={() => {
-              const result = hub.deleteJob(job.jobId);
-              if (result.message) hub.flash(result.message);
-              if (!result.ok) return;
-              setNavigatingAway(true);
-              if (groupedCustomerDayView(from)) {
-                const remaining = customerCleaningsOnDate(hub.jobs, job.customerId, job.date).filter(
-                  (item) => item.jobId !== job.jobId,
-                );
-                router.push(
-                  remaining[0]
-                    ? withOrigin(`/admin/jobs/${remaining[0].jobId}`, from)
-                    : from === "schedule"
-                      ? `/admin/schedule?date=${job.date}&view=day`
-                      : "/admin",
-                );
-                return;
-              }
-              router.push(`/admin/customers/${job.customerId}`);
+              void (async () => {
+                const result = await hub.deleteJob(job.jobId);
+                if (result.message) hub.flash(result.message);
+                if (!result.ok) return;
+                setNavigatingAway(true);
+                if (groupedCustomerDayView(from)) {
+                  const remaining = customerCleaningsOnDate(hub.jobs, job.customerId, job.date).filter(
+                    (item) => item.jobId !== job.jobId,
+                  );
+                  router.push(
+                    remaining[0]
+                      ? withOrigin(`/admin/jobs/${remaining[0].jobId}`, from)
+                      : from === "schedule"
+                        ? `/admin/schedule?date=${job.date}&view=day`
+                        : "/admin",
+                  );
+                  return;
+                }
+                router.push(`/admin/customers/${job.customerId}`);
+              })();
             }}
             onDeleteSchedule={() => {
-              const result = hub.deleteSeries(series.seriesId);
-              if (result.message) hub.flash(result.message);
-              if (result.ok) router.push(`/admin/customers/${job.customerId}`);
+              void (async () => {
+                const result = await hub.deleteSeries(series.seriesId);
+                if (result.message) hub.flash(result.message);
+                if (result.ok) router.push(`/admin/customers/${job.customerId}`);
+              })();
             }}
           />
         ) : null}
@@ -620,7 +625,7 @@ function RecurringCard({
 function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string }) {
   const hub = useHub();
 
-  function remove() {
+  async function remove() {
     const job = hub.jobs.find((item) => item.jobId === jobId);
     const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
     const assignment = hub.assignments.find(
@@ -631,7 +636,7 @@ function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string 
         item.status !== "EXPIRED_JOB_FILLED",
     );
     const notify = assignmentNotifiesOnRemoval(assignment?.status);
-    const result = hub.removeJobCleaner(jobId, cleanerId);
+    const result = await hub.removeJobCleaner(jobId, cleanerId);
     if (!result.ok) {
       if (result.message) hub.flash(result.message);
       return;

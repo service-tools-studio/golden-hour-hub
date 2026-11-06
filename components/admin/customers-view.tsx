@@ -155,9 +155,10 @@ export function NewCustomerView({
   useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
   useHubSyncBlocker(() => Boolean(formRef.current?.isDirty()));
 
-  function saveAndLeave() {
+  async function saveAndLeave() {
     const href = leaveHref;
-    if (!formRef.current?.save()) {
+    const saved = await Promise.resolve(formRef.current?.save());
+    if (!saved) {
       setLeaveHref(null);
       return false;
     }
@@ -264,9 +265,10 @@ export function CustomerDetail({
     finishLeave(href);
   }
 
-  function saveAndLeave() {
+  async function saveAndLeave() {
     const href = leaveTarget?.href;
-    if (!activeForm()?.save()) {
+    const saved = await Promise.resolve(activeForm()?.save());
+    if (!saved) {
       setLeaveTarget(null);
       return false;
     }

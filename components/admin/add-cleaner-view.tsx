@@ -88,9 +88,9 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
     );
   }
 
-  function add(cleanerId: string) {
+  async function add(cleanerId: string) {
     if (navigating) return;
-    const result = hub.addJobCleaner(jobId, cleanerId);
+    const result = await hub.addJobCleaner(jobId, cleanerId);
     if (!result.ok) {
       if (result.message) hub.flash(result.message);
       return;

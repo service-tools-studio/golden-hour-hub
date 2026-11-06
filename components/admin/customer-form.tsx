@@ -165,7 +165,7 @@ function draftsFor(customer: Customer | undefined, properties: Property[]): Prop
 }
 
 export type CustomerFormHandle = {
-  save: () => boolean;
+  save: () => boolean | Promise<boolean>;
   isDirty: () => boolean;
 };
 
@@ -250,7 +250,7 @@ export function CustomerForm({
     );
   }
 
-  function persist(): string | null {
+  async function persist(): Promise<string | null> {
     if (duplicate) {
       setError({ field: "duplicate", message: "", at: Date.now() });
       return null;
@@ -277,7 +277,7 @@ export function CustomerForm({
       setError({ field: decision.field ?? "form", message: decision.message, at: Date.now() });
       return null;
     }
-    const result = hub.saveCustomer(decision.value, customer?.customerId);
+    const result = await hub.saveCustomer(decision.value, customer?.customerId);
     if (!result.ok || !result.customerId) {
       setError({
         field: "form",
@@ -319,7 +319,7 @@ export function CustomerForm({
   }
 
   useImperativeHandle(ref, () => ({
-    save: () => persist() !== null,
+    save: async () => (await persist()) !== null,
     isDirty,
   }));
 
@@ -330,14 +330,17 @@ export function CustomerForm({
         event.preventDefault();
         if (saving) return;
         setSaving(true);
-        const customerId = persist();
-        if (!customerId) {
-          setSaving(false);
-          return;
-        }
-        hub.flash("changes saved");
-        if (onSaved) onSaved(customerId);
-        else router.push(`/admin/customers/${customerId}`);
+        void (async () => {
+          try {
+            const customerId = await persist();
+            if (!customerId) return;
+            hub.flash("changes saved");
+            if (onSaved) onSaved(customerId);
+            else router.push(`/admin/customers/${customerId}`);
+          } finally {
+            setSaving(false);
+          }
+        })();
       }}
     >
       <div className="grid grid-cols-2 gap-3">
@@ -562,14 +565,16 @@ export function CustomerForm({
             ) {
               return;
             }
-            const result = hub.deleteCustomer(customer.customerId);
-            if (!result.ok) {
-              setError({ field: "form", message: result.message, at: Date.now() });
-              return;
-            }
-            if (result.message) hub.flash(result.message);
-            if (onDeleted) onDeleted();
-            else router.push("/admin/customers");
+            void (async () => {
+              const result = await hub.deleteCustomer(customer.customerId);
+              if (!result.ok) {
+                setError({ field: "form", message: result.message, at: Date.now() });
+                return;
+              }
+              if (result.message) hub.flash(result.message);
+              if (onDeleted) onDeleted();
+              else router.push("/admin/customers");
+            })();
           }}
           className="min-h-12 w-full font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
         >

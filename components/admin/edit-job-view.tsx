@@ -766,8 +766,8 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
   const cleanerIds = [...new Set(onCleaning)];
   const leadCleanerId = cleanerIds[0] ?? "";
 
-  function submit(values: CleaningValues, nextHref?: string) {
-    const result = hub.updateVisit({
+  async function submit(values: CleaningValues, nextHref?: string) {
+    const result = await hub.updateVisit({
       jobId: cleaning.jobId,
       date: values.date,
       customerId: values.customerId,
@@ -791,8 +791,8 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
 
   const deleteBlocked = jobHasCleanerBlockingDeletion(hub.assignments, cleaning.jobId);
 
-  function remove() {
-    const result = hub.deleteJob(cleaning.jobId);
+  async function remove() {
+    const result = await hub.deleteJob(cleaning.jobId);
     if (!result.ok) {
       if (result.message) hub.flash(result.message);
       return;

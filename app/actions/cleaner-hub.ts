@@ -1,53 +1,106 @@
 "use server";
 
-import { AuthError } from "@/lib/auth/guards";
+import { AuthError, requireAdmin, requireCleaner } from "@/lib/auth/guards";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
-import { requireCleaner } from "@/lib/auth/guards";
-import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
+import { dynamoConfigured } from "@/lib/data/repository";
+import { persistAvailabilityWeekMutation } from "@/lib/data/persist-availability-week";
 import { notifyAdminsCleanerAvailabilitySubmitted } from "@/lib/cleaner/admin-availability-notify";
 import { notifyAdminsCleanerAcceptedInvite } from "@/lib/cleaner/admin-invite-notify";
 import {
   acceptInvitationOnHub,
   declineInvitationOnHub,
-  submitAvailabilityOnHub,
 } from "@/lib/hub/cleaner-mutations";
+import { persistHubMutation } from "@/lib/hub/persist-hub-mutation";
 import type { HubData } from "@/lib/mock/seed";
 import type { AvailabilityWindow } from "@/lib/domain/types";
 
-type MutationResult = { ok: true; message?: string; data: HubData } | { ok: false; message: string };
+type CleanerHubMutationResult =
+  | { ok: true; message?: string; data: HubData; revision: number }
+  | { ok: false; message: string };
 
-async function runCleanerMutation(
-  apply: (hub: HubData, cleanerId: string) => { hub: HubData; result: { ok: true; message?: string } | { ok: false; message: string } },
-): Promise<MutationResult> {
-  try {
-    const session = await requireCleaner();
-    if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
-    if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const hub = await loadHub();
-    const { hub: next, result } = apply(hub, session.cleanerId);
+type AvailabilityMutationResult = CleanerHubMutationResult;
+
+export type AdminAvailabilityMutationResult =
+  | { ok: true; message?: string; hub: HubData; revision: number }
+  | { ok: false; message: string };
+
+async function persistCleanerHubMutation(
+  cleanerId: string,
+  apply: (
+    hub: HubData,
+    cleanerId: string,
+  ) => { hub: HubData; result: { ok: true; message?: string } | { ok: false; message: string } },
+): Promise<CleanerHubMutationResult> {
+  const saved = await persistHubMutation((hub) => {
+    const { hub: next, result } = apply(hub, cleanerId);
     if (!result.ok) return result;
-    await saveHub(next);
-    return { ok: true, message: result.message, data: hubDataForCleaner(next, session.cleanerId) };
+    return { ok: true, hub: next, message: result.message };
+  });
+  if (!saved.ok) return saved;
+  return {
+    ok: true,
+    message: saved.message,
+    revision: saved.revision,
+    data: hubDataForCleaner(saved.hub, cleanerId),
+  };
+}
+
+async function persistAvailabilityWeek(
+  cleanerId: string,
+  weekStart: string,
+  windows: AvailabilityWindow[],
+): Promise<
+  | {
+      ok: true;
+      hub: HubData;
+      revision: number;
+      message?: string;
+      notificationKind: "submitted" | "updated";
+    }
+  | { ok: false; message: string }
+> {
+  const saved = await persistAvailabilityWeekMutation(cleanerId, weekStart, windows);
+  if (!saved.ok) return saved;
+  return {
+    ok: true,
+    hub: saved.hub,
+    revision: saved.revision,
+    message: saved.message,
+    notificationKind: saved.notificationKind,
+  };
+}
+
+async function notifyAvailabilitySubmitted(
+  hub: HubData,
+  cleanerId: string,
+  weekStart: string,
+  kind: "submitted" | "updated",
+): Promise<void> {
+  const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
+  if (!cleaner) return;
+  try {
+    await notifyAdminsCleanerAvailabilitySubmitted({ cleaner, weekStart, kind });
   } catch (error) {
-    if (error instanceof AuthError) return { ok: false, message: error.message };
-    console.error("cleaner hub mutation failed.", error);
-    return { ok: false, message: "Could not update Hub." };
+    console.error("[admin:availability] notify failed", error);
   }
 }
 
-export async function acceptInvitationAction(assignmentId: string, crewSize: number): Promise<MutationResult> {
+export async function acceptInvitationAction(
+  assignmentId: string,
+  crewSize: number,
+): Promise<CleanerHubMutationResult> {
   try {
     const session = await requireCleaner();
     if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const hub = await loadHub();
-    const { hub: next, result } = acceptInvitationOnHub(hub, session.cleanerId, assignmentId, crewSize);
-    if (!result.ok) return result;
-    await saveHub(next);
+    const saved = await persistCleanerHubMutation(session.cleanerId, (hub, cleanerId) =>
+      acceptInvitationOnHub(hub, cleanerId, assignmentId, crewSize),
+    );
+    if (!saved.ok) return saved;
 
-    const assignment = next.assignments.find((item) => item.assignmentId === assignmentId);
-    const job = assignment ? next.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
-    const cleaner = next.cleaners.find((item) => item.cleanerId === session.cleanerId);
+    const assignment = saved.data.assignments.find((item) => item.assignmentId === assignmentId);
+    const job = assignment ? saved.data.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
+    const cleaner = saved.data.cleaners.find((item) => item.cleanerId === session.cleanerId);
     if (assignment && job && cleaner && assignment.status !== "INVITED") {
       try {
         await notifyAdminsCleanerAcceptedInvite({ cleaner, job, assignment });
@@ -56,7 +109,7 @@ export async function acceptInvitationAction(assignmentId: string, crewSize: num
       }
     }
 
-    return { ok: true, message: result.message, data: hubDataForCleaner(next, session.cleanerId) };
+    return saved;
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("cleaner hub mutation failed.", error);
@@ -64,41 +117,61 @@ export async function acceptInvitationAction(assignmentId: string, crewSize: num
   }
 }
 
-export async function declineInvitationAction(assignmentId: string): Promise<MutationResult> {
-  return runCleanerMutation((hub, cleanerId) => declineInvitationOnHub(hub, cleanerId, assignmentId));
+export async function declineInvitationAction(assignmentId: string): Promise<CleanerHubMutationResult> {
+  try {
+    const session = await requireCleaner();
+    if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
+    if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
+    return persistCleanerHubMutation(session.cleanerId, (hub, cleanerId) =>
+      declineInvitationOnHub(hub, cleanerId, assignmentId),
+    );
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
+    console.error("cleaner hub mutation failed.", error);
+    return { ok: false, message: "Could not update Hub." };
+  }
 }
 
 export async function submitAvailabilityAction(
   weekStart: string,
   windows: AvailabilityWindow[],
-): Promise<MutationResult> {
+): Promise<AvailabilityMutationResult> {
   try {
     const session = await requireCleaner();
     if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const hub = await loadHub();
-    const wasSubmitted = hub.submissions.some(
-      (submission) => submission.cleanerId === session.cleanerId && submission.weekStart === weekStart,
-    );
-    const { hub: next, result } = submitAvailabilityOnHub(hub, session.cleanerId, weekStart, windows);
-    if (!result.ok) return result;
-    await saveHub(next);
-    const cleaner = next.cleaners.find((item) => item.cleanerId === session.cleanerId);
-    if (cleaner) {
-      try {
-        await notifyAdminsCleanerAvailabilitySubmitted({
-          cleaner,
-          weekStart,
-          kind: wasSubmitted ? "updated" : "submitted",
-        });
-      } catch (error) {
-        console.error("[admin:availability] notify failed", error);
-      }
-    }
-    return { ok: true, message: result.message, data: hubDataForCleaner(next, session.cleanerId) };
+    const saved = await persistAvailabilityWeek(session.cleanerId, weekStart, windows);
+    if (!saved.ok) return saved;
+    await notifyAvailabilitySubmitted(saved.hub, session.cleanerId, weekStart, saved.notificationKind);
+    return {
+      ok: true,
+      message: saved.message,
+      revision: saved.revision,
+      data: hubDataForCleaner(saved.hub, session.cleanerId),
+    };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("cleaner hub mutation failed.", error);
+    return { ok: false, message: "Could not update Hub." };
+  }
+}
+
+/** Admin team screen: save one cleaner's week without clobbering other cleaners' availability. */
+export async function submitCleanerAvailabilityAdminAction(
+  cleanerId: string,
+  weekStart: string,
+  windows: AvailabilityWindow[],
+): Promise<AdminAvailabilityMutationResult> {
+  try {
+    await requireAdmin();
+    if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
+    const saved = await persistAvailabilityWeek(cleanerId, weekStart, windows);
+    if (!saved.ok) return saved;
+    await notifyAvailabilitySubmitted(saved.hub, cleanerId, weekStart, saved.notificationKind);
+    return { ok: true, message: saved.message, hub: saved.hub, revision: saved.revision };
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
+    console.error("submitCleanerAvailabilityAdminAction failed.", error);
     return { ok: false, message: "Could not update Hub." };
   }
 }
