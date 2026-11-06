@@ -290,7 +290,7 @@ export async function loadCleanerHubSlices(cleanerId: string, options: LoadHubSl
 /** Minimal hub for one cleaner availability week mutation. */
 export async function loadHubForAvailabilityWeek(cleanerId: string, _weekStart: string): Promise<HubData> {
   const today = todayInBusinessZone();
-  const cleanerPartition = await queryItemsByPk(`CLEANER#${cleanerId}`);
+  const cleanerPartition = await queryItemsByPk(`CLEANER#${cleanerId}`, true);
   const assignmentRows = await queryScheduleIndex(`CLEANER#${cleanerId}`);
   const jobIds = [...new Set(assignmentRows.map(readJobId).filter((value): value is string => Boolean(value)))];
   const jobPartitions = jobIds.length > 0 ? await loadJobPartitions(jobIds) : [];

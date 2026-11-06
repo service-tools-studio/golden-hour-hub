@@ -432,6 +432,7 @@ export function HubProvider({
         | { source: "dynamodb"; mode: "patch"; data: HubData; revision: number };
       if ("ok" in remote || remote.source !== "dynamodb") return;
       if (remoteSyncBlocked()) return;
+      if (hubRevisionRef.current !== null && remote.revision < hubRevisionRef.current) return;
       const prev = stateRef.current;
       if (!prev?.role) return;
       const previewPick = previewAuthRef.current;
@@ -443,7 +444,9 @@ export function HubProvider({
       hubRevisionRef.current = remote.revision;
       const mergedBase =
         remote.mode === "patch"
-          ? withCurrentHorizon(mergeHubPatchIntoHub(prev, hubPayload))
+          ? withCurrentHorizon(
+              mergeHubPatchIntoHub(prev, hubPayload, { replaceAvailabilityForPatchCleaners: true }),
+            )
           : withCurrentHorizon(hubPayload);
       if (remote.mode === "patch" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;
       if (remote.mode === "full" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;

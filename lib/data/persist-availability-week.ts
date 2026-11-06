@@ -5,12 +5,16 @@ import {
   STALE_AVAILABILITY_WEEK_MESSAGE,
   windowsInWeek,
 } from "../domain/availability.ts";
-import { addDays } from "../domain/time.ts";
+import { addDays, eachDate } from "../domain/time.ts";
 import type { AvailabilityWindow } from "../domain/types.ts";
 import { submitAvailabilityOnHub } from "../hub/cleaner-mutations.ts";
-import { buildAvailabilityWeekPersistPlan } from "../hub/availability-week-persist-plan.ts";
+import {
+  buildAvailabilityWeekPersistPlan,
+  dedupeAvailabilityWeekBatchPlan,
+} from "../hub/availability-week-persist-plan.ts";
 import { emptyHub, type HubData } from "../mock/seed.ts";
 import { loadHubForAvailabilityWeek } from "./load-admin-hub.ts";
+import { queryPartitionSkPrefix } from "./dynamo-queries.ts";
 import { hubAvailabilityWeekPatch, type HubPatchRemove } from "../hub/merge-hub-patch.ts";
 import { readHubRevision, writeHubItemChanges } from "./repository.ts";
 
@@ -80,8 +84,22 @@ export async function persistAvailabilityWeekMutation(
       weekStart,
       weekEnd,
     });
+    const liveWeekRows = (
+      await Promise.all(
+        eachDate(weekStart, weekEnd).map((date) =>
+          queryPartitionSkPrefix(`CLEANER#${cleanerId}`, `AVAIL#${date}#`, true),
+        ),
+      )
+    ).flat();
+    const persisted = dedupeAvailabilityWeekBatchPlan({
+      puts: plan.puts,
+      deletes: [
+        ...plan.deletes,
+        ...liveWeekRows.map((item) => ({ pk: item.pk, sk: item.sk })),
+      ],
+    });
 
-    const saved = await writeHubItemChanges(plan, expectedRevision);
+    const saved = await writeHubItemChanges(persisted, expectedRevision);
     if (saved.ok) {
       const { patch, remove } = hubAvailabilityWeekPatch(before, after, cleanerId, weekStart, weekEnd);
       return {

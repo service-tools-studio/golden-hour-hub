@@ -43,6 +43,10 @@ import {
 import { customerFirstNameForCleaner, formatArrival, formatLongDate } from "@/lib/format";
 import type { AvailabilityWindow } from "@/lib/domain/types";
 
+function newAvailabilityId(): string {
+  return crypto.randomUUID();
+}
+
 function minuteChoices(minute: number): number[] {
   const choices = new Set<number>([minute]);
   for (let value = 0; value < 60; value += 5) choices.add(value);
@@ -389,17 +393,19 @@ export function AvailabilityWeekEditor({
     [cleaner, hub.availability, week.weekStart],
   );
   const savedWeekSignature = useMemo(() => availabilityWeekSignature(savedWeekWindows), [savedWeekWindows]);
-  const dirty = availabilityWeekSignature(draft) !== savedWeekSignature;
+  const dirty =
+    availabilityWeekSignature(draft) !== availabilityWeekSignature(editBaselineRef.current);
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   useUnsavedNavigation(Boolean(cleaner) && !embedded, () => dirty, setLeaveHref);
   useHubSyncBlocker(() => dirty && !embedded);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!cleaner) return;
     const weekChanged = loadedWeekStartRef.current !== week.weekStart;
-    const hasLocalEdits = availabilityWeekSignature(draft) !== savedWeekSignature;
+    const hasLocalEdits =
+      availabilityWeekSignature(draft) !== availabilityWeekSignature(editBaselineRef.current);
     if (!weekChanged && hasLocalEdits) return;
     loadedWeekStartRef.current = week.weekStart;
     editBaselineRef.current = savedWeekWindows;
@@ -481,7 +487,7 @@ export function AvailabilityWeekEditor({
     applyDraft([
       ...rest,
       {
-        availabilityId: `draft-${date}-0`,
+        availabilityId: newAvailabilityId(),
         cleanerId: profile.cleanerId,
         date,
         start: OPEN_DAY_START,
@@ -519,7 +525,7 @@ export function AvailabilityWeekEditor({
     applyDraft([
       ...withoutAllDay,
       {
-        availabilityId: `draft-${date}-${draft.length}`,
+        availabilityId: newAvailabilityId(),
         cleanerId: profile.cleanerId,
         date,
         start: defaultStart,
@@ -536,7 +542,7 @@ export function AvailabilityWeekEditor({
     const copied = later.flatMap((day) =>
       source.map((window, index) => ({
         ...window,
-        availabilityId: `copy-${day}-${index}-${draft.length}`,
+        availabilityId: newAvailabilityId(),
         date: day,
       })),
     );
@@ -545,13 +551,12 @@ export function AvailabilityWeekEditor({
   }
 
   function copyLastWeek() {
-    let nextId = 0;
     const copied = copyWeekWindows(
       hub.availability,
       profile.cleanerId,
       addDays(week.weekStart, -7),
       week.weekStart,
-      () => `copy-${nextId++}`,
+      () => newAvailabilityId(),
     );
     if (copied.length === 0) {
       setTone("ok");

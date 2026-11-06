@@ -15,7 +15,7 @@ function doc() {
   return dynamoDoc();
 }
 
-export async function queryItemsByPk(pk: string): Promise<DynamoItem[]> {
+export async function queryItemsByPk(pk: string, consistentRead = false): Promise<DynamoItem[]> {
   const items: DynamoItem[] = [];
   let startKey: Record<string, unknown> | undefined;
   do {
@@ -25,6 +25,7 @@ export async function queryItemsByPk(pk: string): Promise<DynamoItem[]> {
         KeyConditionExpression: "pk = :pk",
         ExpressionAttributeValues: { ":pk": pk },
         ExclusiveStartKey: startKey,
+        ConsistentRead: consistentRead,
       }),
     );
     items.push(...((page.Items ?? []) as DynamoItem[]));
@@ -33,7 +34,11 @@ export async function queryItemsByPk(pk: string): Promise<DynamoItem[]> {
   return items;
 }
 
-export async function queryPartitionSkPrefix(pk: string, skPrefix: string): Promise<DynamoItem[]> {
+export async function queryPartitionSkPrefix(
+  pk: string,
+  skPrefix: string,
+  consistentRead = false,
+): Promise<DynamoItem[]> {
   const items: DynamoItem[] = [];
   let startKey: Record<string, unknown> | undefined;
   do {
@@ -43,6 +48,7 @@ export async function queryPartitionSkPrefix(pk: string, skPrefix: string): Prom
         KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
         ExpressionAttributeValues: { ":pk": pk, ":prefix": skPrefix },
         ExclusiveStartKey: startKey,
+        ConsistentRead: consistentRead,
       }),
     );
     items.push(...((page.Items ?? []) as DynamoItem[]));

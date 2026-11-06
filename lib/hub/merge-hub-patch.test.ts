@@ -133,6 +133,68 @@ describe("mergeHubPatchIntoHub", () => {
     assert.equal(merged.availability.find((window) => window.cleanerId === "bob")?.availabilityId, "bob-keep");
   });
 
+  it("keeps two cleaners' windows that share a draft availabilityId", () => {
+    const current = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "draft-2026-11-02-0", cleanerId: "jasmin", date: "2026-11-02", start: "07:00", end: "24:00" },
+      ] as AvailabilityWindow[],
+    };
+    const patch = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "draft-2026-11-02-0", cleanerId: "ada", date: "2026-11-02", start: "07:00", end: "24:00" },
+      ] as AvailabilityWindow[],
+    };
+    const merged = mergeHubPatchIntoHub(current, patch);
+    assert.equal(merged.availability.length, 2);
+    assert.ok(merged.availability.some((window) => window.cleanerId === "jasmin"));
+    assert.ok(merged.availability.some((window) => window.cleanerId === "ada"));
+  });
+
+  it("replaces a cleaner's availability from a partition sync instead of stacking ids", () => {
+    const current = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "ada-old", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+        { availabilityId: "ada-new", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+        { availabilityId: "bob-keep", cleanerId: "bob", date: "2026-11-03", start: "09:00", end: "17:00" },
+      ] as AvailabilityWindow[],
+    };
+    const patch = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "ada-new", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+      ] as AvailabilityWindow[],
+    };
+    const merged = mergeHubPatchIntoHub(current, patch, { replaceAvailabilityForPatchCleaners: true });
+    assert.deepEqual(
+      merged.availability.map((window) => window.availabilityId).sort(),
+      ["ada-new", "bob-keep"],
+    );
+  });
+
+  it("keeps other days when a partition patch only includes some dates", () => {
+    const current = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "ada-mon", cleanerId: "ada", date: "2026-11-02", start: "07:00", end: "24:00" },
+        { availabilityId: "ada-tue-old", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+      ] as AvailabilityWindow[],
+    };
+    const patch = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "ada-tue-new", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+      ] as AvailabilityWindow[],
+    };
+    const merged = mergeHubPatchIntoHub(current, patch, { replaceAvailabilityForPatchCleaners: true });
+    assert.deepEqual(
+      merged.availability.map((window) => window.availabilityId).sort(),
+      ["ada-mon", "ada-tue-new"],
+    );
+  });
+
   it("applies deletes without replacing the rest of the hub", () => {
     const current = {
       ...emptyHub("2026-11-05"),

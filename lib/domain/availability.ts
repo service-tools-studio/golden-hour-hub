@@ -57,8 +57,8 @@ export function mergeAdjacentWindows(windows: AvailabilityWindow[]): Availabilit
       const currentEnd = currentReady ? minutesFromTime(current.end) : Number.NaN;
       const nextStart = nextReady ? minutesFromTime(next.start) : Number.NaN;
       const nextEnd = nextReady ? minutesFromTime(next.end) : Number.NaN;
-      if (nextStart === currentEnd && nextEnd > nextStart) {
-        current = { ...current, end: next.end };
+      if (nextStart <= currentEnd && nextEnd > nextStart) {
+        if (nextEnd > currentEnd) current = { ...current, end: next.end };
         continue;
       }
       merged.push(current);

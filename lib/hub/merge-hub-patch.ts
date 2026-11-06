@@ -14,11 +14,17 @@ export type HubPatchRemove = {
 
 export type MergeHubPatchOptions = {
   replaceAssignmentsForPatchJobs?: boolean;
+  /** Replace availability on dates present in the patch (partition sync), without wiping other days. */
+  replaceAvailabilityForPatchCleaners?: boolean;
   remove?: HubPatchRemove;
 };
 
 function submissionKey(submission: HubData["submissions"][number]): string {
   return `${submission.cleanerId}|${submission.weekStart}`;
+}
+
+function availabilityKey(window: HubData["availability"][number]): string {
+  return `${window.cleanerId}|${window.availabilityId}`;
 }
 
 function mergeSubmissions(
@@ -36,12 +42,13 @@ function mergeSubmissions(
 function mergeById<T extends { [key: string]: unknown }>(
   current: T[],
   patch: T[],
-  idKey: keyof T,
+  idKey: keyof T | ((item: T) => string),
 ): T[] {
-  const patchById = new Map(patch.map((item) => [String(item[idKey]), item]));
-  const merged = current.map((item) => patchById.get(String(item[idKey])) ?? item);
+  const keyOf = (item: T) => (typeof idKey === "function" ? idKey(item) : String(item[idKey]));
+  const patchById = new Map(patch.map((item) => [keyOf(item), item]));
+  const merged = current.map((item) => patchById.get(keyOf(item)) ?? item);
   for (const item of patch) {
-    if (!merged.some((row) => String(row[idKey]) === String(item[idKey]))) {
+    if (!merged.some((row) => keyOf(row) === keyOf(item))) {
       merged.push(item);
     }
   }
@@ -90,7 +97,9 @@ function applyRemoves(current: HubData, remove?: HubPatchRemove): HubData {
       ? current.assignments.filter((item) => !assignmentIds.has(item.assignmentId))
       : current.assignments,
     availability: availabilityIds.size
-      ? current.availability.filter((item) => !availabilityIds.has(item.availabilityId))
+      ? current.availability.filter(
+          (item) => !availabilityIds.has(availabilityKey(item)) && !availabilityIds.has(item.availabilityId),
+        )
       : current.availability,
     submissions: submissionKeys.size
       ? current.submissions.filter((item) => !submissionKeys.has(submissionKey(item)))
@@ -139,7 +148,7 @@ export function hubMutationPatch(
     series: changedRows(before.series, after.series, (item) => item.seriesId),
     cleaners: changedRows(before.cleaners, after.cleaners, (item) => item.cleanerId),
     assignments: changedRows(before.assignments, after.assignments, (item) => item.assignmentId),
-    availability: changedRows(before.availability, after.availability, (item) => item.availabilityId),
+    availability: changedRows(before.availability, after.availability, availabilityKey),
     submissions: changedRows(before.submissions, after.submissions, submissionKey),
     contractorQuestionnaireSubmissions: changedRows(
       before.contractorQuestionnaireSubmissions,
@@ -154,7 +163,7 @@ export function hubMutationPatch(
     seriesIds: removedIds(before.series, after.series, (item) => item.seriesId),
     cleanerIds: removedIds(before.cleaners, after.cleaners, (item) => item.cleanerId),
     assignmentIds: removedIds(before.assignments, after.assignments, (item) => item.assignmentId),
-    availabilityIds: removedIds(before.availability, after.availability, (item) => item.availabilityId),
+    availabilityIds: removedIds(before.availability, after.availability, availabilityKey),
     submissionKeys: removedIds(before.submissions, after.submissions, submissionKey),
     questionnaireSubmissionIds: removedIds(
       before.contractorQuestionnaireSubmissions,
@@ -176,6 +185,14 @@ export function mergeHubPatchIntoHub(
     return patch.today ? { ...base, today: patch.today } : base;
   }
 
+  const availabilityBase =
+    options?.replaceAvailabilityForPatchCleaners && patch.availability.length > 0
+      ? base.availability.filter((window) => {
+          const key = `${window.cleanerId}|${window.date}`;
+          return !patch.availability.some((item) => `${item.cleanerId}|${item.date}` === key);
+        })
+      : base.availability;
+
   return {
     ...base,
     today: patch.today || base.today,
@@ -188,7 +205,7 @@ export function mergeHubPatchIntoHub(
       options?.replaceAssignmentsForPatchJobs && patch.jobs.length > 0
         ? mergeAssignmentsForJobs(base, patch)
         : mergeById(base.assignments, patch.assignments, "assignmentId"),
-    availability: mergeById(base.availability, patch.availability, "availabilityId"),
+    availability: mergeById(availabilityBase, patch.availability, availabilityKey),
     submissions: mergeSubmissions(base.submissions, patch.submissions),
     contractorQuestionnaireSubmissions: mergeById(
       base.contractorQuestionnaireSubmissions,
@@ -227,7 +244,7 @@ export function hubAvailabilityWeekPatch(
   );
   const beforeWeekIds = before.availability
     .filter((window) => inAvailabilityWeek(cleanerId, weekStart, weekEnd, window))
-    .map((window) => window.availabilityId);
+    .map(availabilityKey);
   return {
     patch: {
       ...patch,
