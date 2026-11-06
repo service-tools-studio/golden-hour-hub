@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cognitoConfigured, previewAuthEnabled } from "@/lib/auth/config";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
-import { refreshServerSessionCookie } from "@/lib/auth/session";
+import { renewClientAuthSession } from "@/lib/auth/session";
 
 export async function GET() {
   if (!cognitoConfigured()) {
@@ -11,7 +11,7 @@ export async function GET() {
       session: null,
     });
   }
-  const session = await refreshServerSessionCookie();
+  const session = await renewClientAuthSession();
   if (!session) {
     return NextResponse.json({ configured: true, preview: false, session: null });
   }

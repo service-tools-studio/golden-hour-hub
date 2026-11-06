@@ -118,7 +118,11 @@ export async function completeNewPassword(
   }
 }
 
-export async function refreshTokens(cognitoUsername: string, refreshToken: string): Promise<CognitoTokens | null> {
+export type RefreshTokensResult =
+  | { ok: true; tokens: CognitoTokens }
+  | { ok: false; reason: "not_authorized" | "transient" };
+
+export async function refreshTokens(cognitoUsername: string, refreshToken: string): Promise<RefreshTokensResult> {
   const username = cognitoUsername.trim().toLowerCase();
   try {
     const response = await client().send(
@@ -129,15 +133,25 @@ export async function refreshTokens(cognitoUsername: string, refreshToken: strin
       }),
     );
     const auth = response.AuthenticationResult;
-    if (!auth?.IdToken || !auth.AccessToken) return null;
+    if (!auth?.IdToken || !auth.AccessToken) {
+      return { ok: false, reason: "transient" };
+    }
     return {
-      idToken: auth.IdToken,
-      accessToken: auth.AccessToken,
-      refreshToken: auth.RefreshToken ?? refreshToken,
-      expiresIn: auth.ExpiresIn ?? 3600,
+      ok: true,
+      tokens: {
+        idToken: auth.IdToken,
+        accessToken: auth.AccessToken,
+        refreshToken: auth.RefreshToken ?? refreshToken,
+        expiresIn: auth.ExpiresIn ?? 3600,
+      },
     };
-  } catch {
-    return null;
+  } catch (error) {
+    const name = cognitoErrorName(error);
+    if (name === "NotAuthorizedException") {
+      return { ok: false, reason: "not_authorized" };
+    }
+    console.error("Cognito refresh token exchange failed.", error);
+    return { ok: false, reason: "transient" };
   }
 }
 

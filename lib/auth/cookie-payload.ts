@@ -10,7 +10,7 @@ export type StoredAuthCookie = {
   cleanerId: string | null;
   refreshToken: string;
   expiresAt: number;
-  /** Last time role was re-checked against Cognito (unix seconds). */
+  /** Last Cognito token refresh (unix seconds). */
   verifiedAt: number;
 };
 

@@ -19,16 +19,19 @@ import { AUTH_COOKIE } from "@/lib/auth/constants";
 
 export { AUTH_COOKIE };
 
+/** Hub session lifetime (matches expected max idle time before re-login). */
+export const AUTH_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 60;
+
 export const AUTH_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
-  maxAge: 60 * 60 * 24 * 60,
+  maxAge: AUTH_SESSION_MAX_AGE_SECONDS,
 };
 
 /** Minimum seconds between Cognito refresh calls (avoids refresh-token rotation races). */
-const COGNITO_RECHECK_SECONDS = 45;
+const COGNITO_RECHECK_SECONDS = 60 * 15;
 
 export type AuthSession = {
   sub: string;
@@ -67,9 +70,16 @@ async function sessionFromTokens(
     ) {
       cleanerId = trustedStored.cleanerId;
     } else {
-      if (!dynamoConfigured()) return null;
-      const hub = await loadHub();
-      cleanerId = cleanerIdForCognitoUser(hub.cleaners, claims.sub, claims.email);
+      try {
+        if (!dynamoConfigured()) return null;
+        const hub = await loadHub();
+        cleanerId = cleanerIdForCognitoUser(hub.cleaners, claims.sub, claims.email);
+      } catch (error) {
+        console.error("Could not load hub for cleaner session.", error);
+        if (trustedStored?.sub === claims.sub && trustedStored.role === "CLEANER" && trustedStored.cleanerId) {
+          cleanerId = trustedStored.cleanerId;
+        }
+      }
       if (!cleanerId) return null;
     }
   }
@@ -98,7 +108,7 @@ function storedFromSession(
     role: session.role,
     cleanerId: session.cleanerId,
     refreshToken: tokens.refreshToken,
-    expiresAt: Math.floor(Date.now() / 1000) + AUTH_COOKIE_OPTIONS.maxAge,
+    expiresAt: Math.floor(Date.now() / 1000) + AUTH_SESSION_MAX_AGE_SECONDS,
     verifiedAt,
   };
 }
@@ -123,23 +133,37 @@ async function revalidateStoredSessionOnce(stored: StoredAuthCookie): Promise<St
   const signInStatus = await cognitoUserSignInAllowed(cognitoUsernameForRefresh(stored));
   if (signInStatus === "disabled") return null;
 
-  const tokens = await refreshTokens(cognitoUsernameForRefresh(stored), stored.refreshToken);
-  if (!tokens) return null;
+  const refresh = await refreshTokens(cognitoUsernameForRefresh(stored), stored.refreshToken);
+  if (!refresh.ok) {
+    if (refresh.reason === "not_authorized") {
+      if (authCookieSessionActive(stored, now)) return stored;
+      return null;
+    }
+    return stored;
+  }
 
+  const tokens = refresh.tokens;
   const claims = decodeIdToken(tokens.idToken);
   const username = (claims.username || claims.email).toLowerCase();
 
   const session = await sessionFromTokens(tokens, stored.email, stored);
   if (session) {
-    return storedFromSession(session, tokens, username, now);
+    const next = storedFromSession(session, tokens, username, now);
+    return { ...next, expiresAt: now + AUTH_SESSION_MAX_AGE_SECONDS };
   }
 
   const fallback = sessionFromStoredIdentity(stored, claims);
   if (fallback) {
-    return storedFromSession(fallback, tokens, username, now);
+    const next = storedFromSession(fallback, tokens, username, now);
+    return { ...next, expiresAt: now + AUTH_SESSION_MAX_AGE_SECONDS };
   }
 
-  return null;
+  return {
+    ...stored,
+    refreshToken: tokens.refreshToken,
+    verifiedAt: now,
+    expiresAt: now + AUTH_SESSION_MAX_AGE_SECONDS,
+  };
 }
 
 async function revalidateStoredSession(stored: StoredAuthCookie): Promise<StoredAuthCookie | null> {
@@ -183,8 +207,29 @@ export async function getServerSession(): Promise<AuthSession | null> {
 }
 
 /**
- * Live Cognito check + cookie update. Use in Route Handlers and Server Actions only.
- * Clears the session cookie when Cognito rejects the refresh token.
+ * For `/api/auth/session`: trust the signed cookie, slide expiry, renew browser `maxAge`.
+ * Does not call Cognito (so reopening the app after idle days does not depend on refresh-token rotation).
+ */
+export async function renewClientAuthSession(): Promise<AuthSession | null> {
+  if (!cognitoConfigured()) return null;
+  const cookieStore = await cookies();
+  const stored = readStoredSession(cookieStore.get(AUTH_COOKIE)?.value);
+  if (!stored) return null;
+  const session = toAuthSession(stored);
+  if (!session) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const renewed: StoredAuthCookie = {
+    ...stored,
+    expiresAt: now + AUTH_SESSION_MAX_AGE_SECONDS,
+  };
+  cookieStore.set(AUTH_COOKIE, sealAuthCookie(renewed, authSessionSecret()), AUTH_COOKIE_OPTIONS);
+  return toAuthSession(renewed);
+}
+
+/**
+ * Live Cognito refresh when due + cookie update. Use in Route Handlers and Server Actions only.
+ * Clears the session cookie when Cognito rejects the refresh token or the user is disabled.
  */
 export async function refreshServerSessionCookie(): Promise<AuthSession | null> {
   if (!cognitoConfigured()) return null;
@@ -193,18 +238,22 @@ export async function refreshServerSessionCookie(): Promise<AuthSession | null> 
   if (!stored) return null;
 
   const revalidated = await revalidateStoredSession(stored);
-  if (!revalidated) {
+  let resolved = revalidated;
+  if (!resolved) {
+    const reread = readStoredSession(cookieStore.get(AUTH_COOKIE)?.value);
+    if (reread && reread.sub === stored.sub && reread.refreshToken !== stored.refreshToken) {
+      resolved = await revalidateStoredSession(reread);
+    }
+  }
+  if (!resolved) {
     cookieStore.delete(AUTH_COOKIE);
     return null;
   }
 
-  const nextValue = sealAuthCookie(revalidated, authSessionSecret());
-  const currentRaw = cookieStore.get(AUTH_COOKIE)?.value;
-  if (currentRaw !== nextValue) {
-    cookieStore.set(AUTH_COOKIE, nextValue, AUTH_COOKIE_OPTIONS);
-  }
+  const nextValue = sealAuthCookie(resolved, authSessionSecret());
+  cookieStore.set(AUTH_COOKIE, nextValue, AUTH_COOKIE_OPTIONS);
 
-  return toAuthSession(revalidated);
+  return toAuthSession(resolved);
 }
 
 export async function clearSession(): Promise<void> {

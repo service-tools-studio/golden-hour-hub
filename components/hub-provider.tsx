@@ -614,9 +614,22 @@ export function HubProvider({
           const preview = Boolean(data.preview) || initialPreviewAuth;
           return { ...picked, preview };
         }
-        if (!data.session) return { role: null, cleanerId: null, preview: false };
-        return { role: data.session.role, cleanerId: data.session.cleanerId, preview: false };
+        if (data.session) {
+          return {
+            role: data.session.role,
+            cleanerId: data.session.cleanerId,
+            preview: false,
+          };
+        }
+        return { role: null, cleanerId: null, preview: false };
       } catch {
+        if (initialAuth?.role) {
+          return {
+            role: initialAuth.role,
+            cleanerId: initialAuth.cleanerId,
+            preview: false,
+          };
+        }
         return { role: null, cleanerId: null, preview: false };
       }
     }
