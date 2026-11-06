@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CleanerSearchField, searchCleaners } from "@/components/admin/cleaner-search";
 import { useHub } from "@/components/hub-provider";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
-import { Notice, PageHeader, Screen } from "@/components/ui";
+import { Notice, PageHeader, Screen, ButtonLoadingLabel } from "@/components/ui";
 import {
   availabilityAgainstSpan,
   availabilityStaffingSortRank,
@@ -19,6 +19,7 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
   const hub = useHub();
   const router = useRouter();
   const [navigating, setNavigating] = useState(false);
+  const [addingCleanerId, setAddingCleanerId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
 
@@ -88,16 +89,23 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
     );
   }
 
+  const busy = navigating || addingCleanerId !== null;
+
   async function add(cleanerId: string) {
-    if (navigating) return;
-    const result = await hub.addJobCleaner(jobId, cleanerId);
-    if (!result.ok) {
-      if (result.message) hub.flash(result.message);
-      return;
+    if (busy) return;
+    setAddingCleanerId(cleanerId);
+    try {
+      const result = await hub.addJobCleaner(jobId, cleanerId);
+      if (!result.ok) {
+        if (result.message) hub.flash(result.message);
+        return;
+      }
+      setNavigating(true);
+      if (result.message) hub.flashLoading(result.message);
+      router.push(withOrigin(`/admin/jobs/${jobId}/edit`, from, { cleaner: cleanerId }));
+    } finally {
+      setAddingCleanerId((current) => (current === cleanerId ? null : current));
     }
-    setNavigating(true);
-    if (result.message) hub.flashLoading(result.message);
-    router.push(withOrigin(`/admin/jobs/${jobId}/edit`, from, { cleaner: cleanerId }));
   }
 
   return (
@@ -111,19 +119,26 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
         {choices.length === 0 ? (
           <p className="text-sm text-ink/70">Every active cleaner is already on this cleaning.</p>
         ) : (
-          <CleanerSearchField query={query} onQuery={setQuery} />
+          <CleanerSearchField query={query} onQuery={setQuery} disabled={busy} />
         )}
         {filtering && choices.length > 0 && visibleChoices.length === 0 ? (
           <p className="px-1 text-sm text-ink/55">No cleaners match.</p>
         ) : null}
-        {visibleChoices.map(({ cleaner, pills }) => (
+        {visibleChoices.map(({ cleaner, pills }) => {
+          const loading = addingCleanerId === cleaner.cleanerId;
+          return (
           <button
             key={cleaner.cleanerId}
             type="button"
-            disabled={navigating}
+            disabled={busy}
+            aria-busy={loading}
             onClick={() => add(cleaner.cleanerId)}
             className="block min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-left disabled:opacity-70"
           >
+            {loading ? (
+              <ButtonLoadingLabel label="Adding…" tone="onLight" />
+            ) : (
+              <>
             <span className="block text-base font-semibold">{personName(cleaner.firstName, cleaner.lastName)}</span>
             {pills.length > 0 ? (
               <span className="mt-2 flex flex-wrap gap-2">
@@ -139,8 +154,11 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
             ) : (
               <span className="mt-1 block text-sm text-ink/55">No availability this day</span>
             )}
+              </>
+            )}
           </button>
-        ))}
+          );
+        })}
       </div>
     </Screen>
   );

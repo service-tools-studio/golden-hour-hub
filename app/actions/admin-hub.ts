@@ -4,6 +4,7 @@ import { AuthError, requireAdmin } from "@/lib/auth/guards";
 import { purgeStaleAssignmentSmsLogs } from "@/lib/cleaner/assignment-sms-log-retention";
 import type { CustomerInput } from "@/lib/domain/customers";
 import { dynamoConfigured } from "@/lib/data/repository";
+import { persistJobRosterMutation } from "@/lib/data/persist-job-draft-cleaner";
 import {
   addJobCleanerOnHub,
   deleteCustomerOnHub,
@@ -57,6 +58,23 @@ async function persistAdminHubApplier(
     console.error("purgeStaleAssignmentSmsLogs failed after admin hub mutation.", error);
   }
   const { ok: _savedOk, hub, revision, ...rest } = saved;
+  return { ok: true, hub, revision, ...rest };
+}
+
+async function persistJobDraftCleanerApplier(
+  jobId: string,
+  cleanerId: string,
+  _mode: "add" | "remove",
+  apply: (hub: HubData) => ReturnType<typeof addJobCleanerOnHub>,
+): Promise<AdminHubActionResult> {
+  const saved = await persistJobRosterMutation(jobId, cleanerId, apply);
+  if (!saved.ok) return saved;
+  try {
+    await purgeStaleAssignmentSmsLogs(saved.hub);
+  } catch (error) {
+    console.error("purgeStaleAssignmentSmsLogs failed after job draft mutation.", error);
+  }
+  const { ok: _ok, hub, revision, ...rest } = saved;
   return { ok: true, hub, revision, ...rest };
 }
 
@@ -165,7 +183,7 @@ export async function addJobCleanerAction(jobId: string, cleanerId: string): Pro
   try {
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    return persistAdminHubApplier((hub) => addJobCleanerOnHub(hub, jobId, cleanerId));
+    return persistJobDraftCleanerApplier(jobId, cleanerId, "add", (hub) => addJobCleanerOnHub(hub, jobId, cleanerId));
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("addJobCleanerAction failed.", error);
@@ -177,7 +195,9 @@ export async function removeJobCleanerAction(jobId: string, cleanerId: string): 
   try {
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    return persistAdminHubApplier((hub) => removeJobCleanerOnHub(hub, jobId, cleanerId));
+    return persistJobDraftCleanerApplier(jobId, cleanerId, "remove", (hub) =>
+      removeJobCleanerOnHub(hub, jobId, cleanerId),
+    );
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("removeJobCleanerAction failed.", error);

@@ -15,7 +15,7 @@ import {
   groupedCustomerDayView,
   withOrigin,
 } from "@/components/jobs/origin";
-import { AlertIcon, Card, PageHeader, Screen } from "@/components/ui";
+import { AlertIcon, ButtonSpinner, Card, PageHeader, Screen } from "@/components/ui";
 import { snapshotVisit } from "@/lib/domain/customers";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
@@ -104,6 +104,8 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [navigatingAway, setNavigatingAway] = useState(false);
   const [notifyingAssignmentId, setNotifyingAssignmentId] = useState<string | null>(null);
+  const [removingCleanerId, setRemovingCleanerId] = useState<string | null>(null);
+  const removalBusy = removingCleanerId !== null;
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
   const assignments = hub.assignments.filter(
     (item) => item.jobId === job.jobId && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED",
@@ -150,7 +152,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   return (
     <div className="space-y-3">
         <Card>
-          <NavigatingLink href={editPath(job.jobId, from)} className="block">
+          <NavigatingLink href={editPath(job.jobId, from)} className="block" disabled={removalBusy}>
             <ServiceLine serviceType={job.serviceType} prominent />
             <div className="mt-3">
               <p className="font-semibold">{visit.customerDisplayName}</p>
@@ -189,13 +191,21 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                 <div className="mt-3 flex gap-2">
                   <a
                     href={arrivalFlag.textHref}
-                    className="inline-flex min-h-10 items-center rounded-full bg-ink px-4 text-sm font-semibold text-white"
+                    className={`inline-flex min-h-10 items-center rounded-full bg-ink px-4 text-sm font-semibold text-white ${removalBusy ? "pointer-events-none opacity-50" : ""}`}
+                    aria-disabled={removalBusy}
+                    onClick={(event) => {
+                      if (removalBusy) event.preventDefault();
+                    }}
                   >
                     Text client
                   </a>
                   <a
                     href={arrivalFlag.callHref}
-                    className="inline-flex min-h-10 items-center rounded-full border border-ink/20 bg-white px-4 text-sm font-semibold"
+                    className={`inline-flex min-h-10 items-center rounded-full border border-ink/20 bg-white px-4 text-sm font-semibold ${removalBusy ? "pointer-events-none opacity-50" : ""}`}
+                    aria-disabled={removalBusy}
+                    onClick={(event) => {
+                      if (removalBusy) event.preventDefault();
+                    }}
                   >
                     Call client
                   </a>
@@ -203,14 +213,18 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               ) : (
                 <Link
                   href={`/admin/customers/${job.customerId}`}
-                  className="mt-3 inline-flex min-h-10 items-center rounded-full border border-ink/20 px-4 text-sm font-semibold"
+                  className={`mt-3 inline-flex min-h-10 items-center rounded-full border border-ink/20 px-4 text-sm font-semibold ${removalBusy ? "pointer-events-none opacity-50" : ""}`}
+                  aria-disabled={removalBusy}
+                  onClick={(event) => {
+                    if (removalBusy) event.preventDefault();
+                  }}
                 >
                   Add client phone to notify
                 </Link>
               )}
             </div>
           ) : null}
-          <NavigatingLink href={editPath(job.jobId, from)} className="block">
+          <NavigatingLink href={editPath(job.jobId, from)} className="block" disabled={removalBusy}>
             <div className="mt-3 flex items-start justify-between gap-3">
               <div className="text-sm font-semibold">
                 <p>Confirmed headcount: {confirmed} / {needed}</p>
@@ -234,7 +248,11 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                   className="rounded-2xl ring-1 ring-ink/10 bg-cream/30 p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <NavigatingLink href={editPath(job.jobId, from, { cleaner: cleanerId })} className="min-w-0 flex-1">
+                    <NavigatingLink
+                      href={editPath(job.jobId, from, { cleaner: cleanerId })}
+                      className="min-w-0 flex-1"
+                      disabled={removalBusy}
+                    >
                       <p className="text-base font-semibold leading-snug">
                         {cleaner.firstName} {cleaner.lastName}
                       </p>
@@ -258,7 +276,12 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         </p>
                       )}
                     </NavigatingLink>
-                    <RemoveCleaner jobId={job.jobId} cleanerId={cleanerId} />
+                    <RemoveCleaner
+                      jobId={job.jobId}
+                      cleanerId={cleanerId}
+                      removingCleanerId={removingCleanerId}
+                      setRemovingCleanerId={setRemovingCleanerId}
+                    />
                   </div>
                 </div>
               );
@@ -294,7 +317,11 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <NavigatingLink href={editPath(job.jobId, from, { assignment: assignment.assignmentId })} className="block">
+                      <NavigatingLink
+                        href={editPath(job.jobId, from, { assignment: assignment.assignmentId })}
+                        className="block"
+                        disabled={removalBusy}
+                      >
                         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                           <p className="text-base font-semibold leading-snug">
                             {cleaner.firstName} {cleaner.lastName}
@@ -324,7 +351,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                       {showNotice ? (
                       <NotifyCleanerNotice
                         loading={notifyingAssignmentId === assignment.assignmentId}
-                        disabled={!cleaner.mobilePhone}
+                        disabled={!cleaner.mobilePhone || removalBusy}
                         onNotify={() => {
                           if (!cleaner.mobilePhone) return;
                           setNotifyingAssignmentId(assignment.assignmentId);
@@ -364,7 +391,12 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                     ) : null}
                       {!declined ? <AssignmentSmsLogList assignmentId={assignment.assignmentId} /> : null}
                     </div>
-                  <RemoveCleaner jobId={job.jobId} cleanerId={cleaner.cleanerId} />
+                  <RemoveCleaner
+                    jobId={job.jobId}
+                    cleanerId={cleaner.cleanerId}
+                    removingCleanerId={removingCleanerId}
+                    setRemovingCleanerId={setRemovingCleanerId}
+                  />
                   </div>
                 </div>
               );
@@ -372,12 +404,18 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             </div>
           </div>
         </Card>
+        {removalBusy ? (
+          <span className="flex min-h-12 items-center justify-center rounded-2xl bg-ink/50 text-base font-semibold text-cream">
+            Removing cleaner…
+          </span>
+        ) : (
         <Link
           href={withOrigin(`/admin/jobs/${job.jobId}/cleaners`, from)}
           className="flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
         >
           Add cleaner
         </Link>
+        )}
         {series ? (
           <RecurringCard
             jobId={job.jobId}
@@ -430,6 +468,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                 if (result.ok) router.push(`/admin/customers/${job.customerId}`);
               })();
             }}
+            actionsDisabled={removalBusy}
           />
         ) : null}
     </div>
@@ -459,8 +498,9 @@ function NotifyCleanerNotice({
       </button>
       <button
         type="button"
+        disabled={disabled || loading}
         onClick={onDismiss}
-        className="self-start px-1 text-sm font-semibold text-ink/70 underline decoration-ink/40 decoration-2 underline-offset-4"
+        className="self-start px-1 text-sm font-semibold text-ink/70 underline decoration-ink/40 decoration-2 underline-offset-4 disabled:text-ink/40"
       >
         Dismiss
       </button>
@@ -541,6 +581,7 @@ function RecurringCard({
   deleteCleaningBlocked,
   onDeleteCleaning,
   onDeleteSchedule,
+  actionsDisabled = false,
 }: {
   jobId: string;
   customerId: string;
@@ -557,6 +598,7 @@ function RecurringCard({
   onCloseDelete: () => void;
   onDeleteCleaning: () => void;
   onDeleteSchedule: () => void;
+  actionsDisabled?: boolean;
 }) {
   const back = withOrigin(`/admin/jobs/${jobId}`, from);
   const editHref = `/admin/customers/${customerId}?series=${encodeURIComponent(seriesId)}&returnTo=${encodeURIComponent(back)}`;
@@ -571,14 +613,19 @@ function RecurringCard({
         <p className="text-sm text-ink/70">{detail}</p>
         <Link
           href={editHref}
-          className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream"
+          className={`mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-ink text-base font-semibold text-cream ${actionsDisabled ? "pointer-events-none opacity-50" : ""}`}
+          aria-disabled={actionsDisabled}
+          onClick={(event) => {
+            if (actionsDisabled) event.preventDefault();
+          }}
         >
           Edit schedule
         </Link>
         <button
           type="button"
+          disabled={actionsDisabled}
           onClick={onAskDelete}
-          className="mt-1 flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
+          className="mt-1 flex min-h-12 w-full items-center justify-center font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4 disabled:text-ink/40"
         >
           Delete schedule
         </button>
@@ -602,16 +649,26 @@ function RecurringCard({
             <div className="mt-4 space-y-2">
               <button
                 type="button"
-                disabled={deleteCleaningBlocked}
+                disabled={deleteCleaningBlocked || actionsDisabled}
                 onClick={onDeleteCleaning}
                 className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink disabled:opacity-50"
               >
                 This cleaning · {dateLabel}
               </button>
-              <button type="button" onClick={onDeleteSchedule} className="min-h-12 w-full rounded-2xl bg-red-700 text-base font-semibold text-white">
+              <button
+                type="button"
+                disabled={actionsDisabled}
+                onClick={onDeleteSchedule}
+                className="min-h-12 w-full rounded-2xl bg-red-700 text-base font-semibold text-white disabled:opacity-50"
+              >
                 Recurring schedule
               </button>
-              <button type="button" onClick={onCloseDelete} className="min-h-12 w-full text-base font-semibold text-ink/70">
+              <button
+                type="button"
+                disabled={actionsDisabled}
+                onClick={onCloseDelete}
+                className="min-h-12 w-full text-base font-semibold text-ink/70 disabled:opacity-50"
+              >
                 Cancel
               </button>
             </div>
@@ -622,57 +679,84 @@ function RecurringCard({
   );
 }
 
-function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string }) {
+function RemoveCleaner({
+  jobId,
+  cleanerId,
+  removingCleanerId,
+  setRemovingCleanerId,
+}: {
+  jobId: string;
+  cleanerId: string;
+  removingCleanerId: string | null;
+  setRemovingCleanerId: (cleanerId: string | null) => void;
+}) {
   const hub = useHub();
+  const removing = removingCleanerId === cleanerId;
+  const removalBusy = removingCleanerId !== null;
 
   async function remove() {
-    const job = hub.jobs.find((item) => item.jobId === jobId);
-    const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
-    const assignment = hub.assignments.find(
-      (item) =>
-        item.jobId === jobId &&
-        item.cleanerId === cleanerId &&
-        item.status !== "CANCELED" &&
-        item.status !== "EXPIRED_JOB_FILLED",
-    );
-    const notify = assignmentNotifiesOnRemoval(assignment?.status);
-    const result = await hub.removeJobCleaner(jobId, cleanerId);
-    if (!result.ok) {
-      if (result.message) hub.flash(result.message);
-      return;
+    if (removalBusy) return;
+    setRemovingCleanerId(cleanerId);
+    try {
+      const job = hub.jobs.find((item) => item.jobId === jobId);
+      const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
+      const assignment = hub.assignments.find(
+        (item) =>
+          item.jobId === jobId &&
+          item.cleanerId === cleanerId &&
+          item.status !== "CANCELED" &&
+          item.status !== "EXPIRED_JOB_FILLED",
+      );
+      const notify = assignmentNotifiesOnRemoval(assignment?.status);
+      const result = await hub.removeJobCleaner(jobId, cleanerId);
+      if (!result.ok) {
+        if (result.message) hub.flash(result.message);
+        return;
+      }
+      if (!notify || !job || !cleaner || !assignment) {
+        if (result.message) hub.flash(result.message);
+        return;
+      }
+      const body = cleanerRemovedFromJobSms({
+        cleanerFirstName: cleaner.firstName,
+        customerFirstName: customerFirstNameForCleaner(job.snapshot),
+        date: job.date,
+      });
+      hub.queueSchedulingSms(
+        deliverSchedulingCleanerSms({
+          cleaner,
+          body,
+          assignmentMessage: result.message,
+          manualDetail: "removal notice",
+          assignmentLog: {
+            assignmentId: assignment.assignmentId,
+            jobId,
+            kind: "removal",
+          },
+        }),
+        result.message,
+      );
+    } finally {
+      setRemovingCleanerId(null);
     }
-    if (!notify || !job || !cleaner || !assignment) {
-      if (result.message) hub.flash(result.message);
-      return;
-    }
-    const body = cleanerRemovedFromJobSms({
-      cleanerFirstName: cleaner.firstName,
-      customerFirstName: customerFirstNameForCleaner(job.snapshot),
-      date: job.date,
-    });
-    hub.queueSchedulingSms(
-      deliverSchedulingCleanerSms({
-        cleaner,
-        body,
-        assignmentMessage: result.message,
-        manualDetail: "removal notice",
-        assignmentLog: {
-          assignmentId: assignment.assignmentId,
-          jobId,
-          kind: "removal",
-        },
-      }),
-      result.message,
-    );
   }
 
   return (
     <button
       type="button"
+      disabled={removalBusy}
+      aria-busy={removing}
       className="shrink-0 text-sm font-semibold underline disabled:text-ink/40"
       onClick={() => remove()}
     >
-      Remove
+      {removing ? (
+        <span className="inline-flex items-center gap-1.5">
+          <ButtonSpinner tone="onLight" />
+          Removing…
+        </span>
+      ) : (
+        "Remove"
+      )}
     </button>
   );
 }

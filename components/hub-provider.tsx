@@ -59,6 +59,7 @@ import {
   updateVisitOnHub,
   type AdminHubApplierResult,
 } from "@/lib/hub/admin-hub-appliers";
+import { mergeJobStaffingIntoHub } from "@/lib/hub/merge-job-staffing";
 import type {
   CompleteAssignmentInput,
   CreateJobInput,
@@ -876,6 +877,24 @@ export function HubProvider({
     };
   }
 
+  async function applyAdminJobStaffingResult(remote: AdminHubActionResult): Promise<ActionResult> {
+    if (!remote.ok) return remote;
+    skipPersistForRemoteSyncRef.current = true;
+    hubRevisionRef.current = remote.revision;
+    setState({
+      ...withCurrentHorizon(mergeJobStaffingIntoHub(data, remote.hub)),
+      role: data.role,
+      cleanerId: data.cleanerId,
+    });
+    return {
+      ok: true,
+      message: remote.message,
+      customerId: remote.customerId,
+      jobId: remote.jobId,
+      assignmentId: remote.assignmentId,
+    };
+  }
+
   async function applyAdminActionResult(remote: AdminHubActionResult): Promise<ActionResult> {
     if (!remote.ok) return remote;
     skipPersistForRemoteSyncRef.current = true;
@@ -1016,7 +1035,7 @@ export function HubProvider({
   }
 
   async function addJobCleaner(jobId: string, cleanerId: string): AsyncActionResult {
-    if (isDynamoAdmin()) return applyAdminActionResult(await addJobCleanerAction(jobId, cleanerId));
+    if (isDynamoAdmin()) return applyAdminJobStaffingResult(await addJobCleanerAction(jobId, cleanerId));
     return applyPreviewMutation(addJobCleanerOnHub(data, jobId, cleanerId));
   }
 
@@ -1029,7 +1048,7 @@ export function HubProvider({
         item.status !== "EXPIRED_JOB_FILLED",
     );
     if (isDynamoAdmin()) {
-      const result = await applyAdminActionResult(await removeJobCleanerAction(jobId, cleanerId));
+      const result = await applyAdminJobStaffingResult(await removeJobCleanerAction(jobId, cleanerId));
       if (result.ok && assignment) scheduleAssignmentSmsLogPurge(assignment.assignmentId);
       return result;
     }

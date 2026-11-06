@@ -4,6 +4,7 @@ import {
   DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
+  QueryCommand,
   ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -108,6 +109,36 @@ export async function loadHub(): Promise<HubData> {
     await saveHub(next);
   }
   return next;
+}
+
+/** Read one cleaning and its assignments plus one cleaner profile (no table scan). */
+export async function loadHubForJobStaffing(jobId: string, cleanerId: string): Promise<HubData | null> {
+  const today = todayInBusinessZone();
+  const jobItems = await queryItemsByPk(`JOB#${jobId}`);
+  const profile = jobItems.find((item) => item.sk === "PROFILE" && item.entity === "job");
+  if (!profile) return null;
+  const cleaner = await loadCleanerProfile(cleanerId);
+  if (!cleaner) return null;
+  return itemsToHub([...jobItems, cleanerToItem(cleaner)], today);
+}
+
+async function queryItemsByPk(pk: string): Promise<DynamoItem[]> {
+  const doc = client();
+  const items: DynamoItem[] = [];
+  let startKey: Record<string, unknown> | undefined;
+  do {
+    const page = await doc.send(
+      new QueryCommand({
+        TableName: tableName(),
+        KeyConditionExpression: "pk = :pk",
+        ExpressionAttributeValues: { ":pk": pk },
+        ExclusiveStartKey: startKey,
+      }),
+    );
+    items.push(...((page.Items ?? []) as DynamoItem[]));
+    startKey = page.LastEvaluatedKey;
+  } while (startKey);
+  return items;
 }
 
 export async function putItems(items: DynamoItem[]): Promise<void> {

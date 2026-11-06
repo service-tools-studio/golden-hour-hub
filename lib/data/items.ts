@@ -210,6 +210,10 @@ function seriesItem(series: RecurringSeries): DynamoItem {
   };
 }
 
+export function jobToItem(job: Job): DynamoItem {
+  return jobItem(job);
+}
+
 function jobItem(job: Job): DynamoItem {
   return {
     pk: `JOB#${job.jobId}`,
