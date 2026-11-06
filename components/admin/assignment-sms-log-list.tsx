@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchAssignmentSmsLogs } from "@/app/actions/assignment-sms-logs";
-import { assignmentSmsKindLabel, assignmentSmsLogDelivery } from "@/lib/cleaner/assignment-sms-log";
+import { assignmentSmsKindLabel, assignmentSmsLogDelivery } from "@/lib/cleaner/assignment-sms-log-display";
 import type { AssignmentSmsLog } from "@/lib/domain/types";
 
 function formatReceivedAt(iso: string | null): string {

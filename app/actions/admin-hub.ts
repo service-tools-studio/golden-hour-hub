@@ -4,6 +4,9 @@ import { AuthError, requireAdmin } from "@/lib/auth/guards";
 import { purgeStaleAssignmentSmsLogs } from "@/lib/cleaner/assignment-sms-log-retention";
 import type { CustomerInput } from "@/lib/domain/customers";
 import { dynamoConfigured } from "@/lib/data/repository";
+import { loadAdminHubSlices } from "@/lib/data/load-admin-hub";
+import { loadHubForCustomerSave } from "@/lib/data/load-hub-mutations";
+import { persistHubDiffMutation } from "@/lib/data/persist-hub-diff-mutation";
 import { persistJobRosterMutation } from "@/lib/data/persist-job-draft-cleaner";
 import {
   addJobCleanerOnHub,
@@ -32,7 +35,6 @@ import type {
   UpdateVisitInput,
 } from "@/lib/hub/admin-hub-types";
 import { updateCleanerAdminOnHub, type UpdateCleanerAdminInput } from "@/lib/hub/admin-mutations";
-import { persistHubMutation } from "@/lib/hub/persist-hub-mutation";
 import type { HubData } from "@/lib/mock/seed";
 
 export type AdminHubActionResult =
@@ -50,7 +52,10 @@ export type AdminHubActionResult =
 async function persistAdminHubApplier(
   apply: (hub: HubData) => ReturnType<typeof saveCustomerOnHub>,
 ): Promise<AdminHubActionResult> {
-  const saved = await persistHubMutation(apply);
+  const saved = await persistHubDiffMutation(
+    () => loadAdminHubSlices({ persistReconciliation: false }),
+    apply,
+  );
   if (!saved.ok) return saved;
   try {
     await purgeStaleAssignmentSmsLogs(saved.hub);
@@ -85,7 +90,13 @@ export async function saveCustomerAction(
   try {
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    return persistAdminHubApplier((hub) => saveCustomerOnHub(hub, input, customerId));
+    const saved = await persistHubDiffMutation(
+      () => loadHubForCustomerSave(customerId),
+      (hub) => saveCustomerOnHub(hub, input, customerId),
+    );
+    if (!saved.ok) return saved;
+    const { ok: _ok, hub, revision, ...rest } = saved;
+    return { ok: true, hub, revision, ...rest };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("saveCustomerAction failed.", error);
@@ -136,11 +147,14 @@ export async function updateCleanerAdminAction(
   try {
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const saved = await persistHubMutation((hub) => {
-      const outcome = updateCleanerAdminOnHub(hub, cleanerId, input);
-      if (!outcome.result.ok) return { ok: false, message: outcome.result.message };
-      return { ok: true, hub: outcome.hub };
-    });
+    const saved = await persistHubDiffMutation(
+      () => loadAdminHubSlices({ persistReconciliation: false }),
+      (hub) => {
+        const outcome = updateCleanerAdminOnHub(hub, cleanerId, input);
+        if (!outcome.result.ok) return { ok: false, message: outcome.result.message };
+        return { ok: true, hub: outcome.hub };
+      },
+    );
     if (!saved.ok) return saved;
     try {
       await purgeStaleAssignmentSmsLogs(saved.hub);

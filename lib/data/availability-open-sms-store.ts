@@ -1,17 +1,13 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { dynamoConfigured } from "./repository.ts";
+import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { dynamoConfigured } from "./dynamo-config.ts";
+import { dynamoDoc, dynamoTableName } from "./dynamo-client.ts";
 
 function tableName(): string {
-  const name = process.env.DYNAMODB_TABLE_NAME;
-  if (!name) throw new Error("DYNAMODB_TABLE_NAME is not set.");
-  return name;
+  return dynamoTableName();
 }
 
-function doc(): DynamoDBDocumentClient {
-  return DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || "us-west-2" }), {
-    marshallOptions: { removeUndefinedValues: true },
-  });
+function doc() {
+  return dynamoDoc();
 }
 
 function markerKey(weekStart: string, cleanerId: string): { pk: string; sk: string } {

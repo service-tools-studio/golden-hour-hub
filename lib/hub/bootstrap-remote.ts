@@ -5,7 +5,9 @@ import { AuthError, requireSession } from "@/lib/auth/guards";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { cognitoConfigured, previewAuthEnabled } from "@/lib/auth/config";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
-import { dynamoConfigured, loadHub, readHubRevision } from "@/lib/data/repository";
+import { readHubChangeManifest } from "@/lib/data/hub-change-manifest";
+import { loadAdminHubRemainderSlice, loadAdminHubSlices, loadCleanerHubSlices, loadHubPartitions } from "@/lib/data/load-admin-hub";
+import { dynamoConfigured } from "@/lib/data/repository";
 import type { HubData } from "@/lib/mock/seed";
 
 export type BootstrapResult =
@@ -17,6 +19,12 @@ export type HubVersionResult =
   | { ok: false; message: string }
   | { source: "preview" }
   | { revision: number };
+
+export type RemoteHubSyncResult =
+  | { ok: false; message: string }
+  | { source: "preview" }
+  | { source: "dynamodb"; mode: "full"; data: HubData; revision: number }
+  | { source: "dynamodb"; mode: "patch"; data: HubData; revision: number };
 
 type RemoteAccess =
   | { ok: false; message: string }
@@ -51,6 +59,20 @@ async function remoteHubAccess(): Promise<RemoteAccess> {
   }
 }
 
+async function loadHubForAccess(
+  access: Extract<RemoteAccess, { source: "dynamodb" }>,
+  options: { loadTeamSchedulingExtras?: boolean } = {},
+): Promise<HubData> {
+  if (access.role === "ADMIN") {
+    return loadAdminHubSlices({
+      persistReconciliation: false,
+      loadTeamSchedulingExtras: options.loadTeamSchedulingExtras,
+    });
+  }
+  const data = await loadCleanerHubSlices(access.cleanerId, { persistReconciliation: false });
+  return hubDataForCleaner(data, access.cleanerId);
+}
+
 /** Fresh hub read for bootstrap and background sync (never cached). */
 export async function loadRemoteHub(): Promise<BootstrapResult> {
   noStore();
@@ -58,15 +80,61 @@ export async function loadRemoteHub(): Promise<BootstrapResult> {
     const access = await remoteHubAccess();
     if ("ok" in access) return access;
     if (access.source === "preview") return { source: "preview" };
-    const data = await loadHub();
-    const revision = await readHubRevision();
-    if (access.role === "ADMIN") {
-      return { source: "dynamodb", data, revision };
-    }
-    return { source: "dynamodb", data: hubDataForCleaner(data, access.cleanerId), revision };
+    const [data, { revision }] = await Promise.all([
+      loadHubForAccess(access, access.role === "ADMIN" ? { loadTeamSchedulingExtras: false } : {}),
+      readHubChangeManifest(),
+    ]);
+    return { source: "dynamodb", data, revision };
   } catch (error) {
     console.error("loadRemoteHub failed.", error);
     return { ok: false, message: "Could not load Hub data." };
+  }
+}
+
+/** Incremental sync when possible; otherwise full admin/cleaner slice reload. */
+export async function loadRemoteHubSync(clientRevision: number | null): Promise<RemoteHubSyncResult> {
+  noStore();
+  try {
+    const access = await remoteHubAccess();
+    if ("ok" in access) return access;
+    if (access.source === "preview") return { source: "preview" };
+
+    const manifest = await readHubChangeManifest();
+    const partitions = manifest.changedPartitions;
+    const canPatch =
+      access.role === "ADMIN" &&
+      partitions.length > 0 &&
+      partitions.length <= 32 &&
+      clientRevision !== null;
+
+    if (canPatch) {
+      const patch = await loadHubPartitions(partitions);
+      return { source: "dynamodb", mode: "patch", data: patch, revision: manifest.revision };
+    }
+
+    const data = await loadHubForAccess(access, { loadTeamSchedulingExtras: true });
+    return { source: "dynamodb", mode: "full", data, revision: manifest.revision };
+  } catch (error) {
+    console.error("loadRemoteHubSync failed.", error);
+    return { ok: false, message: "Could not sync Hub data." };
+  }
+}
+
+/** Team/scheduling slice for admin after fast bootstrap (availability, submissions, BQ). */
+export async function loadRemoteHubAdminSupplement(): Promise<
+  { ok: false; message: string } | { source: "preview" } | { ok: true; data: HubData }
+> {
+  noStore();
+  try {
+    const access = await remoteHubAccess();
+    if ("ok" in access) return access;
+    if (access.source === "preview") return { source: "preview" };
+    if (access.role !== "ADMIN") return { ok: false, message: "Not an admin session." };
+    const data = await loadAdminHubRemainderSlice();
+    return { ok: true, data };
+  } catch (error) {
+    console.error("loadRemoteHubAdminSupplement failed.", error);
+    return { ok: false, message: "Could not load scheduling data." };
   }
 }
 
@@ -77,7 +145,7 @@ export async function loadRemoteHubRevision(): Promise<HubVersionResult> {
     const access = await remoteHubAccess();
     if ("ok" in access) return access;
     if (access.source === "preview") return { source: "preview" };
-    const revision = await readHubRevision();
+    const { revision } = await readHubChangeManifest();
     return { revision };
   } catch (error) {
     console.error("loadRemoteHubRevision failed.", error);

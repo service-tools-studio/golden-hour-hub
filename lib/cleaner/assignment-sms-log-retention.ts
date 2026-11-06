@@ -2,7 +2,7 @@ import {
   deleteAssignmentSmsLogsForAssignment,
   deleteAssignmentSmsLogsForJob,
 } from "../data/assignment-sms-log-store.ts";
-import { dynamoConfigured } from "../data/repository.ts";
+import { dynamoConfigured } from "../data/dynamo-config.ts";
 import type { Job } from "../domain/types.ts";
 import { addDays, todayInBusinessZone } from "../domain/time.ts";
 import type { HubData } from "../mock/seed.ts";

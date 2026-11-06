@@ -139,6 +139,8 @@ function customerItem(customer: Customer): DynamoItem {
     pk: `CUSTOMER#${customer.customerId}`,
     sk: "PROFILE",
     entity: "customer",
+    gsi1pk: "CUSTOMER#ALL",
+    gsi1sk: `${customer.lastName.toLowerCase()}#${customer.firstName.toLowerCase()}#${customer.customerId}`,
     ...customer,
   };
 }

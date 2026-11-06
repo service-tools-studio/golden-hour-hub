@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, ran: false, message: "DynamoDB is not configured." });
   }
   try {
-    const hub = await loadHub();
+    const hub = await loadHub({ persistReconciliation: true });
     const result = await runAvailabilityWeekOpenCron(hub);
     if (!result.ran) {
       return NextResponse.json({ ok: true, ran: false, message: "Skipped — not Monday in business timezone." });

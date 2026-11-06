@@ -1,6 +1,7 @@
 import "server-only";
 
-import { loadHub, readHubRevision, saveHubIfRevision } from "../data/repository.ts";
+import { readHubRevision, saveHubIfRevision } from "../data/repository.ts";
+import { loadAdminHubSlices } from "../data/load-admin-hub.ts";
 import type { HubData } from "../mock/seed.ts";
 
 type MutationOutcome =
@@ -14,14 +15,14 @@ export async function persistHubMutation<T extends MutationOutcome>(
   apply: (hub: HubData) => T,
   maxAttempts = 3,
 ): Promise<(T & { revision: number }) | { ok: false; message: string }> {
-  let hub = await loadHub();
+  let hub = await loadAdminHubSlices({ persistReconciliation: false });
   let expectedRevision = await readHubRevision();
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const outcome = apply(hub);
     if (!outcome.ok) return outcome as { ok: false; message: string };
 
-    const saved = await saveHubIfRevision(outcome.hub, expectedRevision);
+    const saved = await saveHubIfRevision(hub, outcome.hub, expectedRevision);
     if (saved.ok) {
       return { ...outcome, revision: saved.revision } as T & { revision: number };
     }

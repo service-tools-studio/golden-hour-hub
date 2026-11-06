@@ -4,7 +4,7 @@ import { AuthError, requireCleaner } from "@/lib/auth/guards";
 import { applySchedulingSmsEnrollment } from "@/lib/cleaner/sms-consent-record";
 import { SMS_SCHEDULING_DISCLOSURE_VERSION } from "@/lib/cleaner/sms-disclosure";
 import { normalizePhone } from "@/lib/domain/customers";
-import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
+import { dynamoConfigured, loadCleanerProfile, persistCleanerProfile } from "@/lib/data/repository";
 
 export type SmsOnboardingSuccess = {
   smsSchedulingOptIn: boolean;
@@ -28,8 +28,7 @@ export async function recordSmsOnboardingChoice(
     if (disclosureVersion !== SMS_SCHEDULING_DISCLOSURE_VERSION) {
       return { ok: false, message: "This consent form is out of date. Refresh the page and try again." };
     }
-    const hub = await loadHub();
-    const cleaner = hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
+    const cleaner = await loadCleanerProfile(session.cleanerId);
     if (!cleaner) return { ok: false, message: "Your cleaner profile could not be found." };
     const mobilePhone = normalizePhone(mobilePhoneInput);
     if (!mobilePhone) {
@@ -43,10 +42,7 @@ export async function recordSmsOnboardingChoice(
       updatedBy: session.email,
       consentMethod: "hub_web",
     });
-    await saveHub({
-      ...hub,
-      cleaners: hub.cleaners.map((item) => (item.cleanerId === session.cleanerId ? next : item)),
-    });
+    await persistCleanerProfile(next);
     return {
       ok: true,
       smsSchedulingOptIn: optIn,

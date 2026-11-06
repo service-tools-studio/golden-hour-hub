@@ -3,11 +3,12 @@
 import { AuthError, requireAdmin } from "@/lib/auth/guards";
 import { purgeStaleAssignmentSmsLogs } from "@/lib/cleaner/assignment-sms-log-retention";
 import { dynamoConfigured } from "@/lib/data/repository";
+import { loadHubForCompleteAssignment } from "@/lib/data/load-hub-mutations";
+import { persistHubDiffMutation } from "@/lib/data/persist-hub-diff-mutation";
 import {
   completeAssignmentOnHub,
   type CompleteAssignmentInput,
 } from "@/lib/hub/complete-assignment-mutations";
-import { persistHubMutation } from "@/lib/hub/persist-hub-mutation";
 import type { HubData } from "@/lib/mock/seed";
 
 export type CompleteAssignmentActionResult =
@@ -20,7 +21,11 @@ export async function completeAssignmentAction(
   try {
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const saved = await persistHubMutation((hub) => completeAssignmentOnHub(hub, input));
+    const saved = await persistHubDiffMutation(
+      () => loadHubForCompleteAssignment(input.jobId, input.cleanerId),
+      (hub) => completeAssignmentOnHub(hub, input),
+      "That cleaning could not be found.",
+    );
     if (!saved.ok) return saved;
     try {
       await purgeStaleAssignmentSmsLogs(saved.hub);

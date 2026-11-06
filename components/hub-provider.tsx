@@ -40,7 +40,7 @@ import {
 } from "@/app/actions/admin-hub";
 import { createJobAction } from "@/app/actions/admin-jobs";
 import { completeAssignmentAction } from "@/app/actions/admin-assignments";
-import { bootstrapHub } from "@/app/actions/hub-data";
+import { bootstrapHub, bootstrapAdminHubSupplement, type BootstrapResult } from "@/app/actions/hub-data";
 import {
   addJobCleanerOnHub,
   deleteCustomerOnHub,
@@ -59,7 +59,7 @@ import {
   updateVisitOnHub,
   type AdminHubApplierResult,
 } from "@/lib/hub/admin-hub-appliers";
-import { mergeJobStaffingIntoHub } from "@/lib/hub/merge-job-staffing";
+import { mergeHubPatchIntoHub } from "@/lib/hub/merge-hub-patch";
 import type {
   CompleteAssignmentInput,
   CreateJobInput,
@@ -308,17 +308,32 @@ function hubEntitySnapshot(state: HubState): string {
 
 type InitialAuth = { role: AppRole; cleanerId: string | null };
 
+function dynamoBootstrap(remote: BootstrapResult | null): Extract<BootstrapResult, { source: "dynamodb" }> | null {
+  if (!remote || "ok" in remote || remote.source !== "dynamodb") return null;
+  return remote;
+}
+
 export function HubProvider({
   children,
   initialAuth = null,
   initialPreviewAuth = false,
+  initialBootstrap = null,
 }: {
   children: React.ReactNode;
   initialAuth?: InitialAuth | null;
   /** Server-known preview mode (no AUTH_SESSION_SECRET, non-production). */
   initialPreviewAuth?: boolean;
+  initialBootstrap?: BootstrapResult | null;
 }) {
+  const serverHub = dynamoBootstrap(initialBootstrap);
   const [state, setStateInner] = useState<HubState | null>(() => {
+    if (serverHub && initialAuth?.role) {
+      return {
+        ...withCurrentHorizon(serverHub.data),
+        role: initialAuth.role,
+        cleanerId: initialAuth.cleanerId,
+      };
+    }
     if (!initialAuth?.role) return null;
     const today = todayInBusinessZone();
     return { ...emptyHub(today), role: initialAuth.role, cleanerId: initialAuth.cleanerId };
@@ -340,15 +355,17 @@ export function HubProvider({
   const [deletedCustomerUndo, setDeletedCustomerUndo] = useState<DeletedCustomerSnapshot | null>(null);
   const deletedCustomerUndoTimerRef = useRef<number | null>(null);
   const [previewAuth, setPreviewAuth] = useState(initialPreviewAuth && previewAuthAllowed());
-  const [ready, setReady] = useState(false);
-  const [hubDataSource, setHubDataSource] = useState<"preview" | "dynamodb" | null>(null);
-  const sourceRef = useRef<"preview" | "dynamodb" | null>(null);
-  const bootstrappedRef = useRef(false);
+  const [ready, setReady] = useState(() => Boolean(serverHub && initialAuth?.role));
+  const [hubDataSource, setHubDataSource] = useState<"preview" | "dynamodb" | null>(() =>
+    serverHub && initialAuth?.role ? "dynamodb" : null,
+  );
+  const sourceRef = useRef<"preview" | "dynamodb" | null>(serverHub && initialAuth?.role ? "dynamodb" : null);
+  const bootstrappedRef = useRef(Boolean(serverHub && initialAuth?.role));
   /** Full hub from Dynamo when using preview auth (role picker without Cognito session). */
   const previewDynamoHubRef = useRef<HubData | null>(null);
   const syncBlockersRef = useRef(new Set<() => boolean>());
   const syncInFlightRef = useRef(false);
-  const hubRevisionRef = useRef<number | null>(null);
+  const hubRevisionRef = useRef<number | null>(serverHub?.revision ?? null);
   const skipPersistForRemoteSyncRef = useRef(false);
   const staffingSaveInFlightRef = useRef(false);
   const actionLoadingRef = useRef(0);
@@ -392,25 +409,33 @@ export function HubProvider({
       if (hubRevisionRef.current !== null && hubRevisionRef.current === serverRevision) return;
       if (remoteSyncBlocked()) return;
 
-      const response = await fetch("/api/hub/sync", { cache: "no-store", credentials: "same-origin" });
+      const revisionQuery =
+        hubRevisionRef.current !== null ? `?revision=${encodeURIComponent(String(hubRevisionRef.current))}` : "";
+      const response = await fetch(`/api/hub/sync${revisionQuery}`, { cache: "no-store", credentials: "same-origin" });
       if (!response.ok) return;
       const remote = (await response.json()) as
         | { ok: false; message: string }
         | { source: "preview" }
-        | { source: "dynamodb"; data: HubData; revision: number };
+        | { source: "dynamodb"; mode: "full"; data: HubData; revision: number }
+        | { source: "dynamodb"; mode: "patch"; data: HubData; revision: number };
       if ("ok" in remote || remote.source !== "dynamodb") return;
       if (remoteSyncBlocked()) return;
       const prev = stateRef.current;
       if (!prev?.role) return;
       const previewPick = previewAuthRef.current;
-      if (previewPick) previewDynamoHubRef.current = remote.data;
+      if (previewPick && remote.mode === "full") previewDynamoHubRef.current = remote.data;
       let hubPayload = remote.data;
-      if (previewPick && prev.role === "CLEANER" && prev.cleanerId) {
+      if (previewPick && prev.role === "CLEANER" && prev.cleanerId && remote.mode === "full") {
         hubPayload = hubDataForCleaner(remote.data, prev.cleanerId);
       }
       hubRevisionRef.current = remote.revision;
-      if (sortedHubSnapshot(prev) === sortedHubSnapshot(hubPayload)) return;
-      const next = { ...withCurrentHorizon(hubPayload), role: prev.role, cleanerId: prev.cleanerId };
+      const mergedBase =
+        remote.mode === "patch"
+          ? withCurrentHorizon(mergeHubPatchIntoHub(prev, hubPayload))
+          : withCurrentHorizon(hubPayload);
+      if (remote.mode === "patch" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;
+      if (remote.mode === "full" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;
+      const next = { ...mergedBase, role: prev.role, cleanerId: prev.cleanerId };
       skipPersistForRemoteSyncRef.current = true;
       setState(next);
     } catch (error) {
@@ -496,6 +521,23 @@ export function HubProvider({
       }
 
       try {
+        const previewPick = auth.preview || (initialPreviewAuth && previewAuthAllowed());
+        const role = previewPick ? auth.role : (auth.role ?? initialAuth?.role ?? null);
+        if (bootstrappedRef.current && sourceRef.current === "dynamodb" && !previewPick) {
+          setReady(true);
+          if (role === "ADMIN") {
+            void bootstrapAdminHubSupplement().then((supplement) => {
+              if (cancelled) return;
+              if (!("ok" in supplement) || !supplement.ok) return;
+              setState((prev) => {
+                if (!prev?.role) return prev;
+                const merged = withCurrentHorizon(mergeHubPatchIntoHub(prev, supplement.data));
+                return { ...merged, role: prev.role, cleanerId: prev.cleanerId };
+              });
+            });
+          }
+          return;
+        }
         const remote = await bootstrapHub();
         if (cancelled) return;
         if ("ok" in remote) {
@@ -530,6 +572,17 @@ export function HubProvider({
             cleanerId,
           });
           setReady(true);
+          if (role === "ADMIN") {
+            void bootstrapAdminHubSupplement().then((supplement) => {
+              if (cancelled) return;
+              if (!("ok" in supplement) || !supplement.ok) return;
+              setState((prev) => {
+                if (!prev?.role) return prev;
+                const merged = withCurrentHorizon(mergeHubPatchIntoHub(prev, supplement.data));
+                return { ...merged, role: prev.role, cleanerId: prev.cleanerId };
+              });
+            });
+          }
           return;
         }
         sourceRef.current = "preview";
@@ -882,7 +935,7 @@ export function HubProvider({
     skipPersistForRemoteSyncRef.current = true;
     hubRevisionRef.current = remote.revision;
     setState({
-      ...withCurrentHorizon(mergeJobStaffingIntoHub(data, remote.hub)),
+      ...withCurrentHorizon(mergeHubPatchIntoHub(data, remote.hub, { replaceAssignmentsForPatchJobs: true })),
       role: data.role,
       cleanerId: data.cleanerId,
     });

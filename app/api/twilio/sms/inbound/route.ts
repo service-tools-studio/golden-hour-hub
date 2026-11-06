@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { mergeInboundCleanerUpdates, planInboundSmsReply } from "@/lib/cleaner/sms-inbound";
-import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
+import { dynamoConfigured, loadHub } from "@/lib/data/repository";
+import { persistHubDataDiff } from "@/lib/data/persist-hub-data-diff";
 import {
   formDataToParamRecord,
   inboundWebhookSignatureUrls,

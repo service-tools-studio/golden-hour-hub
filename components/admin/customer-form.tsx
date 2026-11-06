@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
-import { Field, PrimaryButton, fieldClass } from "@/components/ui";
+import { Field, PrimaryButton, ButtonLoadingLabel, fieldClass } from "@/components/ui";
 import { findCustomerByExactName, validateCustomerInput } from "@/lib/domain/customers";
 import type { Customer, Property } from "@/lib/domain/types";
 import { formatPhoneInput } from "@/lib/format";
@@ -378,7 +378,7 @@ export function CustomerForm({
       <fieldset
         disabled={Boolean(duplicate)}
         className="m-0 min-w-0 space-y-3 border-0 p-0 disabled:pointer-events-none disabled:opacity-50"
-      >
+        disabled={Boolean(duplicate) || busy}
       <Field id="customer-phone" label="Phone" error={fieldMessage("phone")}>
         <input className={inputClass(Boolean(fieldMessage("phone")))} type="tel" inputMode="tel" value={form.phone} onChange={(event) => set("phone", formatPhoneInput(event.target.value, form.phone))} aria-invalid={Boolean(fieldMessage("phone"))} />
       </Field>
@@ -559,28 +559,36 @@ export function CustomerForm({
           type="button"
           onClick={() => {
             if (
+          disabled={busy}
+          aria-busy={deleting}
+          onClick={() => {
+            if (busy) return;
+            if (
               !window.confirm(
                 `Delete ${customer.firstName} ${customer.lastName}? This removes their profile and properties. You can undo for a few seconds after.`,
               )
             ) {
               return;
             }
+            setDeleting(true);
             void (async () => {
-              const result = await hub.deleteCustomer(customer.customerId);
-              if (!result.ok) {
-                setError({ field: "form", message: result.message, at: Date.now() });
-                return;
+              try {
+                const result = await hub.deleteCustomer(customer.customerId);
+                if (!result.ok) {
+                  setError({ field: "form", message: result.message, at: Date.now() });
+                  return;
+                }
+                if (result.message) hub.flash(result.message);
+                onDeleted?.();
+                router.push("/admin/customers");
+              } finally {
+                setDeleting(false);
               }
-              if (result.message) hub.flash(result.message);
-              if (onDeleted) onDeleted();
-              else router.push("/admin/customers");
             })();
           }}
-          className="min-h-12 w-full font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
+          className="min-h-12 w-full font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4 disabled:opacity-70"
         >
-          Delete customer
-        </button>
-      ) : null}
+          {deleting ? <ButtonLoadingLabel label="Deleting…" /> : "Delete customer"}
       </fieldset>
     </form>
   );

@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { HubProvider } from "@/components/hub-provider";
 import { previewAuthEnabled } from "@/lib/auth/config";
 import { getServerSession } from "@/lib/auth/session";
+import { loadRemoteHub } from "@/lib/hub/bootstrap-remote";
 import { hubSiteMetadata } from "@/lib/site-metadata";
 import "./globals.css";
 
@@ -22,10 +23,15 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const session = await getServerSession();
   const initialAuth = session ? { role: session.role, cleanerId: session.cleanerId } : null;
+  const initialBootstrap = session ? await loadRemoteHub() : null;
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full">
-        <HubProvider initialAuth={initialAuth} initialPreviewAuth={previewAuthEnabled()}>
+        <HubProvider
+          initialAuth={initialAuth}
+          initialPreviewAuth={previewAuthEnabled()}
+          initialBootstrap={initialBootstrap}
+        >
           {children}
         </HubProvider>
       </body>

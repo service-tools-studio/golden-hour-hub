@@ -5,7 +5,8 @@ import type { AvailabilityWindow } from "../domain/types.ts";
 import { submitAvailabilityOnHub } from "../hub/cleaner-mutations.ts";
 import { buildAvailabilityWeekPersistPlan } from "../hub/availability-week-persist-plan.ts";
 import type { HubData } from "../mock/seed.ts";
-import { loadHub, readHubRevision, writeHubItemChanges } from "./repository.ts";
+import { loadHubForAvailabilityWeek } from "./load-admin-hub.ts";
+import { readHubRevision, writeHubItemChanges } from "./repository.ts";
 
 export type PersistAvailabilityWeekResult =
   | { ok: true; hub: HubData; revision: number; message?: string; notificationKind: "submitted" | "updated" }
@@ -24,7 +25,7 @@ export async function persistAvailabilityWeekMutation(
   const weekEnd = addDays(weekStart, 6);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const before = await loadHub();
+    const before = await loadHubForAvailabilityWeek(cleanerId, weekStart);
     const expectedRevision = await readHubRevision();
     const notificationKind = before.submissions.some(
       (submission) => submission.cleanerId === cleanerId && submission.weekStart === weekStart,

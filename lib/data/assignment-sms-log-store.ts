@@ -1,19 +1,17 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { BatchWriteCommand, DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { BatchWriteCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { AssignmentSmsLog } from "../domain/types.ts";
 import type { DynamoItem } from "./items.ts";
-import { dynamoConfigured } from "./repository.ts";
+import { dynamoConfigured } from "./dynamo-config.ts";
+import { dynamoDoc, dynamoTableName } from "./dynamo-client.ts";
+
+export { dynamoConfigured } from "./dynamo-config.ts";
 
 function tableName(): string {
-  const name = process.env.DYNAMODB_TABLE_NAME;
-  if (!name) throw new Error("DYNAMODB_TABLE_NAME is not set.");
-  return name;
+  return dynamoTableName();
 }
 
-function doc(): DynamoDBDocumentClient {
-  return DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || "us-west-2" }), {
-    marshallOptions: { removeUndefinedValues: true },
-  });
+function doc() {
+  return dynamoDoc();
 }
 
 const BATCH_SIZE = 25;

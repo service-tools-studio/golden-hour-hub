@@ -8,8 +8,8 @@ import {
   loadHub,
   persistCleanerProfile,
   persistCleanerQuestionnaireSubmit,
-  saveHub,
 } from "@/lib/data/repository";
+import { persistHubDataDiff } from "@/lib/data/persist-hub-data-diff";
 import { emptyHub } from "@/lib/mock/seed";
 import { todayInBusinessZone } from "@/lib/domain/time";
 import type { ContractorQuestionnaireInput } from "@/lib/domain/contractor-questionnaire";
@@ -157,7 +157,7 @@ export async function updateContractorQuestionnaireReviewAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
+    await persistHubDataDiff(hub, next);
     return { ok: true, data: next };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
@@ -183,7 +183,7 @@ export async function updateContractorRegistrationVerificationAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
+    await persistHubDataDiff(hub, next);
     return { ok: true, data: next };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
@@ -209,7 +209,7 @@ export async function updateContractorCoiVerificationAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
+    await persistHubDataDiff(hub, next);
     return { ok: true, data: next };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
@@ -235,7 +235,7 @@ export async function updateContractorWorkersCompComplianceAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
+    await persistHubDataDiff(hub, next);
     return { ok: true, data: next };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
