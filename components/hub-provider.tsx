@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, startTransition } from "react";
+import { flushSync } from "react-dom";
 import { HubRemoteSyncBlockerProvider } from "@/components/hub-sync";
 import { usePathname } from "next/navigation";
 import {
@@ -119,6 +120,8 @@ type ActionResult =
   | { ok: false; message: string };
 type AsyncActionResult = Promise<ActionResult>;
 
+export type JobCleanerMutation = { jobId: string; cleanerId: string; op: "add" | "remove" };
+
 type HubContextValue = HubState & {
   ready: boolean;
   /** True when AUTH_SESSION_SECRET is unset (browser role picker at /). */
@@ -165,6 +168,8 @@ type HubContextValue = HubState & {
   completeAssignment: (input: CompleteAssignmentInput) => AsyncActionResult;
   addJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
   removeJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
+  /** Survives Server Action page refresh (lives on the layout hub). */
+  jobCleanerMutation: JobCleanerMutation | null;
   updateVisit: (input: UpdateVisitInput) => AsyncActionResult;
   updateJob: (input: UpdateJobInput) => AsyncActionResult;
   moveAssignmentTime: (assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string) => AsyncActionResult;
@@ -348,6 +353,7 @@ export function HubProvider({
   const [toast, setToast] = useState<string | null>(null);
   const [notificationPending, setNotificationPending] = useState(0);
   const [actionLoading, setActionLoading] = useState(0);
+  const [jobCleanerMutation, setJobCleanerMutation] = useState<JobCleanerMutation | null>(null);
   const pathname = usePathname();
   const [manualCleanerText, setManualCleanerText] = useState<ManualCleanerTextOffer | null>(null);
   const [deletedJobUndo, setDeletedJobUndo] = useState<DeletedJobSnapshot | null>(null);
@@ -1087,25 +1093,45 @@ export function HubProvider({
     };
   }
 
+  async function runJobCleanerMutation(
+    mutation: JobCleanerMutation,
+    run: () => AsyncActionResult,
+  ): AsyncActionResult {
+    flushSync(() => {
+      setJobCleanerMutation(mutation);
+      setActionLoading((count) => count + 1);
+    });
+    try {
+      return await run();
+    } finally {
+      setJobCleanerMutation(null);
+      setActionLoading((count) => Math.max(0, count - 1));
+    }
+  }
+
   async function addJobCleaner(jobId: string, cleanerId: string): AsyncActionResult {
-    if (isDynamoAdmin()) return applyAdminJobStaffingResult(await addJobCleanerAction(jobId, cleanerId));
-    return applyPreviewMutation(addJobCleanerOnHub(data, jobId, cleanerId));
+    return runJobCleanerMutation({ jobId, cleanerId, op: "add" }, async () => {
+      if (isDynamoAdmin()) return applyAdminJobStaffingResult(await addJobCleanerAction(jobId, cleanerId));
+      return applyPreviewMutation(addJobCleanerOnHub(data, jobId, cleanerId));
+    });
   }
 
   async function removeJobCleaner(jobId: string, cleanerId: string): AsyncActionResult {
-    const assignment = data.assignments.find(
-      (item) =>
-        item.jobId === jobId &&
-        item.cleanerId === cleanerId &&
-        item.status !== "CANCELED" &&
-        item.status !== "EXPIRED_JOB_FILLED",
-    );
-    if (isDynamoAdmin()) {
-      const result = await applyAdminJobStaffingResult(await removeJobCleanerAction(jobId, cleanerId));
-      if (result.ok && assignment) scheduleAssignmentSmsLogPurge(assignment.assignmentId);
-      return result;
-    }
-    return applyPreviewMutation(removeJobCleanerOnHub(data, jobId, cleanerId));
+    return runJobCleanerMutation({ jobId, cleanerId, op: "remove" }, async () => {
+      const assignment = data.assignments.find(
+        (item) =>
+          item.jobId === jobId &&
+          item.cleanerId === cleanerId &&
+          item.status !== "CANCELED" &&
+          item.status !== "EXPIRED_JOB_FILLED",
+      );
+      if (isDynamoAdmin()) {
+        const result = await applyAdminJobStaffingResult(await removeJobCleanerAction(jobId, cleanerId));
+        if (result.ok && assignment) scheduleAssignmentSmsLogPurge(assignment.assignmentId);
+        return result;
+      }
+      return applyPreviewMutation(removeJobCleanerOnHub(data, jobId, cleanerId));
+    });
   }
 
   async function updateVisit(input: UpdateVisitInput): AsyncActionResult {
@@ -1304,6 +1330,7 @@ export function HubProvider({
     completeAssignment,
     addJobCleaner,
     removeJobCleaner,
+    jobCleanerMutation,
     updateVisit,
     updateJob,
     moveAssignmentTime,

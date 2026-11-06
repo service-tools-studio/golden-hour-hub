@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { CleanerSearchField, searchCleaners } from "@/components/admin/cleaner-search";
 import { useHub } from "@/components/hub-provider";
@@ -20,9 +19,12 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
   const hub = useHub();
   const router = useRouter();
   const [navigating, setNavigating] = useState(false);
-  const [addingCleanerId, setAddingCleanerId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
+  const addingCleanerId =
+    hub.jobCleanerMutation?.op === "add" && hub.jobCleanerMutation.jobId === jobId
+      ? hub.jobCleanerMutation.cleanerId
+      : null;
 
   const taken = useMemo(() => {
     if (!job) return new Set<string>();
@@ -40,8 +42,13 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
   }, [job, hub.assignments]);
 
   const choices = useMemo(
-    () => hub.cleaners.filter((cleaner) => cleaner.status === "ACTIVE" && !taken.has(cleaner.cleanerId)),
-    [hub.cleaners, taken],
+    () =>
+      hub.cleaners.filter(
+        (cleaner) =>
+          cleaner.status === "ACTIVE" &&
+          (!taken.has(cleaner.cleanerId) || cleaner.cleanerId === addingCleanerId),
+      ),
+    [addingCleanerId, hub.cleaners, taken],
   );
 
   const duration = job?.expectedDurationMinutes ?? 240;
@@ -94,19 +101,14 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
 
   async function add(cleanerId: string) {
     if (busy) return;
-    flushSync(() => setAddingCleanerId(cleanerId));
-    try {
-      const result = await hub.addJobCleaner(jobId, cleanerId);
-      if (!result.ok) {
-        if (result.message) hub.flash(result.message);
-        return;
-      }
-      setNavigating(true);
-      if (result.message) hub.flashLoading(result.message);
-      router.push(withOrigin(`/admin/jobs/${jobId}/edit`, from, { cleaner: cleanerId }));
-    } finally {
-      setAddingCleanerId((current) => (current === cleanerId ? null : current));
+    const result = await hub.addJobCleaner(jobId, cleanerId);
+    if (!result.ok) {
+      if (result.message) hub.flash(result.message);
+      return;
     }
+    setNavigating(true);
+    if (result.message) hub.flashLoading(result.message);
+    router.push(withOrigin(`/admin/jobs/${jobId}/edit`, from, { cleaner: cleanerId }));
   }
 
   return (

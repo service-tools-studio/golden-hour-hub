@@ -4,7 +4,6 @@ import Link from "next/link";
 import { NavigatingLink } from "@/components/navigating-link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { flushSync } from "react-dom";
 import { useHub } from "@/components/hub-provider";
 import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
 import { AssignmentSmsLogList } from "@/components/admin/assignment-sms-log-list";
@@ -105,7 +104,10 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [navigatingAway, setNavigatingAway] = useState(false);
   const [notifyingAssignmentId, setNotifyingAssignmentId] = useState<string | null>(null);
-  const [removingCleanerId, setRemovingCleanerId] = useState<string | null>(null);
+  const removingCleanerId =
+    hub.jobCleanerMutation?.op === "remove" && hub.jobCleanerMutation.jobId === job.jobId
+      ? hub.jobCleanerMutation.cleanerId
+      : null;
   const removalBusy = removingCleanerId !== null;
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
   const assignments = hub.assignments.filter(
@@ -281,7 +283,6 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                       jobId={job.jobId}
                       cleanerId={cleanerId}
                       removingCleanerId={removingCleanerId}
-                      setRemovingCleanerId={setRemovingCleanerId}
                     />
                   </div>
                 </div>
@@ -396,7 +397,6 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                     jobId={job.jobId}
                     cleanerId={cleaner.cleanerId}
                     removingCleanerId={removingCleanerId}
-                    setRemovingCleanerId={setRemovingCleanerId}
                   />
                   </div>
                 </div>
@@ -684,12 +684,10 @@ function RemoveCleaner({
   jobId,
   cleanerId,
   removingCleanerId,
-  setRemovingCleanerId,
 }: {
   jobId: string;
   cleanerId: string;
   removingCleanerId: string | null;
-  setRemovingCleanerId: (cleanerId: string | null) => void;
 }) {
   const hub = useHub();
   const removing = removingCleanerId === cleanerId;
@@ -697,49 +695,44 @@ function RemoveCleaner({
 
   async function remove() {
     if (removalBusy) return;
-    flushSync(() => setRemovingCleanerId(cleanerId));
-    try {
-      const job = hub.jobs.find((item) => item.jobId === jobId);
-      const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
-      const assignment = hub.assignments.find(
-        (item) =>
-          item.jobId === jobId &&
-          item.cleanerId === cleanerId &&
-          item.status !== "CANCELED" &&
-          item.status !== "EXPIRED_JOB_FILLED",
-      );
-      const notify = assignmentNotifiesOnRemoval(assignment?.status);
-      const result = await hub.removeJobCleaner(jobId, cleanerId);
-      if (!result.ok) {
-        if (result.message) hub.flash(result.message);
-        return;
-      }
-      if (!notify || !job || !cleaner || !assignment) {
-        if (result.message) hub.flash(result.message);
-        return;
-      }
-      const body = cleanerRemovedFromJobSms({
-        cleanerFirstName: cleaner.firstName,
-        customerFirstName: customerFirstNameForCleaner(job.snapshot),
-        date: job.date,
-      });
-      hub.queueSchedulingSms(
-        deliverSchedulingCleanerSms({
-          cleaner,
-          body,
-          assignmentMessage: result.message,
-          manualDetail: "removal notice",
-          assignmentLog: {
-            assignmentId: assignment.assignmentId,
-            jobId,
-            kind: "removal",
-          },
-        }),
-        result.message,
-      );
-    } finally {
-      setRemovingCleanerId(null);
+    const job = hub.jobs.find((item) => item.jobId === jobId);
+    const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
+    const assignment = hub.assignments.find(
+      (item) =>
+        item.jobId === jobId &&
+        item.cleanerId === cleanerId &&
+        item.status !== "CANCELED" &&
+        item.status !== "EXPIRED_JOB_FILLED",
+    );
+    const notify = assignmentNotifiesOnRemoval(assignment?.status);
+    const result = await hub.removeJobCleaner(jobId, cleanerId);
+    if (!result.ok) {
+      if (result.message) hub.flash(result.message);
+      return;
     }
+    if (!notify || !job || !cleaner || !assignment) {
+      if (result.message) hub.flash(result.message);
+      return;
+    }
+    const body = cleanerRemovedFromJobSms({
+      cleanerFirstName: cleaner.firstName,
+      customerFirstName: customerFirstNameForCleaner(job.snapshot),
+      date: job.date,
+    });
+    hub.queueSchedulingSms(
+      deliverSchedulingCleanerSms({
+        cleaner,
+        body,
+        assignmentMessage: result.message,
+        manualDetail: "removal notice",
+        assignmentLog: {
+          assignmentId: assignment.assignmentId,
+          jobId,
+          kind: "removal",
+        },
+      }),
+      result.message,
+    );
   }
 
   return (
