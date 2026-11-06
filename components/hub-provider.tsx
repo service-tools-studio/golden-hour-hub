@@ -168,6 +168,8 @@ type HubContextValue = HubState & {
   completeAssignment: (input: CompleteAssignmentInput) => AsyncActionResult;
   addJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
   removeJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
+  /** Paint add/remove loading before the Server Action starts (call from click, not after await). */
+  beginJobCleanerMutation: (mutation: JobCleanerMutation) => void;
   /** Survives Server Action page refresh (lives on the layout hub). */
   jobCleanerMutation: JobCleanerMutation | null;
   updateVisit: (input: UpdateVisitInput) => AsyncActionResult;
@@ -354,6 +356,7 @@ export function HubProvider({
   const [notificationPending, setNotificationPending] = useState(0);
   const [actionLoading, setActionLoading] = useState(0);
   const [jobCleanerMutation, setJobCleanerMutation] = useState<JobCleanerMutation | null>(null);
+  const jobCleanerMutationRef = useRef<JobCleanerMutation | null>(null);
   const pathname = usePathname();
   const [manualCleanerText, setManualCleanerText] = useState<ManualCleanerTextOffer | null>(null);
   const [deletedJobUndo, setDeletedJobUndo] = useState<DeletedJobSnapshot | null>(null);
@@ -1093,19 +1096,41 @@ export function HubProvider({
     };
   }
 
-  async function runJobCleanerMutation(
-    mutation: JobCleanerMutation,
-    run: () => AsyncActionResult,
-  ): AsyncActionResult {
+  function beginJobCleanerMutation(mutation: JobCleanerMutation) {
+    if (
+      jobCleanerMutationRef.current?.jobId === mutation.jobId &&
+      jobCleanerMutationRef.current.cleanerId === mutation.cleanerId &&
+      jobCleanerMutationRef.current.op === mutation.op
+    ) {
+      return;
+    }
+    jobCleanerMutationRef.current = mutation;
     flushSync(() => {
       setJobCleanerMutation(mutation);
       setActionLoading((count) => count + 1);
     });
+  }
+
+  function endJobCleanerMutation() {
+    if (!jobCleanerMutationRef.current) return;
+    jobCleanerMutationRef.current = null;
+    setJobCleanerMutation(null);
+    setActionLoading((count) => Math.max(0, count - 1));
+  }
+
+  async function runJobCleanerMutation(
+    mutation: JobCleanerMutation,
+    run: () => AsyncActionResult,
+  ): AsyncActionResult {
+    beginJobCleanerMutation(mutation);
+    // Let the click paint "Adding…" / "Removing…" before Next starts the Server Action.
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
     try {
       return await run();
     } finally {
-      setJobCleanerMutation(null);
-      setActionLoading((count) => Math.max(0, count - 1));
+      endJobCleanerMutation();
     }
   }
 
@@ -1330,6 +1355,7 @@ export function HubProvider({
     completeAssignment,
     addJobCleaner,
     removeJobCleaner,
+    beginJobCleanerMutation,
     jobCleanerMutation,
     updateVisit,
     updateJob,

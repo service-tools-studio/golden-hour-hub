@@ -135,7 +135,11 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
             type="button"
             disabled={busy}
             aria-busy={loading}
-            onClick={() => add(cleaner.cleanerId)}
+            onClick={() => {
+              if (busy) return;
+              hub.beginJobCleanerMutation({ jobId, cleanerId: cleaner.cleanerId, op: "add" });
+              void add(cleaner.cleanerId);
+            }}
             className="block min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-left disabled:opacity-70"
           >
             {loading ? (

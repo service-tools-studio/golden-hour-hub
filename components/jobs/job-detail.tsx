@@ -741,7 +741,11 @@ function RemoveCleaner({
       disabled={removalBusy}
       aria-busy={removing}
       className="shrink-0 text-sm font-semibold underline disabled:text-ink/40"
-      onClick={() => remove()}
+      onClick={() => {
+        if (removalBusy) return;
+        hub.beginJobCleanerMutation({ jobId, cleanerId, op: "remove" });
+        void remove();
+      }}
     >
       {removing ? (
         <span className="inline-flex items-center gap-1.5">
