@@ -13,6 +13,7 @@ import {
 import { persistHubMutation } from "@/lib/hub/persist-hub-mutation";
 import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
+import { AVAILABILITY_SAVE_FAILED_MESSAGE } from "@/lib/domain/availability";
 import type { AvailabilityWindow } from "@/lib/domain/types";
 
 type CleanerHubMutationResult =
@@ -151,7 +152,7 @@ export async function submitAvailabilityAction(
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("cleaner hub mutation failed.", error);
-    return { ok: false, message: "Could not update Hub." };
+    return { ok: false, message: AVAILABILITY_SAVE_FAILED_MESSAGE };
   }
 }
 
@@ -175,6 +176,6 @@ export async function submitCleanerAvailabilityAdminAction(
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("submitCleanerAvailabilityAdminAction failed.", error);
-    return { ok: false, message: "Could not update Hub." };
+    return { ok: false, message: AVAILABILITY_SAVE_FAILED_MESSAGE };
   }
 }

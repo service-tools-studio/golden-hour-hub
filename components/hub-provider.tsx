@@ -71,7 +71,11 @@ import {
   mergeHubPatchIntoHub,
   type HubPatchRemove,
 } from "@/lib/hub/merge-hub-patch";
-import { signedAvailabilityWeek, STALE_AVAILABILITY_WEEK_MESSAGE } from "@/lib/domain/availability";
+import {
+  AVAILABILITY_SAVE_FAILED_MESSAGE,
+  signedAvailabilityWeek,
+  STALE_AVAILABILITY_WEEK_MESSAGE,
+} from "@/lib/domain/availability";
 import type {
   CompleteAssignmentInput,
   CreateJobInput,
@@ -807,6 +811,20 @@ export function HubProvider({
   }
 
   async function submitAvailability(
+    cleanerId: string,
+    weekStart: string,
+    windows: AvailabilityWindow[],
+    options?: { quiet?: boolean; expectedWeekSignature?: string },
+  ): AsyncActionResult {
+    try {
+      return await submitAvailabilityInner(cleanerId, weekStart, windows, options);
+    } catch (error) {
+      console.error("submitAvailability failed.", error);
+      return { ok: false, message: AVAILABILITY_SAVE_FAILED_MESSAGE };
+    }
+  }
+
+  async function submitAvailabilityInner(
     cleanerId: string,
     weekStart: string,
     windows: AvailabilityWindow[],

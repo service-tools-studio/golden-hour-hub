@@ -10,6 +10,7 @@ import { Card, Notice, PrimaryButton } from "@/components/ui";
 import {
   OPEN_DAY_END,
   OPEN_DAY_START,
+  AVAILABILITY_SAVE_FAILED_MESSAGE,
   availabilityWeekSignature,
   copyWeekWindows,
   isAllDayAvailabilityWindow,
@@ -347,9 +348,11 @@ function TimeWheel({
   );
 }
 
+export type AvailabilitySaveResult = { ok: true } | { ok: false; message?: string };
+
 export type AvailabilityWeekEditorHandle = {
   isDirty: () => boolean;
-  save: (options?: { quiet?: boolean }) => Promise<boolean>;
+  save: (options?: { quiet?: boolean }) => Promise<AvailabilitySaveResult>;
 };
 
 export function AvailabilityWeekEditor({
@@ -379,6 +382,7 @@ export function AvailabilityWeekEditor({
   const availabilityDueSunday = addDays(dueWeekStart, -1);
   const [draft, setDraft] = useState<AvailabilityWindow[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [tone, setTone] = useState<"error" | "ok">("error");
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [conflictPrompt, setConflictPrompt] = useState<{ detail: string; onConfirm: () => void } | null>(null);
@@ -411,6 +415,7 @@ export function AvailabilityWeekEditor({
     editBaselineRef.current = savedWeekWindows;
     setDraft(savedWeekWindows);
     setMessage(null);
+    setSaveError(null);
     setTone("error");
     setConflictPrompt(null);
   }, [cleaner, week.weekStart, savedWeekSignature]);
@@ -569,15 +574,16 @@ export function AvailabilityWeekEditor({
     setMessage("Last week was copied. Review it, then submit.");
   }
 
-  async function submit(options?: { quiet?: boolean; skipConflictCheck?: boolean }): Promise<boolean> {
+  async function submit(options?: { quiet?: boolean; skipConflictCheck?: boolean }): Promise<AvailabilitySaveResult> {
     const toSave = stripAllDayWhenSpecificExists(mergeAdjacentWindows(draft));
     const check = validateAvailabilityWindows(
       toSave.map((window) => ({ date: window.date, start: window.start, end: window.end })),
     );
     if (!check.ok) {
       setTone("error");
+      setSaveError(null);
       setMessage(check.message);
-      return false;
+      return { ok: false, message: check.message };
     }
     if (!options?.skipConflictCheck) {
       const detail = conflictDetailForNewlyUncovered(editBaselineRef.current, toSave);
@@ -587,7 +593,7 @@ export function AvailabilityWeekEditor({
           onConfirm: () => {
             setConflictPrompt(null);
             void submit({ ...options, skipConflictCheck: true }).then((saved) => {
-              if (!saved) return;
+              if (!saved.ok) return;
               const next = pendingWeekStart;
               if (!next) return;
               setPendingWeekStart(null);
@@ -595,26 +601,34 @@ export function AvailabilityWeekEditor({
             });
           },
         });
-        return false;
+        return { ok: false };
       }
     }
     setSubmitting(true);
+    setSaveError(null);
     try {
       const result = await hub.submitAvailability(profile.cleanerId, week.weekStart, toSave, {
         quiet: options?.quiet,
         expectedWeekSignature: availabilityWeekSignature(editBaselineRef.current),
       });
       if (!result.ok) {
+        const failure = result.stale ? result.message : AVAILABILITY_SAVE_FAILED_MESSAGE;
         setTone("error");
-        setMessage(result.message);
+        setSaveError(failure);
         if (result.stale) loadedWeekStartRef.current = null;
-        return false;
+        return { ok: false, message: failure };
       }
       editBaselineRef.current = toSave;
       setDraft(toSave);
       setTone("ok");
       setMessage(null);
-      return true;
+      setSaveError(null);
+      return { ok: true };
+    } catch (error) {
+      console.error("availability save failed.", error);
+      setTone("error");
+      setSaveError(AVAILABILITY_SAVE_FAILED_MESSAGE);
+      return { ok: false, message: AVAILABILITY_SAVE_FAILED_MESSAGE };
     } finally {
       setSubmitting(false);
     }
@@ -637,7 +651,7 @@ export function AvailabilityWeekEditor({
   function submitAndLeave() {
     const href = leaveHref;
     return submit().then((saved) => {
-      if (!saved) {
+      if (!saved.ok) {
         setLeaveHref(null);
         return false;
       }
@@ -749,7 +763,7 @@ export function AvailabilityWeekEditor({
             </Card>
           );
         })}
-        {message ? <Notice tone={tone}>{message}</Notice> : null}
+        {saveError || message ? <Notice tone={saveError ? "error" : tone}>{saveError ?? message}</Notice> : null}
         {embedded ? null : (
           <PrimaryButton type="button" loading={submitting} loadingLabel="Saving…" onClick={() => void submit()}>
             {submitLabel}
@@ -761,7 +775,7 @@ export function AvailabilityWeekEditor({
         description={`Save changes to ${formatWeekRange(week.weekStart, week.weekEnd)} before switching weeks, or discard them.`}
         onSave={async () => {
           const saved = await submit();
-          if (!saved) return false;
+          if (!saved.ok) return false;
           const next = pendingWeekStart;
           setPendingWeekStart(null);
           if (next) onWeekStartChange(next);

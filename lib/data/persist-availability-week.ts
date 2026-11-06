@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  AVAILABILITY_SAVE_FAILED_MESSAGE,
   signedAvailabilityWeek,
   STALE_AVAILABILITY_WEEK_MESSAGE,
   windowsInWeek,
@@ -114,5 +115,5 @@ export async function persistAvailabilityWeekMutation(
     }
   }
 
-  return { ok: false, message: "Could not save after syncing the latest hub." };
+  return { ok: false, message: AVAILABILITY_SAVE_FAILED_MESSAGE };
 }

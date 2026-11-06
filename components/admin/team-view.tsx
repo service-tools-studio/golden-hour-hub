@@ -218,7 +218,10 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
     try {
       if (availabilityDirty || availabilityRef.current?.isDirty()) {
         const availabilitySaved = await availabilityRef.current!.save({ quiet: true });
-        if (!availabilitySaved) return false;
+        if (!availabilitySaved.ok) {
+          if (availabilitySaved.message) setMessage(availabilitySaved.message);
+          return false;
+        }
         setAvailabilityDirty(false);
       }
       return await save(nextHref);

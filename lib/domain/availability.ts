@@ -195,6 +195,9 @@ export function signedAvailabilityWeek(
 export const STALE_AVAILABILITY_WEEK_MESSAGE =
   "This week was updated by someone else. Review the latest hours, then save again.";
 
+export const AVAILABILITY_SAVE_FAILED_MESSAGE =
+  "Save failed. Please try again or contact Jasmin if the issue persists.";
+
 export function copyWeekWindows(
   windows: AvailabilityWindow[],
   cleanerId: string,
