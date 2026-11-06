@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, startTransition } from "react";
-import { flushSync } from "react-dom";
+import { beginJobCleanerMutation, endJobCleanerMutation } from "@/components/job-cleaner-busy";
 import { HubRemoteSyncBlockerProvider } from "@/components/hub-sync";
 import { usePathname } from "next/navigation";
 import {
@@ -120,8 +120,6 @@ type ActionResult =
   | { ok: false; message: string };
 type AsyncActionResult = Promise<ActionResult>;
 
-export type JobCleanerMutation = { jobId: string; cleanerId: string; op: "add" | "remove" };
-
 type HubContextValue = HubState & {
   ready: boolean;
   /** True when AUTH_SESSION_SECRET is unset (browser role picker at /). */
@@ -168,10 +166,6 @@ type HubContextValue = HubState & {
   completeAssignment: (input: CompleteAssignmentInput) => AsyncActionResult;
   addJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
   removeJobCleaner: (jobId: string, cleanerId: string) => AsyncActionResult;
-  /** Paint add/remove loading before the Server Action starts (call from click, not after await). */
-  beginJobCleanerMutation: (mutation: JobCleanerMutation) => void;
-  /** Survives Server Action page refresh (lives on the layout hub). */
-  jobCleanerMutation: JobCleanerMutation | null;
   updateVisit: (input: UpdateVisitInput) => AsyncActionResult;
   updateJob: (input: UpdateJobInput) => AsyncActionResult;
   moveAssignmentTime: (assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string) => AsyncActionResult;
@@ -355,8 +349,6 @@ export function HubProvider({
   const [toast, setToast] = useState<string | null>(null);
   const [notificationPending, setNotificationPending] = useState(0);
   const [actionLoading, setActionLoading] = useState(0);
-  const [jobCleanerMutation, setJobCleanerMutation] = useState<JobCleanerMutation | null>(null);
-  const jobCleanerMutationRef = useRef<JobCleanerMutation | null>(null);
   const pathname = usePathname();
   const [manualCleanerText, setManualCleanerText] = useState<ManualCleanerTextOffer | null>(null);
   const [deletedJobUndo, setDeletedJobUndo] = useState<DeletedJobSnapshot | null>(null);
@@ -1096,37 +1088,11 @@ export function HubProvider({
     };
   }
 
-  function beginJobCleanerMutation(mutation: JobCleanerMutation) {
-    if (
-      jobCleanerMutationRef.current?.jobId === mutation.jobId &&
-      jobCleanerMutationRef.current.cleanerId === mutation.cleanerId &&
-      jobCleanerMutationRef.current.op === mutation.op
-    ) {
-      return;
-    }
-    jobCleanerMutationRef.current = mutation;
-    flushSync(() => {
-      setJobCleanerMutation(mutation);
-      setActionLoading((count) => count + 1);
-    });
-  }
-
-  function endJobCleanerMutation() {
-    if (!jobCleanerMutationRef.current) return;
-    jobCleanerMutationRef.current = null;
-    setJobCleanerMutation(null);
-    setActionLoading((count) => Math.max(0, count - 1));
-  }
-
   async function runJobCleanerMutation(
-    mutation: JobCleanerMutation,
+    mutation: { jobId: string; cleanerId: string; op: "add" | "remove" },
     run: () => AsyncActionResult,
   ): AsyncActionResult {
     beginJobCleanerMutation(mutation);
-    // Let the click paint "Adding…" / "Removing…" before Next starts the Server Action.
-    await new Promise<void>((resolve) => {
-      window.setTimeout(resolve, 0);
-    });
     try {
       return await run();
     } finally {
@@ -1355,8 +1321,6 @@ export function HubProvider({
     completeAssignment,
     addJobCleaner,
     removeJobCleaner,
-    beginJobCleanerMutation,
-    jobCleanerMutation,
     updateVisit,
     updateJob,
     moveAssignmentTime,

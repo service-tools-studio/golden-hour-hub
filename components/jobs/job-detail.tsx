@@ -5,6 +5,7 @@ import { NavigatingLink } from "@/components/navigating-link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useHub } from "@/components/hub-provider";
+import { useJobCleanerBusyAction, useJobCleanerMutation } from "@/components/job-cleaner-busy";
 import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
 import { AssignmentSmsLogList } from "@/components/admin/assignment-sms-log-list";
 import { AddToCalendarButton } from "@/components/add-to-calendar";
@@ -104,9 +105,10 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [navigatingAway, setNavigatingAway] = useState(false);
   const [notifyingAssignmentId, setNotifyingAssignmentId] = useState<string | null>(null);
+  const jobCleanerMutation = useJobCleanerMutation();
   const removingCleanerId =
-    hub.jobCleanerMutation?.op === "remove" && hub.jobCleanerMutation.jobId === job.jobId
-      ? hub.jobCleanerMutation.cleanerId
+    jobCleanerMutation?.op === "remove" && jobCleanerMutation.jobId === job.jobId
+      ? jobCleanerMutation.cleanerId
       : null;
   const removalBusy = removingCleanerId !== null;
   const series = job.seriesId ? hub.series.find((item) => item.seriesId === job.seriesId) : undefined;
@@ -279,11 +281,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                         </p>
                       )}
                     </NavigatingLink>
-                    <RemoveCleaner
-                      jobId={job.jobId}
-                      cleanerId={cleanerId}
-                      removingCleanerId={removingCleanerId}
-                    />
+                    <RemoveCleaner jobId={job.jobId} cleanerId={cleanerId} />
                   </div>
                 </div>
               );
@@ -393,11 +391,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                     ) : null}
                       {!declined ? <AssignmentSmsLogList assignmentId={assignment.assignmentId} /> : null}
                     </div>
-                  <RemoveCleaner
-                    jobId={job.jobId}
-                    cleanerId={cleaner.cleanerId}
-                    removingCleanerId={removingCleanerId}
-                  />
+                  <RemoveCleaner jobId={job.jobId} cleanerId={cleaner.cleanerId} />
                   </div>
                 </div>
               );
@@ -680,21 +674,10 @@ function RecurringCard({
   );
 }
 
-function RemoveCleaner({
-  jobId,
-  cleanerId,
-  removingCleanerId,
-}: {
-  jobId: string;
-  cleanerId: string;
-  removingCleanerId: string | null;
-}) {
+function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string }) {
   const hub = useHub();
-  const removing = removingCleanerId === cleanerId;
-  const removalBusy = removingCleanerId !== null;
 
   async function remove() {
-    if (removalBusy) return;
     const job = hub.jobs.find((item) => item.jobId === jobId);
     const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
     const assignment = hub.assignments.find(
@@ -735,19 +718,17 @@ function RemoveCleaner({
     );
   }
 
+  const { loading, busy, onClick } = useJobCleanerBusyAction(jobId, cleanerId, "remove", remove);
+
   return (
     <button
       type="button"
-      disabled={removalBusy}
-      aria-busy={removing}
+      disabled={busy}
+      aria-busy={loading}
       className="shrink-0 text-sm font-semibold underline disabled:text-ink/40"
-      onClick={() => {
-        if (removalBusy) return;
-        hub.beginJobCleanerMutation({ jobId, cleanerId, op: "remove" });
-        void remove();
-      }}
+      onClick={onClick}
     >
-      {removing ? (
+      {loading ? (
         <span className="inline-flex items-center gap-1.5">
           <ButtonSpinner tone="onLight" />
           Removing…
