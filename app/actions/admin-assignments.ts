@@ -9,10 +9,19 @@ import {
   completeAssignmentOnHub,
   type CompleteAssignmentInput,
 } from "@/lib/hub/complete-assignment-mutations";
+import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 
 export type CompleteAssignmentActionResult =
-  | { ok: true; hub: HubData; revision: number; jobId: string; message: string; assignmentId?: string }
+  | {
+      ok: true;
+      hub: HubData;
+      remove?: HubPatchRemove;
+      revision: number;
+      jobId: string;
+      message: string;
+      assignmentId?: string;
+    }
   | { ok: false; message: string };
 
 export async function completeAssignmentAction(

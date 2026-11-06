@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
 export type JobCleanerMutation = { jobId: string; cleanerId: string; op: "add" | "remove" };
 
@@ -44,7 +44,14 @@ export function useJobCleanerMutation(): JobCleanerMutation | null {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-/** Instant button spinner: local state on click, then run the save after paint. */
+/**
+ * Instant button spinner: write the busy store in the click handler (urgent),
+ * then start the Server Action from an effect after that render can paint.
+ *
+ * Do not call the Server Action in the click handler. React 19 production wraps
+ * actions in startTransition, which would hold the loading UI until the action
+ * finishes and then commit it in the same frame as the result (no spinner).
+ */
 export function useJobCleanerBusyAction(
   jobId: string,
   cleanerId: string,
@@ -52,30 +59,26 @@ export function useJobCleanerBusyAction(
   run: () => Promise<void>,
 ): { loading: boolean; busy: boolean; onClick: () => void } {
   const mutation = useJobCleanerMutation();
-  const [pressed, setPressed] = useState(false);
   const startedRef = useRef(false);
   const runRef = useRef(run);
   runRef.current = run;
 
-  const matches =
+  const loading =
     mutation?.op === op && mutation.jobId === jobId && mutation.cleanerId === cleanerId;
-  const loading = pressed || matches;
-  const busy = mutation !== null || pressed;
+  const busy = mutation !== null;
 
   useEffect(() => {
-    if (!pressed || startedRef.current) return;
+    if (!loading || startedRef.current) return;
     startedRef.current = true;
-    beginJobCleanerMutation({ jobId, cleanerId, op });
     void runRef.current().finally(() => {
       startedRef.current = false;
-      setPressed(false);
     });
-  }, [pressed, jobId, cleanerId, op]);
+  }, [loading, jobId, cleanerId, op]);
 
   const onClick = useCallback(() => {
-    if (busy) return;
-    setPressed(true);
-  }, [busy]);
+    if (getSnapshot() !== null) return;
+    beginJobCleanerMutation({ jobId, cleanerId, op });
+  }, [jobId, cleanerId, op]);
 
   return { loading, busy, onClick };
 }

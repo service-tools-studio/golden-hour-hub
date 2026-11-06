@@ -6,10 +6,11 @@ import { dynamoConfigured } from "@/lib/data/repository";
 import { loadHubForCreateJob } from "@/lib/data/load-hub-mutations";
 import { persistHubDiffMutation } from "@/lib/data/persist-hub-diff-mutation";
 import { createJobOnHub, type CreateJobInput } from "@/lib/hub/create-job-mutations";
+import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 
 export type CreateJobActionResult =
-  | { ok: true; hub: HubData; revision: number; jobId: string; message: string }
+  | { ok: true; hub: HubData; remove?: HubPatchRemove; revision: number; jobId: string; message: string }
   | { ok: false; message: string };
 
 export async function createJobAction(input: CreateJobInput): Promise<CreateJobActionResult> {

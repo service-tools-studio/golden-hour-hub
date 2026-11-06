@@ -11,12 +11,14 @@ type MutationOutcome = { ok: true; hub: HubData } | { ok: false; message: string
  * Apply a hub mutation against a scoped load, persist only Dynamo diff (no saveHub scan).
  * Returns a merge patch (changed rows + removals), never a full hub snapshot.
  */
+type PersistSuccess<T> = Extract<T, { ok: true }> & { revision: number; remove?: HubPatchRemove };
+
 export async function persistHubDiffMutation<T extends MutationOutcome>(
   loadBefore: () => Promise<HubData | null>,
   apply: (hub: HubData) => T,
   notFoundMessage = "That record could not be found.",
   maxAttempts = 3,
-): Promise<(T & { revision: number; remove?: HubPatchRemove }) | { ok: false; message: string }> {
+): Promise<PersistSuccess<T> | { ok: false; message: string }> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const before = await loadBefore();
     if (!before) return { ok: false, message: notFoundMessage };
@@ -32,10 +34,12 @@ export async function persistHubDiffMutation<T extends MutationOutcome>(
     const saved = await writeHubItemChanges(plan, expectedRevision);
     if (saved.ok) {
       const { patch, remove } = hubMutationPatch(before, outcome.hub);
-      return { ...outcome, hub: patch, remove, revision: saved.revision } as T & {
-        revision: number;
-        remove?: HubPatchRemove;
-      };
+      return {
+        ...outcome,
+        hub: patch,
+        remove,
+        revision: saved.revision,
+      } as unknown as PersistSuccess<T>;
     }
   }
 
