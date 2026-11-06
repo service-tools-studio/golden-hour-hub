@@ -60,7 +60,7 @@ import {
   updateVisitOnHub,
   type AdminHubApplierResult,
 } from "@/lib/hub/admin-hub-appliers";
-import { mergeHubPatchIntoHub } from "@/lib/hub/merge-hub-patch";
+import { hubMutationPatch, mergeHubPatchIntoHub, type HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type {
   CompleteAssignmentInput,
   CreateJobInput,
@@ -785,7 +785,7 @@ export function HubProvider({
       if (!remote.ok) return remote;
       skipPersistForRemoteSyncRef.current = true;
       hubRevisionRef.current = remote.revision;
-      setState({ ...withCurrentHorizon(remote.hub), role: data.role, cleanerId: data.cleanerId });
+      applyAdminHubPatch(remote.hub, remote.remove);
       if (!options?.quiet) setToast(toastMessage);
       return { ok: true, message: remote.message };
     }
@@ -797,7 +797,7 @@ export function HubProvider({
       if (!remote.ok) return remote;
       skipPersistForRemoteSyncRef.current = true;
       hubRevisionRef.current = remote.revision;
-      setState({ ...remote.data, role: data.role, cleanerId: data.cleanerId });
+      applyAdminHubPatch(remote.data, remote.remove);
       if (!options?.quiet) setToast(toastMessage);
       return { ok: true, message: remote.message };
     }
@@ -912,16 +912,25 @@ export function HubProvider({
   }
 
 
-  function mergeAdminHub(remote: HubData) {
+  function applyAdminHubPatch(patch: HubData, remove?: HubPatchRemove) {
     setState((prev) => {
       if (!prev) return prev;
-      return { ...withCurrentHorizon(remote), role: prev.role, cleanerId: prev.cleanerId };
+      return {
+        ...withCurrentHorizon(mergeHubPatchIntoHub(prev, patch, { remove })),
+        role: prev.role,
+        cleanerId: prev.cleanerId,
+      };
     });
+  }
+
+  function mergeAdminHub(remote: HubData) {
+    applyAdminHubPatch(remote);
   }
 
   function applyPreviewMutation(outcome: AdminHubApplierResult): ActionResult {
     if (!outcome.ok) return outcome;
-    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    const { patch, remove } = hubMutationPatch(data, outcome.hub);
+    applyAdminHubPatch(patch, remove);
     return {
       ok: true,
       message: outcome.message,
@@ -932,28 +941,14 @@ export function HubProvider({
   }
 
   async function applyAdminJobStaffingResult(remote: AdminHubActionResult): Promise<ActionResult> {
-    if (!remote.ok) return remote;
-    skipPersistForRemoteSyncRef.current = true;
-    hubRevisionRef.current = remote.revision;
-    setState({
-      ...withCurrentHorizon(mergeHubPatchIntoHub(data, remote.hub, { replaceAssignmentsForPatchJobs: true })),
-      role: data.role,
-      cleanerId: data.cleanerId,
-    });
-    return {
-      ok: true,
-      message: remote.message,
-      customerId: remote.customerId,
-      jobId: remote.jobId,
-      assignmentId: remote.assignmentId,
-    };
+    return applyAdminActionResult(remote);
   }
 
   async function applyAdminActionResult(remote: AdminHubActionResult): Promise<ActionResult> {
     if (!remote.ok) return remote;
     skipPersistForRemoteSyncRef.current = true;
     hubRevisionRef.current = remote.revision;
-    setState({ ...withCurrentHorizon(remote.hub), role: data.role, cleanerId: data.cleanerId });
+    applyAdminHubPatch(remote.hub, remote.remove);
     return {
       ok: true,
       message: remote.message,
@@ -1039,7 +1034,8 @@ export function HubProvider({
     if (isDynamoAdmin()) return applyAdminActionResult(await updateCleanerAdminAction(cleanerId, input));
     const outcome = updateCleanerAdminOnHub(data, cleanerId, input);
     if (!outcome.result.ok) return outcome.result;
-    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    const { patch, remove } = hubMutationPatch(data, outcome.hub);
+    applyAdminHubPatch(patch, remove);
     return { ok: true };
   }
 
@@ -1054,7 +1050,8 @@ export function HubProvider({
     }
     const outcome = createJobOnHub(data, input, "kelsey");
     if (!outcome.ok) return outcome;
-    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    const { patch, remove } = hubMutationPatch(data, outcome.hub);
+    applyAdminHubPatch(patch, remove);
     return { ok: true, jobId: outcome.jobId, message: outcome.message };
   }
 
@@ -1079,7 +1076,8 @@ export function HubProvider({
     }
     const outcome = completeAssignmentOnHub(data, input);
     if (!outcome.ok) return outcome;
-    setState({ ...outcome.hub, role: data.role, cleanerId: data.cleanerId });
+    const { patch, remove } = hubMutationPatch(data, outcome.hub);
+    applyAdminHubPatch(patch, remove);
     return {
       ok: true,
       jobId: outcome.jobId,

@@ -35,12 +35,14 @@ import type {
   UpdateVisitInput,
 } from "@/lib/hub/admin-hub-types";
 import { updateCleanerAdminOnHub, type UpdateCleanerAdminInput } from "@/lib/hub/admin-mutations";
+import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 
 export type AdminHubActionResult =
   | {
       ok: true;
       hub: HubData;
+      remove?: HubPatchRemove;
       revision: number;
       message?: string;
       customerId?: string;
@@ -161,7 +163,7 @@ export async function updateCleanerAdminAction(
     } catch (error) {
       console.error("purgeStaleAssignmentSmsLogs failed after updateCleanerAdminAction.", error);
     }
-    return { ok: true, hub: saved.hub, revision: saved.revision };
+    return { ok: true, hub: saved.hub, remove: saved.remove, revision: saved.revision };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateCleanerAdminAction failed.", error);

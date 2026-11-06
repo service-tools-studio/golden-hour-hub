@@ -2,11 +2,15 @@ import "server-only";
 
 import type { AdminHubApplierResult } from "../hub/admin-hub-appliers.ts";
 import { buildJobRosterPersistPlan } from "../hub/job-draft-persist-plan.ts";
+import { hubMutationPatch, type HubPatchRemove } from "../hub/merge-hub-patch.ts";
 import type { HubData } from "../mock/seed.ts";
 import { loadHubForJobStaffing, readHubRevision, writeHubItemChanges } from "./repository.ts";
 
 export type PersistJobRosterResult =
-  | ({ ok: true; hub: HubData; revision: number } & Omit<Extract<AdminHubApplierResult, { ok: true }>, "ok" | "hub">)
+  | ({ ok: true; hub: HubData; revision: number; remove?: HubPatchRemove } & Omit<
+      Extract<AdminHubApplierResult, { ok: true }>,
+      "ok" | "hub"
+    >)
   | { ok: false; message: string };
 
 /**
@@ -36,7 +40,8 @@ export async function persistJobRosterMutation(
     const saved = await writeHubItemChanges(plan, expectedRevision);
     if (saved.ok) {
       const { ok: _ok, hub, ...rest } = outcome;
-      return { ok: true, hub, revision: saved.revision, ...rest };
+      const { patch, remove } = hubMutationPatch(before, hub);
+      return { ok: true, hub: patch, remove, revision: saved.revision, ...rest };
     }
 
     if (attempt + 1 < maxAttempts) {

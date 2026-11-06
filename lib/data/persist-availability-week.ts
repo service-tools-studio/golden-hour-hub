@@ -6,10 +6,19 @@ import { submitAvailabilityOnHub } from "../hub/cleaner-mutations.ts";
 import { buildAvailabilityWeekPersistPlan } from "../hub/availability-week-persist-plan.ts";
 import type { HubData } from "../mock/seed.ts";
 import { loadHubForAvailabilityWeek } from "./load-admin-hub.ts";
+import { hubMutationPatch, type HubPatchRemove } from "../hub/merge-hub-patch.ts";
 import { readHubRevision, writeHubItemChanges } from "./repository.ts";
 
 export type PersistAvailabilityWeekResult =
-  | { ok: true; hub: HubData; revision: number; message?: string; notificationKind: "submitted" | "updated" }
+  | {
+      ok: true;
+      hub: HubData;
+      notifyHub: HubData;
+      remove?: HubPatchRemove;
+      revision: number;
+      message?: string;
+      notificationKind: "submitted" | "updated";
+    }
   | { ok: false; message: string };
 
 /**
@@ -45,9 +54,12 @@ export async function persistAvailabilityWeekMutation(
 
     const saved = await writeHubItemChanges(plan, expectedRevision);
     if (saved.ok) {
+      const { patch, remove } = hubMutationPatch(before, after);
       return {
         ok: true,
-        hub: after,
+        hub: patch,
+        notifyHub: after,
+        remove,
         revision: saved.revision,
         message: result.message,
         notificationKind,

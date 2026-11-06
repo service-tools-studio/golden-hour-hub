@@ -14,7 +14,8 @@ import {
   loadHub,
   persistCleanerProfile,
 } from "@/lib/data/repository";
-import type { HubData } from "@/lib/mock/seed";
+import { emptyHub, type HubData } from "@/lib/mock/seed";
+import { todayInBusinessZone } from "@/lib/domain/time";
 import {
   buildNewCleanerProfile,
   cleanerProfileWithCognitoSub,
@@ -102,14 +103,12 @@ export async function createCleanerAccountAction(
       profileLinkPending = true;
     }
 
-    const nextHub = await loadHub();
-
     return {
       ok: true,
       cleanerId,
       email: validated.value.email,
       cognitoInviteSent: true,
-      hub: nextHub,
+      hub: { ...emptyHub(todayInBusinessZone()), cleaners: [profile] },
       ...(profileLinkPending ? { profileLinkPending: true } : {}),
     };
   } catch (error) {

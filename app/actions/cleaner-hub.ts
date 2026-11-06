@@ -11,6 +11,7 @@ import {
   declineInvitationOnHub,
 } from "@/lib/hub/cleaner-mutations";
 import { persistHubMutation } from "@/lib/hub/persist-hub-mutation";
+import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 import type { AvailabilityWindow } from "@/lib/domain/types";
 
@@ -18,10 +19,12 @@ type CleanerHubMutationResult =
   | { ok: true; message?: string; data: HubData; revision: number }
   | { ok: false; message: string };
 
-type AvailabilityMutationResult = CleanerHubMutationResult;
+type AvailabilityMutationResult =
+  | { ok: true; message?: string; data: HubData; remove?: HubPatchRemove; revision: number }
+  | { ok: false; message: string };
 
 export type AdminAvailabilityMutationResult =
-  | { ok: true; message?: string; hub: HubData; revision: number }
+  | { ok: true; message?: string; hub: HubData; remove?: HubPatchRemove; revision: number }
   | { ok: false; message: string };
 
 async function persistCleanerHubMutation(
@@ -53,21 +56,15 @@ async function persistAvailabilityWeek(
   | {
       ok: true;
       hub: HubData;
+      notifyHub: HubData;
+      remove?: HubPatchRemove;
       revision: number;
       message?: string;
       notificationKind: "submitted" | "updated";
     }
   | { ok: false; message: string }
 > {
-  const saved = await persistAvailabilityWeekMutation(cleanerId, weekStart, windows);
-  if (!saved.ok) return saved;
-  return {
-    ok: true,
-    hub: saved.hub,
-    revision: saved.revision,
-    message: saved.message,
-    notificationKind: saved.notificationKind,
-  };
+  return persistAvailabilityWeekMutation(cleanerId, weekStart, windows);
 }
 
 async function notifyAvailabilitySubmitted(
@@ -142,12 +139,13 @@ export async function submitAvailabilityAction(
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
     const saved = await persistAvailabilityWeek(session.cleanerId, weekStart, windows);
     if (!saved.ok) return saved;
-    await notifyAvailabilitySubmitted(saved.hub, session.cleanerId, weekStart, saved.notificationKind);
+    await notifyAvailabilitySubmitted(saved.notifyHub, session.cleanerId, weekStart, saved.notificationKind);
     return {
       ok: true,
       message: saved.message,
       revision: saved.revision,
-      data: hubDataForCleaner(saved.hub, session.cleanerId),
+      data: saved.hub,
+      remove: saved.remove,
     };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
@@ -167,8 +165,8 @@ export async function submitCleanerAvailabilityAdminAction(
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
     const saved = await persistAvailabilityWeek(cleanerId, weekStart, windows);
     if (!saved.ok) return saved;
-    await notifyAvailabilitySubmitted(saved.hub, cleanerId, weekStart, saved.notificationKind);
-    return { ok: true, message: saved.message, hub: saved.hub, revision: saved.revision };
+    await notifyAvailabilitySubmitted(saved.notifyHub, cleanerId, weekStart, saved.notificationKind);
+    return { ok: true, message: saved.message, hub: saved.hub, remove: saved.remove, revision: saved.revision };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("submitCleanerAvailabilityAdminAction failed.", error);

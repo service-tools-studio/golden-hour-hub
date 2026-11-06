@@ -35,6 +35,7 @@ export async function completeAssignmentAction(
     return {
       ok: true,
       hub: saved.hub,
+      remove: saved.remove,
       revision: saved.revision,
       jobId: saved.jobId,
       message: saved.message,

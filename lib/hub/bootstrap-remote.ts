@@ -9,6 +9,7 @@ import { getServerSession, type AuthSession } from "@/lib/auth/session";
 import { readHubChangeManifest } from "@/lib/data/hub-change-manifest";
 import { loadAdminHubRemainderSlice, loadAdminHubSlices, loadCleanerHubSlices, loadHubPartitions } from "@/lib/data/load-admin-hub";
 import { dynamoConfigured } from "@/lib/data/repository";
+import { editableAvailabilityHorizonEnd, todayInBusinessZone } from "@/lib/domain/time";
 import type { HubData } from "@/lib/mock/seed";
 
 export type BootstrapResult =
@@ -63,12 +64,14 @@ async function remoteHubAccess(sessionOverride?: AuthSession | null): Promise<Re
 
 async function loadHubForAccess(
   access: Extract<RemoteAccess, { source: "dynamodb" }>,
-  options: { loadTeamSchedulingExtras?: boolean } = {},
+  options: { loadTeamSchedulingExtras?: boolean; loadSeries?: boolean; jobHorizonEnd?: string } = {},
 ): Promise<HubData> {
   if (access.role === "ADMIN") {
     return loadAdminHubSlices({
       persistReconciliation: false,
       loadTeamSchedulingExtras: options.loadTeamSchedulingExtras,
+      loadSeries: options.loadSeries,
+      jobHorizonEnd: options.jobHorizonEnd,
     });
   }
   const data = await loadCleanerHubSlices(access.cleanerId, { persistReconciliation: false });
@@ -83,7 +86,16 @@ export async function loadRemoteHub(session?: AuthSession | null): Promise<Boots
     if ("ok" in access) return access;
     if (access.source === "preview") return { source: "preview" };
     const [data, { revision }] = await Promise.all([
-      loadHubForAccess(access, access.role === "ADMIN" ? { loadTeamSchedulingExtras: false } : {}),
+      loadHubForAccess(
+        access,
+        access.role === "ADMIN"
+          ? {
+              loadTeamSchedulingExtras: true,
+              loadSeries: false,
+              jobHorizonEnd: editableAvailabilityHorizonEnd(todayInBusinessZone()),
+            }
+          : {},
+      ),
       readHubChangeManifest(),
     ]);
     return { source: "dynamodb", data, revision };

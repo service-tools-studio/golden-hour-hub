@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { CleanerProfile, Job, JobAssignment } from "../domain/types.ts";
+import type { AvailabilityWindow, CleanerProfile, Job, JobAssignment } from "../domain/types.ts";
 import { emptyHub } from "../mock/seed.ts";
-import { mergeHubPatchIntoHub } from "./merge-hub-patch.ts";
+import { hubMutationPatch, mergeAvailabilityWeekIntoHub, mergeHubPatchIntoHub } from "./merge-hub-patch.ts";
 
 function asJob(job: Pick<Job, "jobId"> & Partial<Job>): Job {
   return job as unknown as Job;
@@ -41,5 +41,76 @@ describe("mergeHubPatchIntoHub", () => {
     assert.equal(merged.assignments.find((item) => item.assignmentId === "a-2")?.status, "CANCELED");
     assert.equal(merged.assignments.find((item) => item.assignmentId === "a-1")?.status, "INVITED");
     assert.equal(merged.cleaners.find((cleaner) => cleaner.cleanerId === "bob")?.firstName, "Bob");
+  });
+
+  it("replaces one cleaner's week without dropping other availability", () => {
+    const current = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "ada-old", cleanerId: "ada", date: "2026-11-02", start: "09:00", end: "12:00" },
+        { availabilityId: "bob-keep", cleanerId: "bob", date: "2026-11-03", start: "09:00", end: "17:00" },
+      ] as AvailabilityWindow[],
+      submissions: [{ submissionId: "sub-ada", cleanerId: "ada", weekStart: "2026-11-02", submittedAt: "old", updatedAt: "old" }],
+    };
+    const patch = {
+      ...emptyHub("2026-11-05"),
+      availability: [
+        { availabilityId: "ada-new", cleanerId: "ada", date: "2026-11-04", start: "13:00", end: "16:00" },
+      ] as AvailabilityWindow[],
+      submissions: [{ submissionId: "sub-ada", cleanerId: "ada", weekStart: "2026-11-02", submittedAt: "new", updatedAt: "new" }],
+    };
+
+    const merged = mergeAvailabilityWeekIntoHub(current, patch, "ada", "2026-11-02", "2026-11-08");
+    assert.equal(merged.availability.length, 2);
+    assert.ok(merged.availability.some((window) => window.availabilityId === "ada-new"));
+    assert.ok(!merged.availability.some((window) => window.availabilityId === "ada-old"));
+    assert.equal(merged.availability.find((window) => window.cleanerId === "bob")?.availabilityId, "bob-keep");
+    assert.equal(merged.submissions.find((row) => row.cleanerId === "ada")?.submittedAt, "new");
+  });
+
+  it("applies deletes without replacing the rest of the hub", () => {
+    const current = {
+      ...emptyHub("2026-11-05"),
+      jobs: [asJob({ jobId: "job-1" }), asJob({ jobId: "job-2" })],
+      assignments: [
+        asAssignment({ assignmentId: "a-1", jobId: "job-1", cleanerId: "ada", status: "INVITED" }),
+        asAssignment({ assignmentId: "a-2", jobId: "job-2", cleanerId: "bob", status: "INVITED" }),
+      ],
+      availability: [
+        { availabilityId: "ada-1", cleanerId: "ada", date: "2026-11-04", start: "09:00", end: "12:00" },
+      ] as AvailabilityWindow[],
+    };
+    const patch = {
+      ...emptyHub("2026-11-05"),
+      jobs: [asJob({ jobId: "job-2", headcountNeeded: 3 })],
+    };
+
+    const merged = mergeHubPatchIntoHub(current, patch, {
+      remove: { jobIds: ["job-1"], assignmentIds: ["a-1"] },
+    });
+    assert.equal(merged.jobs.length, 1);
+    assert.equal(merged.jobs[0]?.jobId, "job-2");
+    assert.equal(merged.jobs[0]?.headcountNeeded, 3);
+    assert.equal(merged.assignments.length, 1);
+    assert.equal(merged.assignments[0]?.assignmentId, "a-2");
+    assert.equal(merged.availability[0]?.availabilityId, "ada-1");
+  });
+
+  it("builds a mutation patch of only changed and removed rows", () => {
+    const before = {
+      ...emptyHub("2026-11-05"),
+      jobs: [asJob({ jobId: "job-1", headcountNeeded: 1 }), asJob({ jobId: "job-2", headcountNeeded: 2 })],
+      customers: [{ customerId: "c-1" }] as never,
+    };
+    const after = {
+      ...emptyHub("2026-11-05"),
+      jobs: [asJob({ jobId: "job-2", headcountNeeded: 4 })],
+      customers: [{ customerId: "c-1" }] as never,
+    };
+    const { patch, remove } = hubMutationPatch(before, after);
+    assert.deepEqual(patch.jobs.map((job) => job.jobId), ["job-2"]);
+    assert.equal(patch.jobs[0]?.headcountNeeded, 4);
+    assert.equal(patch.customers.length, 0);
+    assert.deepEqual(remove?.jobIds, ["job-1"]);
   });
 });

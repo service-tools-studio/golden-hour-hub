@@ -9,7 +9,6 @@ import {
   dedupeItemsByKey,
   mapWithConcurrency,
   queryAllCustomerPartitionItems,
-  queryAllQuestionnaireSubmissionItems,
   queryJobProfilesInDateRange,
   queryItemsByPk,
   queryRelationIndex,
@@ -19,10 +18,12 @@ import { finalizeLoadedHub, type FinalizeHubOptions } from "./hub-reconcile.ts";
 
 export type LoadHubSliceOptions = FinalizeHubOptions & {
   /**
-   * Per-day availability, weekly submissions, and BQ rows (~70+ Dynamo reads).
-   * Off for initial admin bootstrap; loaded in the background afterward.
+   * Availability, weekly submissions, and BQ from each cleaner partition.
+   * Default on. Fast admin bootstrap can keep this on without loading the 56-day job horizon.
    */
   loadTeamSchedulingExtras?: boolean;
+  loadSeries?: boolean;
+  jobHorizonEnd?: string;
 };
 
 function readJobId(item: DynamoItem): string | null {
@@ -40,23 +41,37 @@ async function loadCustomerSeriesItems(customerIds: string[]): Promise<DynamoIte
   return chunks.flat();
 }
 
+function cleanerIdsFromProfileItems(cleanerProfileItems: DynamoItem[]): string[] {
+  return [
+    ...new Set(
+      cleanerProfileItems
+        .filter((item) => item.entity === "cleaner")
+        .map((item) => item.cleanerId)
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  ];
+}
+
 async function loadTeamSchedulingExtraItems(
   availabilityStart: string,
   horizonEnd: string,
   cleanerProfileItems: DynamoItem[],
 ): Promise<DynamoItem[]> {
-  const weekStarts: string[] = [];
-  for (let cursor = mondayOf(availabilityStart); cursor <= horizonEnd; cursor = addDays(cursor, 7)) {
-    weekStarts.push(cursor);
-  }
-  const [availabilityPages, submissionPages, questionnaireRows] = await Promise.all([
-    mapWithConcurrency(eachDate(availabilityStart, horizonEnd), 32, (date) =>
-      queryScheduleIndex(`AVAIL#${date}`),
-    ),
-    mapWithConcurrency(weekStarts, 8, (weekStart) => queryScheduleIndex(`SUBMISSION#${weekStart}`)),
-    queryAllQuestionnaireSubmissionItems(cleanerProfileItems),
-  ]);
-  return dedupeItemsByKey([...availabilityPages.flat(), ...submissionPages.flat(), ...questionnaireRows]);
+  const cleanerIds = cleanerIdsFromProfileItems(cleanerProfileItems);
+  if (cleanerIds.length === 0) return [];
+  const submissionWeekStart = mondayOf(availabilityStart);
+  const partitions = await mapWithConcurrency(cleanerIds, 32, (cleanerId) => queryItemsByPk(`CLEANER#${cleanerId}`));
+  return dedupeItemsByKey(partitions.flat()).filter((item) => {
+    if (item.entity === "availability") {
+      const date = typeof item.date === "string" ? item.date : "";
+      return date >= availabilityStart && date <= horizonEnd;
+    }
+    if (item.entity === "submission") {
+      const weekStart = typeof item.weekStart === "string" ? item.weekStart : "";
+      return weekStart >= submissionWeekStart && weekStart <= horizonEnd;
+    }
+    return item.entity === "contractor_questionnaire_submission";
+  });
 }
 
 async function fetchAdminHubItems(options: {
@@ -71,13 +86,13 @@ async function fetchAdminHubItems(options: {
   const [cleanersActive, cleanersInactive, listedCustomers, jobProfilesInHorizon] = await Promise.all([
     queryScheduleIndex("CLEANER_STATUS#ACTIVE"),
     queryScheduleIndex("CLEANER_STATUS#INACTIVE"),
-    options.loadTeamSchedulingExtras
+    options.loadSeries
       ? queryAllCustomerPartitionItems()
       : queryScheduleIndex("CUSTOMER#ALL"),
     queryJobProfilesInDateRange(today, options.jobHorizonEnd),
   ]);
   const customerPropertyRows =
-    options.loadTeamSchedulingExtras || listedCustomers.length > 0
+    options.loadSeries || listedCustomers.length > 0
       ? listedCustomers
       : await queryAllCustomerPartitionItems();
 
@@ -160,8 +175,10 @@ export async function loadAdminHubSlices(options: LoadHubSliceOptions = {}): Pro
   const loadTeamSchedulingExtras = options.loadTeamSchedulingExtras !== false;
   const items = await fetchAdminHubItems({
     loadTeamSchedulingExtras,
-    loadSeries: loadTeamSchedulingExtras,
-    jobHorizonEnd: loadTeamSchedulingExtras ? addDays(today, RECURRING_HORIZON_DAYS) : editableAvailabilityHorizonEnd(today),
+    loadSeries: options.loadSeries ?? loadTeamSchedulingExtras,
+    jobHorizonEnd:
+      options.jobHorizonEnd ??
+      (loadTeamSchedulingExtras ? addDays(today, RECURRING_HORIZON_DAYS) : editableAvailabilityHorizonEnd(today)),
   });
   if (items.length === 0) {
     return emptyHub(today);

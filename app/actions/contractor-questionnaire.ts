@@ -25,6 +25,7 @@ import {
   updateContractorRegistrationVerificationOnHub,
   updateContractorWorkersCompComplianceOnHub,
 } from "@/lib/hub/contractor-questionnaire-mutations";
+import { hubMutationPatch } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 
 type DraftMutationResult =
@@ -158,7 +159,7 @@ export async function updateContractorQuestionnaireReviewAction(
     );
     if (!result.ok) return result;
     await persistHubDataDiff(hub, next);
-    return { ok: true, data: next };
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorQuestionnaireReviewAction failed.", error);
@@ -184,7 +185,7 @@ export async function updateContractorRegistrationVerificationAction(
     );
     if (!result.ok) return result;
     await persistHubDataDiff(hub, next);
-    return { ok: true, data: next };
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorRegistrationVerificationAction failed.", error);
@@ -210,7 +211,7 @@ export async function updateContractorCoiVerificationAction(
     );
     if (!result.ok) return result;
     await persistHubDataDiff(hub, next);
-    return { ok: true, data: next };
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorCoiVerificationAction failed.", error);
@@ -236,7 +237,7 @@ export async function updateContractorWorkersCompComplianceAction(
     );
     if (!result.ok) return result;
     await persistHubDataDiff(hub, next);
-    return { ok: true, data: next };
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorWorkersCompComplianceAction failed.", error);
