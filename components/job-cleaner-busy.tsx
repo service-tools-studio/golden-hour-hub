@@ -78,7 +78,7 @@ export function useJobCleanerMutation(): JobCleanerMutation | null {
 
 /**
  * Write the busy store in the click handler. Start the Server Action from an
- * effect after that render. See job-cleaner-busy-debug.ts to trace production.
+ * effect after that render. See job-cleaner-busy-debug.tsx to trace production.
  */
 export function useJobCleanerBusyAction(
   jobId: string,
