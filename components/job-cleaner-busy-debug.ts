@@ -1,10 +1,20 @@
 /**
  * TEMPORARY diagnostics for add/remove cleaner loading UI.
- * Enable in a production preview without extra env by appending ?debugBusy=1
- * or running localStorage.setItem("debug-job-cleaner-busy", "1") then reload.
- * Also enabled when NEXT_PUBLIC_DEBUG_JOB_CLEANER_BUSY=1 at build time.
+ * Enable with ?debugBusy=1 or localStorage.setItem("debug-job-cleaner-busy", "1") then reload.
+ * A yellow bar must appear if this code is running and the flag is on.
+ * Copy window.__JOB_CLEANER_BUSY_LOGS__ if the console is empty.
  * Remove this file and its imports when the investigation is done.
  */
+
+"use client";
+
+import { useEffect, useState } from "react";
+
+declare global {
+  interface Window {
+    __JOB_CLEANER_BUSY_LOGS__?: unknown[];
+  }
+}
 
 export function jobCleanerBusyDebugEnabled(): boolean {
   if (typeof window === "undefined") return false;
@@ -18,6 +28,7 @@ export function jobCleanerBusyDebugEnabled(): boolean {
 }
 
 export function jobCleanerBusyDebug(event: string, detail?: Record<string, unknown>): void {
+  if (typeof window === "undefined") return;
   if (!jobCleanerBusyDebugEnabled()) return;
   const payload = {
     t: Date.now(),
@@ -27,5 +38,36 @@ export function jobCleanerBusyDebug(event: string, detail?: Record<string, unkno
     event,
     ...detail,
   };
-  console.info("[job-cleaner-busy]", payload);
+  window.__JOB_CLEANER_BUSY_LOGS__ = [...(window.__JOB_CLEANER_BUSY_LOGS__ ?? []), payload];
+  console.warn("[job-cleaner-busy]", payload);
+  window.dispatchEvent(new CustomEvent("job-cleaner-busy-debug", { detail: payload }));
+}
+
+/** Visible proof the probe is loaded. Mount once from HubProvider. */
+export function JobCleanerBusyDebugProbe() {
+  const [enabled, setEnabled] = useState(false);
+  const [lastEvent, setLastEvent] = useState("waiting");
+
+  useEffect(() => {
+    const on = jobCleanerBusyDebugEnabled();
+    setEnabled(on);
+    if (!on) return;
+    jobCleanerBusyDebug("probe-mounted", { href: window.location.href });
+    function onEvent(event: Event) {
+      const detail = (event as CustomEvent).detail as { event?: string } | undefined;
+      if (detail?.event) setLastEvent(detail.event);
+    }
+    window.addEventListener("job-cleaner-busy-debug", onEvent);
+    return () => window.removeEventListener("job-cleaner-busy-debug", onEvent);
+  }, []);
+
+  if (!enabled) return null;
+  return (
+    <div
+      data-job-cleaner-debug-probe="1"
+      className="pointer-events-none fixed top-0 left-0 right-0 z-[100] bg-amber-300 px-3 py-1 text-center text-xs font-semibold text-ink"
+    >
+      job-cleaner-busy debug on · last: {lastEvent} · logs: window.__JOB_CLEANER_BUSY_LOGS__
+    </div>
+  );
 }
