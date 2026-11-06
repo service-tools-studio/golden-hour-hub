@@ -725,6 +725,9 @@ function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string 
       type="button"
       disabled={busy}
       aria-busy={loading}
+      data-job-cleaner-loading={loading ? "1" : "0"}
+      data-job-cleaner-op="remove"
+      data-job-cleaner-id={cleanerId}
       className="shrink-0 text-sm font-semibold underline disabled:text-ink/40"
       onClick={onClick}
     >

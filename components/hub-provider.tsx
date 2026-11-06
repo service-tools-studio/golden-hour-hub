@@ -1,7 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, startTransition } from "react";
-import { beginJobCleanerMutation, endJobCleanerMutation } from "@/components/job-cleaner-busy";
+import {
+  beginJobCleanerMutation,
+  endJobCleanerMutation,
+  peekJobCleanerBusyStore,
+} from "@/components/job-cleaner-busy";
+import { jobCleanerBusyDebug } from "@/components/job-cleaner-busy-debug";
 import { HubRemoteSyncBlockerProvider } from "@/components/hub-sync";
 import { usePathname } from "next/navigation";
 import {
@@ -1090,10 +1095,19 @@ export function HubProvider({
     mutation: { jobId: string; cleanerId: string; op: "add" | "remove" },
     run: () => AsyncActionResult,
   ): AsyncActionResult {
+    jobCleanerBusyDebug("hub-run-enter", { mutation, store: peekJobCleanerBusyStore() });
     beginJobCleanerMutation(mutation);
     try {
-      return await run();
+      jobCleanerBusyDebug("server-action-invoke", { mutation, store: peekJobCleanerBusyStore() });
+      const result = await run();
+      jobCleanerBusyDebug("server-action-complete", {
+        mutation,
+        ok: result.ok,
+        store: peekJobCleanerBusyStore(),
+      });
+      return result;
     } finally {
+      jobCleanerBusyDebug("hub-run-finally", { mutation, store: peekJobCleanerBusyStore() });
       endJobCleanerMutation();
     }
   }

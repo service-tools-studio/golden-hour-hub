@@ -165,6 +165,9 @@ function AddCleanerChoiceButton({
       type="button"
       disabled={disabled}
       aria-busy={loading}
+      data-job-cleaner-loading={loading ? "1" : "0"}
+      data-job-cleaner-op="add"
+      data-job-cleaner-id={cleaner.cleanerId}
       onClick={onClick}
       className="block min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-left disabled:opacity-70"
     >
