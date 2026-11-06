@@ -26,9 +26,15 @@ export function dedupeAvailabilityWeekBatchPlan(plan: AvailabilityWeekPersistPla
     putsByKey.set(itemKey(item), item);
   }
   const putKeys = new Set(putsByKey.keys());
+  const deletesByKey = new Map<string, { pk: string; sk: string }>();
+  for (const key of plan.deletes) {
+    const id = itemKey(key);
+    if (putKeys.has(id)) continue;
+    deletesByKey.set(id, key);
+  }
   return {
     puts: [...putsByKey.values()],
-    deletes: plan.deletes.filter((key) => !putKeys.has(itemKey(key))),
+    deletes: [...deletesByKey.values()],
   };
 }
 

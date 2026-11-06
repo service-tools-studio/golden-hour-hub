@@ -4,7 +4,7 @@ import { mondayOf } from "../domain/time.ts";
 import type { AvailabilityWindow, CleanerProfile } from "../domain/types.ts";
 import { emptyHub } from "../mock/seed.ts";
 import { submitAvailabilityOnHub } from "./cleaner-mutations.ts";
-import { buildAvailabilityWeekPersistPlan } from "./availability-week-persist-plan.ts";
+import { buildAvailabilityWeekPersistPlan, dedupeAvailabilityWeekBatchPlan } from "./availability-week-persist-plan.ts";
 
 const STAMP = "2026-10-01T12:00:00.000Z";
 
@@ -111,5 +111,24 @@ describe("buildAvailabilityWeekPersistPlan", () => {
     const availKey = plan.puts.find((row) => row.entity === "availability");
     assert.ok(availKey);
     assert.equal(plan.deletes.length, 0);
+  });
+
+  it("collapses duplicate delete keys from the live week query", () => {
+    const plan = dedupeAvailabilityWeekBatchPlan({
+      puts: [
+        {
+          pk: "CLEANER#ada",
+          sk: "AVAIL#2026-10-28#08:00#new",
+          entity: "availability",
+        },
+      ],
+      deletes: [
+        { pk: "CLEANER#ada", sk: "AVAIL#2026-10-28#07:00#old" },
+        { pk: "CLEANER#ada", sk: "AVAIL#2026-10-28#07:00#old" },
+        { pk: "CLEANER#ada", sk: "AVAIL#2026-10-28#08:00#new" },
+      ],
+    });
+    assert.deepEqual(plan.deletes, [{ pk: "CLEANER#ada", sk: "AVAIL#2026-10-28#07:00#old" }]);
+    assert.equal(plan.puts.length, 1);
   });
 });

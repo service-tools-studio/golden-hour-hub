@@ -204,7 +204,13 @@ export async function writeHubItemChanges(
     putsByKey.set(itemKey(item), item);
   }
   const putKeys = new Set(putsByKey.keys());
-  const deletes = plan.deletes.filter((key) => !putKeys.has(itemKey(key)));
+  const deletesByKey = new Map<string, { pk: string; sk: string }>();
+  for (const key of plan.deletes) {
+    const id = itemKey(key);
+    if (putKeys.has(id)) continue;
+    deletesByKey.set(id, key);
+  }
+  const deletes = [...deletesByKey.values()];
 
   const requests: Array<{ PutRequest: { Item: DynamoItem } } | { DeleteRequest: { Key: { pk: string; sk: string } } }> =
     [
