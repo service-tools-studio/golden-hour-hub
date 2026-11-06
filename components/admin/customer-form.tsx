@@ -192,6 +192,8 @@ export function CustomerForm({
   const router = useRouter();
   const [error, setError] = useState<{ field: string; message: string; at: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const busy = saving || deleting;
   const [form, setForm] = useState({
     firstName: customer?.firstName ?? initialFirstName ?? "",
     lastName: customer?.lastName ?? initialLastName ?? "",
@@ -557,8 +559,6 @@ export function CustomerForm({
       {customer ? (
         <button
           type="button"
-          onClick={() => {
-            if (
           disabled={busy}
           aria-busy={deleting}
           onClick={() => {
@@ -589,6 +589,8 @@ export function CustomerForm({
           className="min-h-12 w-full font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4 disabled:opacity-70"
         >
           {deleting ? <ButtonLoadingLabel label="Deleting…" /> : "Delete customer"}
+        </button>
+      ) : null}
       </fieldset>
     </form>
   );
