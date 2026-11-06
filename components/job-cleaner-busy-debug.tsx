@@ -1,9 +1,7 @@
 /**
  * TEMPORARY diagnostics for add/remove cleaner loading UI.
- * Enable with ?debugBusy=1 or localStorage.setItem("debug-job-cleaner-busy", "1") then reload.
- * A yellow bar must appear if this code is running and the flag is on.
- * Copy window.__JOB_CLEANER_BUSY_LOGS__ if the console is empty.
- * Remove this file and its imports when the investigation is done.
+ * Enable with ?debugBusy=1 or &debugBusy=1 (if the URL already has a query)
+ * or localStorage.setItem("debug-job-cleaner-busy", "1") then reload.
  */
 
 "use client";
@@ -21,7 +19,7 @@ export function jobCleanerBusyDebugEnabled(): boolean {
   if (process.env.NEXT_PUBLIC_DEBUG_JOB_CLEANER_BUSY === "1") return true;
   try {
     if (window.localStorage.getItem("debug-job-cleaner-busy") === "1") return true;
-    return new URLSearchParams(window.location.search).has("debugBusy");
+    return window.location.href.includes("debugBusy");
   } catch {
     return false;
   }
@@ -43,7 +41,7 @@ export function jobCleanerBusyDebug(event: string, detail?: Record<string, unkno
   window.dispatchEvent(new CustomEvent("job-cleaner-busy-debug", { detail: payload }));
 }
 
-/** Visible proof the probe is loaded. Mount once from HubProvider. */
+/** Visible proof the probe is loaded. Mount from root layout, not HubProvider. */
 export function JobCleanerBusyDebugProbe() {
   const [enabled, setEnabled] = useState(false);
   const [lastEvent, setLastEvent] = useState("waiting");
@@ -65,9 +63,22 @@ export function JobCleanerBusyDebugProbe() {
   return (
     <div
       data-job-cleaner-debug-probe="1"
-      className="pointer-events-none fixed top-0 left-0 right-0 z-[100] bg-amber-300 px-3 py-1 text-center text-xs font-semibold text-ink"
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 2147483647,
+        background: "#fbbf24",
+        color: "#111",
+        padding: "6px 12px",
+        textAlign: "center",
+        fontSize: 12,
+        fontWeight: 700,
+        pointerEvents: "none",
+      }}
     >
-      job-cleaner-busy debug on · last: {lastEvent} · logs: window.__JOB_CLEANER_BUSY_LOGS__
+      job-cleaner-busy debug on · last: {lastEvent}
     </div>
   );
 }

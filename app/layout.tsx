@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { HubProvider } from "@/components/hub-provider";
+import { JobCleanerBusyDebugProbe } from "@/components/job-cleaner-busy-debug";
 import { previewAuthEnabled } from "@/lib/auth/config";
 import { getServerSession } from "@/lib/auth/session";
 import { loadRemoteHub } from "@/lib/hub/bootstrap-remote";
@@ -27,6 +28,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full">
+        <JobCleanerBusyDebugProbe />
         <HubProvider
           initialAuth={initialAuth}
           initialPreviewAuth={previewAuthEnabled()}

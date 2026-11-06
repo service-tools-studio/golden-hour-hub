@@ -6,7 +6,7 @@ import {
   endJobCleanerMutation,
   peekJobCleanerBusyStore,
 } from "@/components/job-cleaner-busy";
-import { JobCleanerBusyDebugProbe, jobCleanerBusyDebug } from "@/components/job-cleaner-busy-debug";
+import { jobCleanerBusyDebug } from "@/components/job-cleaner-busy-debug";
 import { HubRemoteSyncBlockerProvider } from "@/components/hub-sync";
 import { usePathname } from "next/navigation";
 import {
@@ -1347,7 +1347,6 @@ export function HubProvider({
 
   return (
     <HubContext.Provider value={value}>
-      <JobCleanerBusyDebugProbe />
       <HubRemoteSyncBlockerProvider register={registerRemoteSyncBlocker}>
         <PreviewModeBanner />
         {children}
