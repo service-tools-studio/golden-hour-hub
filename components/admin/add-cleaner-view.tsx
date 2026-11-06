@@ -4,23 +4,28 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CleanerSearchField, searchCleaners } from "@/components/admin/cleaner-search";
 import { useHub } from "@/components/hub-provider";
+import { useJobCleanerBusyAction, useJobCleanerMutation } from "@/components/job-cleaner-busy";
 import { type CleaningOrigin, withOrigin } from "@/components/jobs/origin";
-import { Notice, PageHeader, Screen } from "@/components/ui";
+import { Notice, PageHeader, Screen, ButtonLoadingLabel } from "@/components/ui";
 import {
   availabilityAgainstSpan,
   availabilityStaffingSortRank,
   cleaningTimeSpan,
   staffingAvailabilityWindows,
+  type AvailabilityFit,
 } from "@/lib/domain/availability";
 import { personName } from "@/lib/domain/cleaners";
+import type { CleanerProfile } from "@/lib/domain/types";
 import { hourWindowLabel } from "@/lib/format";
 
 export function AddCleanerView({ jobId, from }: { jobId: string; from?: CleaningOrigin }) {
   const hub = useHub();
   const router = useRouter();
+  const mutation = useJobCleanerMutation();
   const [navigating, setNavigating] = useState(false);
   const [query, setQuery] = useState("");
   const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
+  const addingCleanerId = mutation?.op === "add" && mutation.jobId === jobId ? mutation.cleanerId : null;
 
   const taken = useMemo(() => {
     if (!job) return new Set<string>();
@@ -38,8 +43,13 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
   }, [job, hub.assignments]);
 
   const choices = useMemo(
-    () => hub.cleaners.filter((cleaner) => cleaner.status === "ACTIVE" && !taken.has(cleaner.cleanerId)),
-    [hub.cleaners, taken],
+    () =>
+      hub.cleaners.filter(
+        (cleaner) =>
+          cleaner.status === "ACTIVE" &&
+          (!taken.has(cleaner.cleanerId) || cleaner.cleanerId === addingCleanerId),
+      ),
+    [addingCleanerId, hub.cleaners, taken],
   );
 
   const duration = job?.expectedDurationMinutes ?? 240;
@@ -88,9 +98,10 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
     );
   }
 
-  function add(cleanerId: string) {
-    if (navigating) return;
-    const result = hub.addJobCleaner(jobId, cleanerId);
+  const busy = navigating || addingCleanerId !== null;
+
+  async function add(cleanerId: string) {
+    const result = await hub.addJobCleaner(jobId, cleanerId);
     if (!result.ok) {
       if (result.message) hub.flash(result.message);
       return;
@@ -111,37 +122,76 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
         {choices.length === 0 ? (
           <p className="text-sm text-ink/70">Every active cleaner is already on this cleaning.</p>
         ) : (
-          <CleanerSearchField query={query} onQuery={setQuery} />
+          <CleanerSearchField query={query} onQuery={setQuery} disabled={busy} />
         )}
         {filtering && choices.length > 0 && visibleChoices.length === 0 ? (
           <p className="px-1 text-sm text-ink/55">No cleaners match.</p>
         ) : null}
         {visibleChoices.map(({ cleaner, pills }) => (
-          <button
+          <AddCleanerChoiceButton
             key={cleaner.cleanerId}
-            type="button"
-            disabled={navigating}
-            onClick={() => add(cleaner.cleanerId)}
-            className="block min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-left disabled:opacity-70"
-          >
-            <span className="block text-base font-semibold">{personName(cleaner.firstName, cleaner.lastName)}</span>
-            {pills.length > 0 ? (
-              <span className="mt-2 flex flex-wrap gap-2">
-                {pills.map((pill) => (
-                  <span
-                    key={`${pill.start}-${pill.end}`}
-                    className={`rounded-full px-3 py-1 text-sm font-semibold ${pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/70"}`}
-                  >
-                    {hourWindowLabel(pill.start, pill.end)}
-                  </span>
-                ))}
-              </span>
-            ) : (
-              <span className="mt-1 block text-sm text-ink/55">No availability this day</span>
-            )}
-          </button>
+            jobId={jobId}
+            cleaner={cleaner}
+            pills={pills}
+            listBusy={busy}
+            onAdd={add}
+          />
         ))}
       </div>
     </Screen>
+  );
+}
+
+function AddCleanerChoiceButton({
+  jobId,
+  cleaner,
+  pills,
+  listBusy,
+  onAdd,
+}: {
+  jobId: string;
+  cleaner: CleanerProfile;
+  pills: AvailabilityFit[];
+  listBusy: boolean;
+  onAdd: (cleanerId: string) => Promise<void>;
+}) {
+  const { loading, busy, onClick } = useJobCleanerBusyAction(jobId, cleaner.cleanerId, "add", () =>
+    onAdd(cleaner.cleanerId),
+  );
+  const disabled = listBusy || busy;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-busy={loading}
+      data-job-cleaner-loading={loading ? "1" : "0"}
+      data-job-cleaner-op="add"
+      data-job-cleaner-id={cleaner.cleanerId}
+      onClick={onClick}
+      className="block min-h-12 w-full rounded-2xl bg-white px-4 py-3 text-left disabled:opacity-70"
+    >
+      {loading ? (
+        <ButtonLoadingLabel label="Adding…" tone="onLight" />
+      ) : (
+        <>
+          <span className="block text-base font-semibold">{personName(cleaner.firstName, cleaner.lastName)}</span>
+          {pills.length > 0 ? (
+            <span className="mt-2 flex flex-wrap gap-2">
+              {pills.map((pill) => (
+                <span
+                  key={`${pill.start}-${pill.end}`}
+                  className={`rounded-full px-3 py-1 text-sm font-semibold ${pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/70"}`}
+                >
+                  {hourWindowLabel(pill.start, pill.end)}
+                </span>
+              ))}
+            </span>
+          ) : (
+            <span className="mt-1 block text-sm text-ink/55">No availability this day</span>
+          )}
+        </>
+      )}
+    </button>
   );
 }

@@ -57,8 +57,8 @@ export function mergeAdjacentWindows(windows: AvailabilityWindow[]): Availabilit
       const currentEnd = currentReady ? minutesFromTime(current.end) : Number.NaN;
       const nextStart = nextReady ? minutesFromTime(next.start) : Number.NaN;
       const nextEnd = nextReady ? minutesFromTime(next.end) : Number.NaN;
-      if (nextStart === currentEnd && nextEnd > nextStart) {
-        current = { ...current, end: next.end };
+      if (nextStart <= currentEnd && nextEnd > nextStart) {
+        if (nextEnd > currentEnd) current = { ...current, end: next.end };
         continue;
       }
       merged.push(current);
@@ -173,6 +173,30 @@ export function windowsInWeek(
     )
     .sort((a, b) => (a.date === b.date ? a.start.localeCompare(b.start) : a.date.localeCompare(b.date)));
 }
+
+/** Stable fingerprint of a week's hours so client and persist can detect a stale editor. */
+export function availabilityWeekSignature(
+  windows: Array<Pick<AvailabilityWindow, "date" | "start" | "end">>,
+): string {
+  return [...windows]
+    .map((window) => `${window.date}|${window.start}|${window.end}`)
+    .sort()
+    .join("\n");
+}
+
+export function signedAvailabilityWeek(
+  windows: AvailabilityWindow[],
+  cleanerId: string,
+  weekStart: string,
+): string {
+  return availabilityWeekSignature(mergeAdjacentWindows(windowsInWeek(windows, cleanerId, weekStart)));
+}
+
+export const STALE_AVAILABILITY_WEEK_MESSAGE =
+  "This week was updated by someone else. Review the latest hours, then save again.";
+
+export const AVAILABILITY_SAVE_FAILED_MESSAGE =
+  "Save failed. Please try again or contact Jasmin if the issue persists.";
 
 export function copyWeekWindows(
   windows: AvailabilityWindow[],

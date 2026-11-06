@@ -10,6 +10,8 @@ import { Card, Notice, PrimaryButton } from "@/components/ui";
 import {
   OPEN_DAY_END,
   OPEN_DAY_START,
+  AVAILABILITY_SAVE_FAILED_MESSAGE,
+  availabilityWeekSignature,
   copyWeekWindows,
   isAllDayAvailabilityWindow,
   mergeAdjacentWindows,
@@ -42,11 +44,8 @@ import {
 import { customerFirstNameForCleaner, formatArrival, formatLongDate } from "@/lib/format";
 import type { AvailabilityWindow } from "@/lib/domain/types";
 
-function windowSignature(windows: AvailabilityWindow[]): string {
-  return [...windows]
-    .map((window) => `${window.date}|${window.start}|${window.end}`)
-    .sort()
-    .join("\n");
+function newAvailabilityId(): string {
+  return crypto.randomUUID();
 }
 
 function minuteChoices(minute: number): number[] {
@@ -349,9 +348,11 @@ function TimeWheel({
   );
 }
 
+export type AvailabilitySaveResult = { ok: true } | { ok: false; message?: string };
+
 export type AvailabilityWeekEditorHandle = {
   isDirty: () => boolean;
-  save: (options?: { quiet?: boolean }) => Promise<boolean>;
+  save: (options?: { quiet?: boolean }) => Promise<AvailabilitySaveResult>;
 };
 
 export function AvailabilityWeekEditor({
@@ -381,10 +382,11 @@ export function AvailabilityWeekEditor({
   const availabilityDueSunday = addDays(dueWeekStart, -1);
   const [draft, setDraft] = useState<AvailabilityWindow[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [tone, setTone] = useState<"error" | "ok">("error");
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [conflictPrompt, setConflictPrompt] = useState<{ detail: string; onConfirm: () => void } | null>(null);
-  const [switchingToWeek, setSwitchingToWeek] = useState<string | null>(null);
+  const [pendingWeekStart, setPendingWeekStart] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const conflictTitleId = useId();
   const editBaselineRef = useRef<AvailabilityWindow[]>([]);
@@ -394,23 +396,26 @@ export function AvailabilityWeekEditor({
       cleaner ? mergeAdjacentWindows(windowsInWeek(hub.availability, cleaner.cleanerId, week.weekStart)) : [],
     [cleaner, hub.availability, week.weekStart],
   );
-  const savedWeekSignature = useMemo(() => windowSignature(savedWeekWindows), [savedWeekWindows]);
-  const dirty = windowSignature(draft) !== savedWeekSignature;
+  const savedWeekSignature = useMemo(() => availabilityWeekSignature(savedWeekWindows), [savedWeekWindows]);
+  const dirty =
+    availabilityWeekSignature(draft) !== availabilityWeekSignature(editBaselineRef.current);
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   useUnsavedNavigation(Boolean(cleaner) && !embedded, () => dirty, setLeaveHref);
   useHubSyncBlocker(() => dirty && !embedded);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!cleaner) return;
     const weekChanged = loadedWeekStartRef.current !== week.weekStart;
-    const hasLocalEdits = windowSignature(draft) !== savedWeekSignature;
+    const hasLocalEdits =
+      availabilityWeekSignature(draft) !== availabilityWeekSignature(editBaselineRef.current);
     if (!weekChanged && hasLocalEdits) return;
     loadedWeekStartRef.current = week.weekStart;
     editBaselineRef.current = savedWeekWindows;
     setDraft(savedWeekWindows);
     setMessage(null);
+    setSaveError(null);
     setTone("error");
     setConflictPrompt(null);
   }, [cleaner, week.weekStart, savedWeekSignature]);
@@ -487,7 +492,7 @@ export function AvailabilityWeekEditor({
     applyDraft([
       ...rest,
       {
-        availabilityId: `draft-${date}-0`,
+        availabilityId: newAvailabilityId(),
         cleanerId: profile.cleanerId,
         date,
         start: OPEN_DAY_START,
@@ -525,7 +530,7 @@ export function AvailabilityWeekEditor({
     applyDraft([
       ...withoutAllDay,
       {
-        availabilityId: `draft-${date}-${draft.length}`,
+        availabilityId: newAvailabilityId(),
         cleanerId: profile.cleanerId,
         date,
         start: defaultStart,
@@ -542,7 +547,7 @@ export function AvailabilityWeekEditor({
     const copied = later.flatMap((day) =>
       source.map((window, index) => ({
         ...window,
-        availabilityId: `copy-${day}-${index}-${draft.length}`,
+        availabilityId: newAvailabilityId(),
         date: day,
       })),
     );
@@ -551,13 +556,12 @@ export function AvailabilityWeekEditor({
   }
 
   function copyLastWeek() {
-    let nextId = 0;
     const copied = copyWeekWindows(
       hub.availability,
       profile.cleanerId,
       addDays(week.weekStart, -7),
       week.weekStart,
-      () => `copy-${nextId++}`,
+      () => newAvailabilityId(),
     );
     if (copied.length === 0) {
       setTone("ok");
@@ -570,15 +574,16 @@ export function AvailabilityWeekEditor({
     setMessage("Last week was copied. Review it, then submit.");
   }
 
-  async function submit(options?: { quiet?: boolean; skipConflictCheck?: boolean }): Promise<boolean> {
+  async function submit(options?: { quiet?: boolean; skipConflictCheck?: boolean }): Promise<AvailabilitySaveResult> {
     const toSave = stripAllDayWhenSpecificExists(mergeAdjacentWindows(draft));
     const check = validateAvailabilityWindows(
       toSave.map((window) => ({ date: window.date, start: window.start, end: window.end })),
     );
     if (!check.ok) {
       setTone("error");
+      setSaveError(null);
       setMessage(check.message);
-      return false;
+      return { ok: false, message: check.message };
     }
     if (!options?.skipConflictCheck) {
       const detail = conflictDetailForNewlyUncovered(editBaselineRef.current, toSave);
@@ -587,41 +592,52 @@ export function AvailabilityWeekEditor({
           detail,
           onConfirm: () => {
             setConflictPrompt(null);
-            void submit({ ...options, skipConflictCheck: true });
+            void submit({ ...options, skipConflictCheck: true }).then((saved) => {
+              if (!saved.ok) return;
+              const next = pendingWeekStart;
+              if (!next) return;
+              setPendingWeekStart(null);
+              onWeekStartChange(next);
+            });
           },
         });
-        return false;
+        return { ok: false };
       }
     }
     setSubmitting(true);
+    setSaveError(null);
     try {
       const result = await hub.submitAvailability(profile.cleanerId, week.weekStart, toSave, {
         quiet: options?.quiet,
+        expectedWeekSignature: availabilityWeekSignature(editBaselineRef.current),
       });
       if (!result.ok) {
+        const failure = result.stale ? result.message : AVAILABILITY_SAVE_FAILED_MESSAGE;
         setTone("error");
-        setMessage(result.message);
-        return false;
+        setSaveError(failure);
+        if (result.stale) loadedWeekStartRef.current = null;
+        return { ok: false, message: failure };
       }
       editBaselineRef.current = toSave;
       setDraft(toSave);
       setTone("ok");
       setMessage(null);
-      return true;
+      setSaveError(null);
+      return { ok: true };
+    } catch (error) {
+      console.error("availability save failed.", error);
+      setTone("error");
+      setSaveError(AVAILABILITY_SAVE_FAILED_MESSAGE);
+      return { ok: false, message: AVAILABILITY_SAVE_FAILED_MESSAGE };
     } finally {
       setSubmitting(false);
     }
   }
 
   function pickWeek(nextStart: string) {
-    if (nextStart === week.weekStart || switchingToWeek) return;
+    if (nextStart === week.weekStart || pendingWeekStart || submitting) return;
     if (dirty) {
-      setSwitchingToWeek(nextStart);
-      void submit().then((saved) => {
-        setSwitchingToWeek(null);
-        if (!saved) return;
-        onWeekStartChange(nextStart);
-      });
+      setPendingWeekStart(nextStart);
       return;
     }
     onWeekStartChange(nextStart);
@@ -635,7 +651,7 @@ export function AvailabilityWeekEditor({
   function submitAndLeave() {
     const href = leaveHref;
     return submit().then((saved) => {
-      if (!saved) {
+      if (!saved.ok) {
         setLeaveHref(null);
         return false;
       }
@@ -665,18 +681,14 @@ export function AvailabilityWeekEditor({
               (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === option.weekStart,
             );
             const selected = option.weekStart === week.weekStart;
-            const savingCurrentWeek = switchingToWeek !== null && option.weekStart === week.weekStart;
-            const loadingTargetWeek = switchingToWeek === option.weekStart;
-            const weekToggleBusy = switchingToWeek !== null;
+            const weekToggleBusy = pendingWeekStart !== null || submitting;
             const weekLabel = index === 0 ? "Current week" : "Next week";
             const statusClass = selected ? "text-cream/80" : "text-ink/55";
-            const statusEmphasis = selected ? "text-cream" : "text-ink/70";
             return (
               <button
                 key={option.weekStart}
                 type="button"
                 disabled={weekToggleBusy}
-                aria-busy={savingCurrentWeek || loadingTargetWeek}
                 onClick={() => pickWeek(option.weekStart)}
                 className={`flex min-h-12 flex-1 flex-col items-center justify-center rounded-2xl px-2 py-2 disabled:opacity-70 ${
                   selected ? "bg-ink text-cream" : "bg-white text-ink ring-1 ring-ink/10"
@@ -690,11 +702,7 @@ export function AvailabilityWeekEditor({
                   {weekLabel}
                 </span>
                 <span className="mt-0.5 text-sm font-semibold leading-5">{formatWeekRange(option.weekStart, option.weekEnd)}</span>
-                {savingCurrentWeek ? (
-                  <span className={`mt-0.5 text-xs font-semibold ${statusEmphasis}`}>Saving…</span>
-                ) : loadingTargetWeek ? (
-                  <span className={`mt-0.5 text-xs font-semibold ${statusEmphasis}`}>Loading…</span>
-                ) : optionSubmitted ? (
+                {optionSubmitted ? (
                   <span className={`mt-0.5 text-xs font-medium ${statusClass}`}>Submitted</span>
                 ) : null}
               </button>
@@ -755,12 +763,31 @@ export function AvailabilityWeekEditor({
             </Card>
           );
         })}
-        {message ? <Notice tone={tone}>{message}</Notice> : null}
+        {saveError || message ? <Notice tone={saveError ? "error" : tone}>{saveError ?? message}</Notice> : null}
         {embedded ? null : (
           <PrimaryButton type="button" loading={submitting} loadingLabel="Saving…" onClick={() => void submit()}>
             {submitLabel}
           </PrimaryButton>
         )}
+      <UnsavedChangesDialog
+        open={pendingWeekStart !== null}
+        title="Unsaved changes"
+        description={`Save changes to ${formatWeekRange(week.weekStart, week.weekEnd)} before switching weeks, or discard them.`}
+        onSave={async () => {
+          const saved = await submit();
+          if (!saved.ok) return false;
+          const next = pendingWeekStart;
+          setPendingWeekStart(null);
+          if (next) onWeekStartChange(next);
+        }}
+        onDiscard={() => {
+          const next = pendingWeekStart;
+          setPendingWeekStart(null);
+          loadedWeekStartRef.current = null;
+          if (next) onWeekStartChange(next);
+        }}
+        onDismiss={() => setPendingWeekStart(null)}
+      />
       {!embedded ? (
       <UnsavedChangesDialog
         open={leaveHref !== null}

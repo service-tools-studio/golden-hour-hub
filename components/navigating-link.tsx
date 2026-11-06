@@ -38,15 +38,21 @@ export function NavigatingLink({
   href,
   className,
   children,
+  disabled = false,
 }: {
   href: string;
   className?: string;
   children: ReactNode;
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
   function onClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (disabled) {
+      event.preventDefault();
+      return;
+    }
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -56,7 +62,14 @@ export function NavigatingLink({
 
   return (
     <>
-      <Link href={href} onClick={onClick} className={className} aria-busy={pending}>
+      <Link
+        href={href}
+        onClick={onClick}
+        className={[className, disabled ? "pointer-events-none opacity-50" : ""].filter(Boolean).join(" ")}
+        aria-busy={pending}
+        aria-disabled={disabled || undefined}
+        tabIndex={disabled ? -1 : undefined}
+      >
         {children}
       </Link>
       {pending ? <NavigationLoadingOverlay href={href} onComplete={() => setPending(false)} /> : null}

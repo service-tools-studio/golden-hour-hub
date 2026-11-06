@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, deleted: 0, message: "DynamoDB is not configured." });
   }
   try {
-    const hub = await loadHub();
+    const hub = await loadHub({ persistReconciliation: true });
     const deleted = await purgeStaleAssignmentSmsLogs(hub);
     return NextResponse.json({ ok: true, deleted });
   } catch (error) {

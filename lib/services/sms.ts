@@ -1,4 +1,10 @@
-import { dynamoConfigured, loadHub } from "../data/repository.ts";
+import "server-only";
+
+import { dynamoConfigured } from "../data/dynamo-config.ts";
+import type { SmsSendResult } from "./sms-types.ts";
+import { loadHub } from "../data/repository.ts";
+
+export type { SmsSendResult } from "./sms-types.ts";
 
 export type SmsMessage = {
   /** US mobile: 10 digits (preferred) or E.164 (+1…). */
@@ -199,16 +205,7 @@ function twilioStatusCallbackUrl(): string | null {
   return `${base}/api/twilio/sms/status`;
 }
 
-export type SmsSendResult = {
-  provider: "mock" | "twilio";
-  /** True only when Twilio reports the message as sent/delivered (not merely queued). */
-  confirmed?: boolean;
-  messageSid?: string;
-  twilioStatus?: string;
-};
-
-/**
- * Server-only SMS to cleaners (scheduling). Use SMS_PROVIDER=mock to log without sending.
+/** Server-only SMS to cleaners (scheduling). Use SMS_PROVIDER=mock to log without sending.
  * Never use for customers — use manual `sms:` links instead (`arrivalChangeSms` in lib/format.ts).
  */
 export type SendSmsOptions = {

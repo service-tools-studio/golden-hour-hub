@@ -68,7 +68,7 @@ export function SeriesForm({
     setMessage(null);
   }
 
-  function persist(): boolean {
+  async function persist(): Promise<boolean> {
     const current = latest.current;
     const recurrence = weekly
       ? { frequency: "WEEK" as const, interval: current.interval, daysOfWeek: current.days }
@@ -88,7 +88,7 @@ export function SeriesForm({
       }
       defaultPricePerVisitCents = cents;
     }
-    const result = hub.saveSeries(series.seriesId, {
+    const result = await hub.saveSeries(series.seriesId, {
       propertyId: current.propertyId,
       recurrence,
       defaultHeadcountNeeded: current.headcount,
@@ -120,13 +120,15 @@ export function SeriesForm({
         event.preventDefault();
         if (saving) return;
         setSaving(true);
-        try {
-          if (!persist()) return;
-          hub.flash("changes saved");
-          onSaved?.();
-        } finally {
-          setSaving(false);
-        }
+        void (async () => {
+          try {
+            if (!(await persist())) return;
+            hub.flash("changes saved");
+            onSaved?.();
+          } finally {
+            setSaving(false);
+          }
+        })();
       }}
     >
       <Field label="Property">

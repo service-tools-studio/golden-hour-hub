@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
-import { Field, PrimaryButton, fieldClass } from "@/components/ui";
+import { Field, PrimaryButton, ButtonLoadingLabel, fieldClass } from "@/components/ui";
 import { findCustomerByExactName, validateCustomerInput } from "@/lib/domain/customers";
 import type { Customer, Property } from "@/lib/domain/types";
 import { formatPhoneInput } from "@/lib/format";
@@ -165,7 +165,7 @@ function draftsFor(customer: Customer | undefined, properties: Property[]): Prop
 }
 
 export type CustomerFormHandle = {
-  save: () => boolean;
+  save: () => boolean | Promise<boolean>;
   isDirty: () => boolean;
 };
 
@@ -192,6 +192,8 @@ export function CustomerForm({
   const router = useRouter();
   const [error, setError] = useState<{ field: string; message: string; at: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const busy = saving || deleting;
   const [form, setForm] = useState({
     firstName: customer?.firstName ?? initialFirstName ?? "",
     lastName: customer?.lastName ?? initialLastName ?? "",
@@ -250,7 +252,7 @@ export function CustomerForm({
     );
   }
 
-  function persist(): string | null {
+  async function persist(): Promise<string | null> {
     if (duplicate) {
       setError({ field: "duplicate", message: "", at: Date.now() });
       return null;
@@ -277,7 +279,7 @@ export function CustomerForm({
       setError({ field: decision.field ?? "form", message: decision.message, at: Date.now() });
       return null;
     }
-    const result = hub.saveCustomer(decision.value, customer?.customerId);
+    const result = await hub.saveCustomer(decision.value, customer?.customerId);
     if (!result.ok || !result.customerId) {
       setError({
         field: "form",
@@ -319,7 +321,7 @@ export function CustomerForm({
   }
 
   useImperativeHandle(ref, () => ({
-    save: () => persist() !== null,
+    save: async () => (await persist()) !== null,
     isDirty,
   }));
 
@@ -330,14 +332,17 @@ export function CustomerForm({
         event.preventDefault();
         if (saving) return;
         setSaving(true);
-        const customerId = persist();
-        if (!customerId) {
-          setSaving(false);
-          return;
-        }
-        hub.flash("changes saved");
-        if (onSaved) onSaved(customerId);
-        else router.push(`/admin/customers/${customerId}`);
+        void (async () => {
+          try {
+            const customerId = await persist();
+            if (!customerId) return;
+            hub.flash("changes saved");
+            if (onSaved) onSaved(customerId);
+            else router.push(`/admin/customers/${customerId}`);
+          } finally {
+            setSaving(false);
+          }
+        })();
       }}
     >
       <div className="grid grid-cols-2 gap-3">
@@ -373,7 +378,7 @@ export function CustomerForm({
         </div>
       ) : null}
       <fieldset
-        disabled={Boolean(duplicate)}
+        disabled={Boolean(duplicate) || busy}
         className="m-0 min-w-0 space-y-3 border-0 p-0 disabled:pointer-events-none disabled:opacity-50"
       >
       <Field id="customer-phone" label="Phone" error={fieldMessage("phone")}>
@@ -554,7 +559,10 @@ export function CustomerForm({
       {customer ? (
         <button
           type="button"
+          disabled={busy}
+          aria-busy={deleting}
           onClick={() => {
+            if (busy) return;
             if (
               !window.confirm(
                 `Delete ${customer.firstName} ${customer.lastName}? This removes their profile and properties. You can undo for a few seconds after.`,
@@ -562,18 +570,25 @@ export function CustomerForm({
             ) {
               return;
             }
-            const result = hub.deleteCustomer(customer.customerId);
-            if (!result.ok) {
-              setError({ field: "form", message: result.message, at: Date.now() });
-              return;
-            }
-            if (result.message) hub.flash(result.message);
-            if (onDeleted) onDeleted();
-            else router.push("/admin/customers");
+            setDeleting(true);
+            void (async () => {
+              try {
+                const result = await hub.deleteCustomer(customer.customerId);
+                if (!result.ok) {
+                  setError({ field: "form", message: result.message, at: Date.now() });
+                  return;
+                }
+                if (result.message) hub.flash(result.message);
+                onDeleted?.();
+                router.push("/admin/customers");
+              } finally {
+                setDeleting(false);
+              }
+            })();
           }}
-          className="min-h-12 w-full font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4"
+          className="min-h-12 w-full font-semibold text-red-700 underline decoration-red-700 decoration-2 underline-offset-4 disabled:opacity-70"
         >
-          Delete customer
+          {deleting ? <ButtonLoadingLabel label="Deleting…" /> : "Delete customer"}
         </button>
       ) : null}
       </fieldset>

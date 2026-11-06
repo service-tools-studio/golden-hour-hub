@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { mergeInboundCleanerUpdates, planInboundSmsReply } from "@/lib/cleaner/sms-inbound";
-import { dynamoConfigured, loadHub, saveHub } from "@/lib/data/repository";
+import { dynamoConfigured, loadHub } from "@/lib/data/repository";
+import { persistHubDataDiff } from "@/lib/data/persist-hub-data-diff";
 import {
   formDataToParamRecord,
   inboundWebhookSignatureUrls,
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
 
     if (plan.action === "opt_in" || plan.action === "opt_out") {
       const next = mergeInboundCleanerUpdates(hub, plan.cleaners);
-      await saveHub(next);
+      await persistHubDataDiff(hub, next);
       console.info(`[twilio:inbound] ${plan.action} from=${from} cleaners=${plan.cleaners.map((c) => c.cleanerId).join(",")}`);
     }
 

@@ -4,9 +4,11 @@ import {
   availabilityAgainstSpan,
   availabilityStaffingSortRank,
   cleaningTimeSpan,
+  availabilityWeekSignature,
   copyWeekWindows,
   listSubmissionStatus,
   mergeAdjacentWindows,
+  signedAvailabilityWeek,
   stripAllDayWhenSpecificExists,
 } from "./availability.ts";
 import {
@@ -586,6 +588,41 @@ describe("weekly submission", () => {
     assert.equal(stripped.some((window) => window.availabilityId === "all-day"), false);
   });
 
+  it("fingerprints a week by hours, ignoring ids and order", () => {
+    const left: AvailabilityWindow[] = [
+      { availabilityId: "a", cleanerId: "ada", date: "2026-11-03", start: "09:00", end: "12:00" },
+      { availabilityId: "b", cleanerId: "ada", date: "2026-11-04", start: "13:00", end: "17:00" },
+    ];
+    const right: AvailabilityWindow[] = [
+      { availabilityId: "z", cleanerId: "ada", date: "2026-11-04", start: "13:00", end: "17:00" },
+      { availabilityId: "y", cleanerId: "ada", date: "2026-11-03", start: "09:00", end: "12:00" },
+    ];
+    assert.equal(availabilityWeekSignature(left), availabilityWeekSignature(right));
+    assert.equal(signedAvailabilityWeek(left, "ada", "2026-11-02"), signedAvailabilityWeek(right, "ada", "2026-11-02"));
+    assert.notEqual(
+      signedAvailabilityWeek(left, "ada", "2026-11-02"),
+      signedAvailabilityWeek(
+        [...left, { availabilityId: "c", cleanerId: "ada", date: "2026-11-05", start: "08:00", end: "10:00" }],
+        "ada",
+        "2026-11-02",
+      ),
+    );
+  });
+
+  it("collapses duplicate all-day windows on the same day into one block", () => {
+    const windows: AvailabilityWindow[] = [
+      { availabilityId: "a", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+      { availabilityId: "b", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+      { availabilityId: "c", cleanerId: "ada", date: "2026-11-03", start: "07:00", end: "24:00" },
+    ];
+    const merged = mergeAdjacentWindows(windows);
+    assert.equal(merged.length, 1);
+    assert.deepEqual(
+      { date: merged[0]?.date, start: merged[0]?.start, end: merged[0]?.end },
+      { date: "2026-11-03", start: "07:00", end: "24:00" },
+    );
+  });
+
   it("consolidates adjacent windows on the same day into one block", () => {
     const windows: AvailabilityWindow[] = [
       { availabilityId: "early", cleanerId: "claudia", date: "2026-09-28", start: "08:00", end: "11:00" },
@@ -600,8 +637,7 @@ describe("weekly submission", () => {
       [
         { date: "2026-09-28", start: "08:00", end: "17:00", availabilityId: "early" },
         { date: "2026-09-29", start: "13:00", end: "15:00", availabilityId: "gap" },
-        { date: "2026-09-30", start: "08:00", end: "12:00", availabilityId: "overlap" },
-        { date: "2026-09-30", start: "10:00", end: "17:00", availabilityId: "overlap-next" },
+        { date: "2026-09-30", start: "08:00", end: "17:00", availabilityId: "overlap" },
       ],
     );
   });

@@ -8,8 +8,8 @@ import {
   loadHub,
   persistCleanerProfile,
   persistCleanerQuestionnaireSubmit,
-  saveHub,
 } from "@/lib/data/repository";
+import { persistHubDataDiff } from "@/lib/data/persist-hub-data-diff";
 import { emptyHub } from "@/lib/mock/seed";
 import { todayInBusinessZone } from "@/lib/domain/time";
 import type { ContractorQuestionnaireInput } from "@/lib/domain/contractor-questionnaire";
@@ -25,6 +25,7 @@ import {
   updateContractorRegistrationVerificationOnHub,
   updateContractorWorkersCompComplianceOnHub,
 } from "@/lib/hub/contractor-questionnaire-mutations";
+import { hubMutationPatch } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 
 type DraftMutationResult =
@@ -157,8 +158,8 @@ export async function updateContractorQuestionnaireReviewAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
-    return { ok: true, data: next };
+    await persistHubDataDiff(hub, next);
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorQuestionnaireReviewAction failed.", error);
@@ -183,8 +184,8 @@ export async function updateContractorRegistrationVerificationAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
-    return { ok: true, data: next };
+    await persistHubDataDiff(hub, next);
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorRegistrationVerificationAction failed.", error);
@@ -209,8 +210,8 @@ export async function updateContractorCoiVerificationAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
-    return { ok: true, data: next };
+    await persistHubDataDiff(hub, next);
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorCoiVerificationAction failed.", error);
@@ -235,8 +236,8 @@ export async function updateContractorWorkersCompComplianceAction(
       now,
     );
     if (!result.ok) return result;
-    await saveHub(next);
-    return { ok: true, data: next };
+    await persistHubDataDiff(hub, next);
+    return { ok: true, data: hubMutationPatch(hub, next).patch };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("updateContractorWorkersCompComplianceAction failed.", error);

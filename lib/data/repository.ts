@@ -1,23 +1,27 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import "server-only";
+
 import {
   BatchWriteCommand,
   DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
-  ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
-import { mergeRecurringHorizon } from "../domain/recurrence.ts";
-import { clearStaleNotScheduledAttention } from "../domain/invitations.ts";
-import { reconcileScheduleConflictWarnings } from "../domain/scheduling.ts";
+import { buildHubDiffPersistPlan } from "../hub/hub-diff-persist-plan.ts";
 import { todayInBusinessZone } from "../domain/time.ts";
-import { emptyHub, type HubData } from "../mock/seed.ts";
+import type { HubData } from "../mock/seed.ts";
 import type { CleanerProfile } from "../domain/types.ts";
 import type { ContractorQuestionnaireSubmissionRecord } from "../domain/contractor-questionnaire-submission.ts";
 import {
+  appendHubChangeManifest,
+  partitionKeysFromChanges,
+} from "./hub-change-manifest.ts";
+import { dynamoConfigured } from "./dynamo-config.ts";
+import { dynamoDoc, dynamoTableName } from "./dynamo-client.ts";
+import { queryItemsByPk } from "./dynamo-queries.ts";
+import {
   cleanerToItem,
   contractorQuestionnaireSubmissionToItem,
-  hubToItems,
   itemsToHub,
   readCleanerProfileFromItem,
   type DynamoItem,
@@ -44,7 +48,10 @@ export async function readHubRevision(): Promise<number> {
   return typeof revision === "number" && Number.isInteger(revision) && revision >= 0 ? revision : 0;
 }
 
-async function bumpHubRevision(): Promise<number> {
+async function bumpHubRevision(partitionKeys: string[] = []): Promise<number> {
+  if (partitionKeys.length > 0) {
+    await appendHubChangeManifest(partitionKeys);
+  }
   const doc = client();
   const now = new Date().toISOString();
   const result = await doc.send(
@@ -65,52 +72,50 @@ async function bumpHubRevision(): Promise<number> {
   return typeof revision === "number" ? revision : 1;
 }
 
-export function dynamoConfigured(): boolean {
-  return Boolean(process.env.DYNAMODB_TABLE_NAME);
-}
+export { dynamoConfigured } from "./dynamo-config.ts";
 
 function tableName(): string {
-  const name = process.env.DYNAMODB_TABLE_NAME;
-  if (!name) throw new Error("DYNAMODB_TABLE_NAME is not set.");
-  return name;
+  return dynamoTableName();
 }
 
 function client(): DynamoDBDocumentClient {
-  return DynamoDBDocumentClient.from(
-    new DynamoDBClient({ region: process.env.AWS_REGION || "us-west-2" }),
-    { marshallOptions: { removeUndefinedValues: true } },
-  );
+  return dynamoDoc();
 }
 
-/** Load hub data from DynamoDB. Never writes mock seed data; use scripts/seed-cleaners.ts for cleaners. */
-export async function loadHub(): Promise<HubData> {
-  const items = await scanAll();
+export type LoadHubOptions = {
+  persistReconciliation?: boolean;
+};
+
+/** Load hub data from DynamoDB (slice queries; optional reconcile persist for cron/legacy). */
+export async function loadHub(options: LoadHubOptions = {}): Promise<HubData> {
+  const { loadAdminHubSlices } = await import("./load-admin-hub.ts");
+  return loadAdminHubSlices(options);
+}
+
+/** @deprecated Prefer loadAdminHubSlices; kept for callers that expect a full reconcile pass with persist. */
+export async function loadHubWithReconcilePersist(): Promise<HubData> {
+  return loadHub({ persistReconciliation: true });
+}
+
+/** Read one cleaning and its assignments plus one cleaner profile (no table scan). */
+export async function loadHubForJobStaffing(jobId: string, cleanerId: string): Promise<HubData | null> {
   const today = todayInBusinessZone();
-  if (items.length === 0) {
-    return emptyHub(today);
-  }
-  const data = itemsToHub(items, today);
-  const generated = mergeRecurringHorizon({ ...data, today, nowIso: new Date().toISOString() });
-  const nowIso = new Date().toISOString();
-  const reconciled = reconcileScheduleConflictWarnings(generated.assignments, data.cleaners);
-  const assignments = clearStaleNotScheduledAttention(generated.jobs, reconciled, nowIso);
-  const next = { ...data, today, series: generated.series, jobs: generated.jobs, assignments };
-  const beforeById = new Map(generated.assignments.map((assignment) => [assignment.assignmentId, assignment]));
-  const assignmentsReconciled = assignments.some((assignment) => {
-    const before = beforeById.get(assignment.assignmentId);
-    if (!before) return true;
-    return (
-      before.status !== assignment.status ||
-      before.attentionReason !== assignment.attentionReason
-    );
-  });
-  if (next.jobs.length !== data.jobs.length || next.assignments.length !== data.assignments.length || assignmentsReconciled) {
-    await saveHub(next);
-  }
-  return next;
+  const jobItems = await queryItemsByPk(`JOB#${jobId}`);
+  const profile = jobItems.find((item) => item.sk === "PROFILE" && item.entity === "job");
+  if (!profile) return null;
+  const cleaner = await loadCleanerProfile(cleanerId);
+  if (!cleaner) return null;
+  return itemsToHub([...jobItems, cleanerToItem(cleaner)], today);
 }
 
-export async function putItems(items: DynamoItem[]): Promise<void> {
+export async function putItems(items: DynamoItem[]): Promise<number> {
+  if (items.length === 0) return readHubRevision();
+  await putItemsWithoutRevision(items);
+  return bumpHubRevision([...new Set(items.map((item) => item.pk))]);
+}
+
+/** Put rows without bumping hub revision (caller will bump once). */
+async function putItemsWithoutRevision(items: DynamoItem[]): Promise<void> {
   if (items.length === 0) return;
   await writeBatches(items.map((item) => ({ PutRequest: { Item: item } })));
 }
@@ -130,8 +135,7 @@ export async function loadCleanerProfile(cleanerId: string): Promise<CleanerProf
 
 /** Persist one cleaner profile and bump hub revision (for autosave-sized writes). */
 export async function persistCleanerProfile(cleaner: CleanerProfile): Promise<number> {
-  await putItems([cleanerToItem(cleaner)]);
-  return bumpHubRevision();
+  return putItems([cleanerToItem(cleaner)]);
 }
 
 /** Remove a cleaner PROFILE row (rollback or admin delete). Does not remove availability or assignments. */
@@ -143,7 +147,7 @@ export async function deleteCleanerProfile(cleanerId: string): Promise<number> {
       Key: { pk: `CLEANER#${cleanerId}`, sk: "PROFILE" },
     }),
   );
-  return bumpHubRevision();
+  return bumpHubRevision([`CLEANER#${cleanerId}`]);
 }
 
 /** Persist cleaner questionnaire submit: profile + append-only submission row. */
@@ -151,66 +155,92 @@ export async function persistCleanerQuestionnaireSubmit(
   cleaner: CleanerProfile,
   submission: ContractorQuestionnaireSubmissionRecord,
 ): Promise<number> {
-  await putItems([cleanerToItem(cleaner), contractorQuestionnaireSubmissionToItem(submission)]);
-  return bumpHubRevision();
+  const items = [cleanerToItem(cleaner), contractorQuestionnaireSubmissionToItem(submission)];
+  await putItemsWithoutRevision(items);
+  return bumpHubRevision([...new Set(items.map((item) => item.pk))]);
 }
 
-/** Remove every item in the table. Use before a clean seed. */
+/** Remove every item in the table. Uses a table scan — scripts/dev only. */
 export async function clearTable(): Promise<number> {
-  const existing = await scanAll();
+  const { scanEntireTable } = await import("./dynamo-scan-dev.ts");
+  const existing = await scanEntireTable();
   if (existing.length === 0) return 0;
   await writeBatches(existing.map((item) => ({ DeleteRequest: { Key: { pk: item.pk, sk: item.sk } } })));
   return existing.length;
 }
 
-export async function saveHub(data: HubData): Promise<number> {
-  const next = hubToItems(data);
-  const existing = await scanAll();
-  const nextKeys = new Set(next.map(itemKey));
-  const stale = existing.filter(
-    (item) =>
-      item.entity &&
-      !isHubMetaItem(item) &&
-      item.entity !== "assignment_sms_log" &&
-      !nextKeys.has(itemKey(item)),
-  );
-  await writeBatches([
-    ...stale.map((item) => ({ DeleteRequest: { Key: { pk: item.pk, sk: item.sk } } })),
-    ...next.map((item) => ({ PutRequest: { Item: item } })),
-  ]);
-  return bumpHubRevision();
+/** @deprecated Use persistHubDataDiff or writeHubItemChanges instead. */
+export async function saveHub(after: HubData, before: HubData): Promise<number> {
+  const plan = buildHubDiffPersistPlan(before, after);
+  if (plan.puts.length === 0 && plan.deletes.length === 0) {
+    return readHubRevision();
+  }
+  const expectedRevision = await readHubRevision();
+  const saved = await writeHubItemChanges(plan, expectedRevision);
+  if (!saved.ok) {
+    throw new Error("Hub revision conflict during saveHub.");
+  }
+  return saved.revision;
 }
 
 export type SaveHubRevisionResult =
   | { ok: true; revision: number }
   | { ok: false; kind: "conflict"; revision: number; hub: HubData };
 
-/** Save only when hub revision still matches what the caller loaded. */
-export async function saveHubIfRevision(data: HubData, expectedRevision: number): Promise<SaveHubRevisionResult> {
+export type HubItemChangesResult = { ok: true; revision: number } | { ok: false; kind: "conflict"; revision: number };
+
+/** Targeted puts/deletes with revision check (does not scan/delete unrelated hub rows). */
+export async function writeHubItemChanges(
+  plan: { puts: DynamoItem[]; deletes: Array<{ pk: string; sk: string }> },
+  expectedRevision: number,
+): Promise<HubItemChangesResult> {
   const current = await readHubRevision();
   if (current !== expectedRevision) {
-    const hub = await loadHub();
-    return { ok: false, kind: "conflict", revision: current, hub };
+    return { ok: false, kind: "conflict", revision: current };
   }
-  const revision = await saveHub(data);
+
+  const putsByKey = new Map<string, DynamoItem>();
+  for (const item of plan.puts) {
+    putsByKey.set(itemKey(item), item);
+  }
+  const putKeys = new Set(putsByKey.keys());
+  const deletesByKey = new Map<string, { pk: string; sk: string }>();
+  for (const key of plan.deletes) {
+    const id = itemKey(key);
+    if (putKeys.has(id)) continue;
+    deletesByKey.set(id, key);
+  }
+  const deletes = [...deletesByKey.values()];
+
+  const requests: Array<{ PutRequest: { Item: DynamoItem } } | { DeleteRequest: { Key: { pk: string; sk: string } } }> =
+    [
+      ...deletes.map((key) => ({ DeleteRequest: { Key: key } })),
+      ...[...putsByKey.values()].map((item) => ({ PutRequest: { Item: item } })),
+    ];
+  if (requests.length > 0) {
+    await writeBatches(requests);
+  }
+  const revision = await bumpHubRevision(partitionKeysFromChanges(plan));
   return { ok: true, revision };
 }
 
-async function scanAll(): Promise<DynamoItem[]> {
-  const doc = client();
-  const items: DynamoItem[] = [];
-  let startKey: Record<string, unknown> | undefined;
-  do {
-    const page = await doc.send(
-      new ScanCommand({
-        TableName: tableName(),
-        ExclusiveStartKey: startKey,
-      }),
-    );
-    items.push(...((page.Items ?? []) as DynamoItem[]));
-    startKey = page.LastEvaluatedKey;
-  } while (startKey);
-  return items;
+/** Save only when hub revision still matches what the caller loaded. */
+export async function saveHubIfRevision(before: HubData, after: HubData, expectedRevision: number): Promise<SaveHubRevisionResult> {
+  const current = await readHubRevision();
+  if (current !== expectedRevision) {
+    const hub = await loadHub({ persistReconciliation: false });
+    return { ok: false, kind: "conflict", revision: current, hub };
+  }
+  const plan = buildHubDiffPersistPlan(before, after);
+  if (plan.puts.length === 0 && plan.deletes.length === 0) {
+    return { ok: true, revision: expectedRevision };
+  }
+  const saved = await writeHubItemChanges(plan, expectedRevision);
+  if (saved.ok) {
+    return { ok: true, revision: saved.revision };
+  }
+  const hub = await loadHub({ persistReconciliation: false });
+  return { ok: false, kind: "conflict", revision: saved.revision, hub };
 }
 
 async function writeBatches(

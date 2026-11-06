@@ -178,13 +178,13 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
   const usualCrew = typicalCrewSize(typical);
   const approvedCrew = maxCrewSize(maximum);
 
-  function save(nextHref?: string) {
+  async function save(nextHref?: string) {
     const typicalHourlyRateCents = parseDollarsToCents(hourlyRate);
     if (typicalHourlyRateCents === null) {
       setMessage("Enter a valid hourly rate.");
       return false;
     }
-    const result = hub.updateCleanerAdmin(profile.cleanerId, {
+    const result = await hub.updateCleanerAdmin(profile.cleanerId, {
       typicalHelperCount: typical,
       maxHelperCount: maximum,
       typicalHourlyRateCents,
@@ -218,10 +218,13 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
     try {
       if (availabilityDirty || availabilityRef.current?.isDirty()) {
         const availabilitySaved = await availabilityRef.current!.save({ quiet: true });
-        if (!availabilitySaved) return false;
+        if (!availabilitySaved.ok) {
+          if (availabilitySaved.message) setMessage(availabilitySaved.message);
+          return false;
+        }
         setAvailabilityDirty(false);
       }
-      return save(nextHref);
+      return await save(nextHref);
     } finally {
       setSaving(false);
     }

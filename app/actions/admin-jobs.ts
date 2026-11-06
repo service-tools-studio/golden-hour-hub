@@ -3,19 +3,24 @@
 import { AuthError, requireAdmin } from "@/lib/auth/guards";
 import { purgeStaleAssignmentSmsLogs } from "@/lib/cleaner/assignment-sms-log-retention";
 import { dynamoConfigured } from "@/lib/data/repository";
+import { loadHubForCreateJob } from "@/lib/data/load-hub-mutations";
+import { persistHubDiffMutation } from "@/lib/data/persist-hub-diff-mutation";
 import { createJobOnHub, type CreateJobInput } from "@/lib/hub/create-job-mutations";
-import { persistHubMutation } from "@/lib/hub/persist-hub-mutation";
+import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 
 export type CreateJobActionResult =
-  | { ok: true; hub: HubData; revision: number; jobId: string; message: string }
+  | { ok: true; hub: HubData; remove?: HubPatchRemove; revision: number; jobId: string; message: string }
   | { ok: false; message: string };
 
 export async function createJobAction(input: CreateJobInput): Promise<CreateJobActionResult> {
   try {
     const session = await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    const saved = await persistHubMutation((hub) => createJobOnHub(hub, input, session.email));
+    const saved = await persistHubDiffMutation(
+      () => loadHubForCreateJob(),
+      (hub) => createJobOnHub(hub, input, session.email),
+    );
     if (!saved.ok) return saved;
     try {
       await purgeStaleAssignmentSmsLogs(saved.hub);
@@ -25,6 +30,7 @@ export async function createJobAction(input: CreateJobInput): Promise<CreateJobA
     return {
       ok: true,
       hub: saved.hub,
+      remove: saved.remove,
       revision: saved.revision,
       jobId: saved.jobId,
       message: saved.message,
