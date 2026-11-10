@@ -345,7 +345,11 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setHelpersOn(false)}
+              onClick={() => {
+                setHelpersOn(false);
+                setTypicalHelperCount(0);
+                setMaxHelperCount(0);
+              }}
               className={`min-h-12 rounded-2xl text-sm font-semibold ${!helpersOn ? "bg-ink text-cream" : "bg-cream"}`}
             >
               No
@@ -424,9 +428,11 @@ export function CleanerAdminDetail({ cleanerId }: { cleanerId: string }) {
         {message ? (
           <FormSubmitNotice message={message} tone={message === "Saved." ? "ok" : "error"} />
         ) : null}
-        <PrimaryButton type="button" loading={saving} loadingLabel="Saving…" onClick={() => void runSave()}>
-          Save
-        </PrimaryButton>
+        {hasUnsaved || saving ? (
+          <PrimaryButton type="button" loading={saving} loadingLabel="Saving…" onClick={() => void runSave()}>
+            Save
+          </PrimaryButton>
+        ) : null}
       </div>
       <UnsavedChangesDialog
         open={leaveHref !== null}
