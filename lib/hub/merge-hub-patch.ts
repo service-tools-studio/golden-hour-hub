@@ -215,6 +215,20 @@ export function mergeHubPatchIntoHub(
   };
 }
 
+/** Keep already-fetched past jobs when a full hub reload only covers today forward. */
+export function retainJobsBeforeDate(current: HubData, incoming: HubData, beforeDate: string): HubData {
+  const incomingIds = new Set(incoming.jobs.map((job) => job.jobId));
+  const keptJobs = current.jobs.filter((job) => job.date < beforeDate && !incomingIds.has(job.jobId));
+  if (keptJobs.length === 0) return incoming;
+  const keptIds = new Set(keptJobs.map((job) => job.jobId));
+  const keptAssignments = current.assignments.filter((assignment) => keptIds.has(assignment.jobId));
+  return {
+    ...incoming,
+    jobs: [...keptJobs, ...incoming.jobs],
+    assignments: [...keptAssignments, ...incoming.assignments],
+  };
+}
+
 function inAvailabilityWeek(
   cleanerId: string,
   weekStart: string,

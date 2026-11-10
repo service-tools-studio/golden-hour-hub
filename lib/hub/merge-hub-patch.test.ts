@@ -7,6 +7,7 @@ import {
   hubMutationPatch,
   mergeAvailabilityWeekIntoHub,
   mergeHubPatchIntoHub,
+  retainJobsBeforeDate,
 } from "./merge-hub-patch.ts";
 
 function asJob(job: Pick<Job, "jobId"> & Partial<Job>): Job {
@@ -239,5 +240,31 @@ describe("mergeHubPatchIntoHub", () => {
     assert.equal(patch.jobs[0]?.headcountNeeded, 4);
     assert.equal(patch.customers.length, 0);
     assert.deepEqual(remove?.jobIds, ["job-1"]);
+  });
+});
+
+describe("retainJobsBeforeDate", () => {
+  it("keeps lookback jobs that a full reload starting at today omitted", () => {
+    const current = {
+      ...emptyHub("2026-11-09"),
+      jobs: [
+        asJob({ jobId: "oct", date: "2026-10-15" }),
+        asJob({ jobId: "today", date: "2026-11-09" }),
+      ],
+      assignments: [
+        asAssignment({ assignmentId: "a-oct", jobId: "oct", cleanerId: "ada", status: "CONFIRMED" }),
+        asAssignment({ assignmentId: "a-today", jobId: "today", cleanerId: "ada", status: "INVITED" }),
+      ],
+    };
+    const incoming = {
+      ...emptyHub("2026-11-09"),
+      jobs: [asJob({ jobId: "today", date: "2026-11-09", headcountNeeded: 3 })],
+      assignments: [asAssignment({ assignmentId: "a-today", jobId: "today", cleanerId: "ada", status: "CONFIRMED" })],
+    };
+    const merged = retainJobsBeforeDate(current, incoming, "2026-11-09");
+    assert.equal(merged.jobs.some((job) => job.jobId === "oct"), true);
+    assert.equal(merged.jobs.find((job) => job.jobId === "today")?.headcountNeeded, 3);
+    assert.equal(merged.assignments.find((item) => item.assignmentId === "a-oct")?.status, "CONFIRMED");
+    assert.equal(merged.assignments.find((item) => item.assignmentId === "a-today")?.status, "CONFIRMED");
   });
 });

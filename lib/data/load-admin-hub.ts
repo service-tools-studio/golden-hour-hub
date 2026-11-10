@@ -195,6 +195,17 @@ export async function loadAdminHubTeamExtraSlice(): Promise<HubData> {
   return itemsToHub(items, today);
 }
 
+/** Jobs and assignments for a closed date range (schedule lookback). No horizon merge. */
+export async function loadAdminHubJobsInDateRange(startDate: string, endDate: string): Promise<HubData> {
+  const today = todayInBusinessZone();
+  if (startDate > endDate) return emptyHub(today);
+  const jobProfiles = await queryJobProfilesInDateRange(startDate, endDate);
+  const jobIds = [...new Set(jobProfiles.map(readJobId).filter((value): value is string => Boolean(value)))];
+  const jobPartitions = await loadJobPartitions(jobIds);
+  if (jobPartitions.length === 0) return emptyHub(today);
+  return itemsToHub(dedupeItemsByKey(jobPartitions), today);
+}
+
 /** Remaining jobs, series, availability, and BQ after a fast admin bootstrap. */
 export async function loadAdminHubRemainderSlice(): Promise<HubData> {
   const today = todayInBusinessZone();

@@ -88,6 +88,44 @@ export function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+export const SCHEDULE_LOOKBACK_MONTHS = 2;
+
+export function firstOfMonth(date: string): string {
+  return `${date.slice(0, 7)}-01`;
+}
+
+export function shiftMonth(monthStart: string, delta: number): string {
+  const shifted = new Date(
+    Date.UTC(Number(monthStart.slice(0, 4)), Number(monthStart.slice(5, 7)) - 1 + delta, 1, 12),
+  );
+  return formatYmd(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 1);
+}
+
+export function lastDateOfMonth(monthStart: string): string {
+  const year = Number(monthStart.slice(0, 4));
+  const month = Number(monthStart.slice(5, 7));
+  return formatYmd(year, month, daysInMonth(year, month));
+}
+
+/** First day of the earliest calendar month the schedule may load behind `today`. */
+export function scheduleLookbackStart(today: string, months = SCHEDULE_LOOKBACK_MONTHS): string {
+  return shiftMonth(firstOfMonth(today), -months);
+}
+
+/** Past days in `monthStart` that are inside the schedule lookback window, if any. */
+export function scheduleLookbackRangeForMonth(
+  monthStart: string,
+  today: string,
+): { start: string; end: string } | null {
+  const lookbackStart = scheduleLookbackStart(today);
+  const yesterday = addDays(today, -1);
+  const start = monthStart < lookbackStart ? lookbackStart : firstOfMonth(monthStart);
+  const monthEnd = lastDateOfMonth(monthStart);
+  const end = monthEnd < yesterday ? monthEnd : yesterday;
+  if (start > end) return null;
+  return { start, end };
+}
+
 export function addDays(date: string, days: number): string {
   const { year, month, day } = parseYmd(date);
   const next = new Date(Date.UTC(year, month - 1, day + days));

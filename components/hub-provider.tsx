@@ -46,7 +46,12 @@ import {
 } from "@/app/actions/admin-hub";
 import { createJobAction } from "@/app/actions/admin-jobs";
 import { completeAssignmentAction } from "@/app/actions/admin-assignments";
-import { bootstrapHub, bootstrapAdminHubSupplement, type BootstrapResult } from "@/app/actions/hub-data";
+import {
+  bootstrapHub,
+  bootstrapAdminHubSupplement,
+  loadScheduleJobsRangeAction,
+  type BootstrapResult,
+} from "@/app/actions/hub-data";
 import {
   addJobCleanerOnHub,
   deleteCustomerOnHub,
@@ -69,7 +74,9 @@ import {
   hubMutationPatch,
   mergeAvailabilityWeekIntoHub,
   mergeHubPatchIntoHub,
+  retainJobsBeforeDate,
   type HubPatchRemove,
+  type MergeHubPatchOptions,
 } from "@/lib/hub/merge-hub-patch";
 import {
   AVAILABILITY_SAVE_FAILED_MESSAGE,
@@ -107,7 +114,13 @@ import {
 } from "@/lib/domain/invitations";
 import { mergeRecurringHorizon } from "@/lib/domain/recurrence";
 import { reconcileScheduleConflictWarnings } from "@/lib/domain/scheduling";
-import { addDays, mondayOf, todayInBusinessZone } from "@/lib/domain/time";
+import {
+  addDays,
+  firstOfMonth,
+  mondayOf,
+  scheduleLookbackRangeForMonth,
+  todayInBusinessZone,
+} from "@/lib/domain/time";
 import { emptyHub, type HubData } from "@/lib/mock/seed";
 import type { AppRole, AvailabilityWindow } from "@/lib/domain/types";
 
@@ -171,6 +184,8 @@ type HubContextValue = HubState & {
     | { ok: false; message: string; fieldErrors?: Record<string, string> }
   >;
   mergeAdminHub: (remote: HubData) => void;
+  /** Fetch jobs for a past calendar month when that month is shown on the schedule. */
+  ensureScheduleJobsForMonth: (monthStart: string) => Promise<void>;
   saveCustomer: (input: CustomerInput, customerId?: string) => AsyncActionResult;
   deleteCustomer: (customerId: string) => AsyncActionResult;
   saveSeries: (seriesId: string, input: SaveSeriesInput) => AsyncActionResult;
@@ -382,6 +397,8 @@ export function HubProvider({
   const syncBlockersRef = useRef(new Set<() => boolean>());
   const syncInFlightRef = useRef(false);
   const hubRevisionRef = useRef<number | null>(serverHub?.revision ?? null);
+  const scheduleLookbackMonthsRef = useRef(new Set<string>());
+  const scheduleLookbackInflightRef = useRef(new Map<string, Promise<void>>());
   const skipPersistForRemoteSyncRef = useRef(false);
   const staffingSaveInFlightRef = useRef(false);
   const actionLoadingRef = useRef(0);
@@ -451,7 +468,7 @@ export function HubProvider({
           ? withCurrentHorizon(
               mergeHubPatchIntoHub(prev, hubPayload, { replaceAvailabilityForPatchCleaners: true }),
             )
-          : withCurrentHorizon(hubPayload);
+          : withCurrentHorizon(retainJobsBeforeDate(prev, hubPayload, todayInBusinessZone()));
       if (remote.mode === "patch" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;
       if (remote.mode === "full" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;
       const next = { ...mergedBase, role: prev.role, cleanerId: prev.cleanerId };
@@ -690,6 +707,42 @@ export function HubProvider({
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
+
+  const ensureScheduleJobsForMonth = useCallback(async (monthStart: string) => {
+    if (sourceRef.current !== "dynamodb" || stateRef.current?.role !== "ADMIN") return;
+    const monthKey = monthStart.slice(0, 7);
+    if (scheduleLookbackMonthsRef.current.has(monthKey)) return;
+    const today = todayInBusinessZone();
+    const range = scheduleLookbackRangeForMonth(firstOfMonth(monthStart), today);
+    if (!range) {
+      scheduleLookbackMonthsRef.current.add(monthKey);
+      return;
+    }
+    const inflight = scheduleLookbackInflightRef.current.get(monthKey);
+    if (inflight) {
+      await inflight;
+      return;
+    }
+    const pending = (async () => {
+      const remote = await loadScheduleJobsRangeAction(range.start, range.end);
+      if (!remote.ok) return;
+      scheduleLookbackMonthsRef.current.add(monthKey);
+      setState((prev) => {
+        if (!prev) return prev;
+        return {
+          ...withCurrentHorizon(
+            mergeHubPatchIntoHub(prev, remote.data, { replaceAssignmentsForPatchJobs: true }),
+          ),
+          role: prev.role,
+          cleanerId: prev.cleanerId,
+        };
+      });
+    })().finally(() => {
+      scheduleLookbackInflightRef.current.delete(monthKey);
+    });
+    scheduleLookbackInflightRef.current.set(monthKey, pending);
+    await pending;
+  }, [setState]);
 
   if (!state) {
     return (
@@ -982,11 +1035,11 @@ export function HubProvider({
   }
 
 
-  function applyAdminHubPatch(patch: HubData, remove?: HubPatchRemove) {
+  function applyAdminHubPatch(patch: HubData, remove?: HubPatchRemove, mergeOptions?: MergeHubPatchOptions) {
     setState((prev) => {
       if (!prev) return prev;
       return {
-        ...withCurrentHorizon(mergeHubPatchIntoHub(prev, patch, { remove })),
+        ...withCurrentHorizon(mergeHubPatchIntoHub(prev, patch, { ...mergeOptions, remove: mergeOptions?.remove ?? remove })),
         role: prev.role,
         cleanerId: prev.cleanerId,
       };
@@ -1388,6 +1441,7 @@ export function HubProvider({
     saveContractorQuestionnaireDraft,
     submitContractorQuestionnaire,
     mergeAdminHub,
+    ensureScheduleJobsForMonth,
     saveCustomer,
     deleteCustomer,
     saveSeries,

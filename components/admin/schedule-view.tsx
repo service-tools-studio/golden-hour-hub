@@ -11,8 +11,10 @@ import {
 import {
   addDays,
   eachDate,
+  firstOfMonth,
   formatTimeLabel,
   daysInMonth,
+  shiftMonth,
   sundayOf,
   timeFromMinutes,
 } from "@/lib/domain/time";
@@ -278,7 +280,10 @@ function DayView({
 }) {
   const hub = useHub();
   const scheduled = useDatesWithScheduledJobs();
-  const monthStart = `${date.slice(0, 7)}-01`;
+  const monthStart = firstOfMonth(date);
+  useEffect(() => {
+    void hub.ensureScheduleJobsForMonth(monthStart);
+  }, [hub.ensureScheduleJobsForMonth, monthStart]);
 
   function shiftSelectedMonth(delta: number) {
     const dayNum = Number(date.slice(8, 10));
@@ -726,12 +731,6 @@ function shortMonthTitle(monthStart: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1, 12)));
 }
 
-function shiftMonth(monthStart: string, delta: number): string {
-  const shifted = new Date(Date.UTC(Number(monthStart.slice(0, 4)), Number(monthStart.slice(5, 7)) - 1 + delta, 1, 12));
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, "0");
-  return `${shifted.getUTCFullYear()}-${month}-01`;
-}
-
 function monthRows(monthStart: string): (string | null)[][] {
   const sunday = sundayOf(monthStart);
   const leading = sunday === monthStart ? 0 : eachDate(sunday, addDays(monthStart, -1)).length;
@@ -772,8 +771,8 @@ function MonthView({
   const hub = useHub();
   const scheduled = useDatesWithScheduledJobs();
   const scroller = useRef<HTMLDivElement>(null);
-  const focus = `${date.slice(0, 7)}-01`;
-  const months = [-1, 0, 1, 2, 3].map((delta) => shiftMonth(focus, delta));
+  const focus = firstOfMonth(date);
+  const months = [-2, -1, 0, 1, 2, 3].map((delta) => shiftMonth(focus, delta));
 
   useLayoutEffect(() => {
     const node = scroller.current;
@@ -781,6 +780,24 @@ function MonthView({
     if (!node || !target) return;
     node.scrollTop += target.getBoundingClientRect().top - node.getBoundingClientRect().top;
   }, [date]);
+
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const month = entry.target.getAttribute("data-month");
+          if (month) void hub.ensureScheduleJobsForMonth(`${month}-01`);
+        }
+      },
+      { root: node, rootMargin: "120px 0px", threshold: 0 },
+    );
+    const sections = node.querySelectorAll("[data-month]");
+    for (const section of sections) observer.observe(section);
+    return () => observer.disconnect();
+  }, [focus, hub.ensureScheduleJobsForMonth]);
 
   return (
     <div className="rounded-3xl bg-white px-2 pb-4">
