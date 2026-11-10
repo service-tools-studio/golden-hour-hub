@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { HubProvider } from "@/components/hub-provider";
 import { JobCleanerBusyDebugProbe } from "@/components/job-cleaner-busy-debug";
 import { previewAuthEnabled } from "@/lib/auth/config";
+import { previewPersistsToDynamo } from "@/lib/auth/preview-dynamo";
 import { getServerSession } from "@/lib/auth/session";
 import { loadRemoteHub } from "@/lib/hub/bootstrap-remote";
 import { hubSiteMetadata } from "@/lib/site-metadata";
@@ -32,6 +33,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <HubProvider
           initialAuth={initialAuth}
           initialPreviewAuth={previewAuthEnabled()}
+          initialPreviewPersistsToDynamo={previewPersistsToDynamo()}
           initialBootstrap={initialBootstrap}
         >
           {children}

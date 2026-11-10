@@ -27,7 +27,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). With `AUTH_SESSION_SECRET` unset, choose Admin or a cleaner (preview). With Cognito and `AUTH_SESSION_SECRET` set, `/` sends you to `/login`.
+Open [http://localhost:3000](http://localhost:3000). With `AUTH_SESSION_SECRET` unset, choose Admin or a cleaner (preview). When `DYNAMODB_TABLE_NAME` is set, preview saves still go to that table (use a dedicated test table). With Cognito and `AUTH_SESSION_SECRET` set, `/` sends you to `/login`.
 
 ```bash
 npm test

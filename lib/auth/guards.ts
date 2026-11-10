@@ -3,6 +3,7 @@ import "server-only";
 import type { AppRole } from "@/lib/domain/types";
 import type { AuthSession } from "@/lib/auth/session";
 import { refreshServerSessionCookie } from "@/lib/auth/session";
+import { readPreviewAuthSession } from "@/lib/auth/preview-session";
 
 export class AuthError extends Error {
   readonly code: "UNAUTHORIZED" | "FORBIDDEN";
@@ -16,8 +17,10 @@ export class AuthError extends Error {
 
 export async function requireSession(): Promise<AuthSession> {
   const session = await refreshServerSessionCookie();
-  if (!session) throw new AuthError("UNAUTHORIZED", "Sign in required.");
-  return session;
+  if (session) return session;
+  const preview = await readPreviewAuthSession();
+  if (preview) return preview;
+  throw new AuthError("UNAUTHORIZED", "Sign in required.");
 }
 
 export async function requireRole(role: AppRole): Promise<AuthSession> {

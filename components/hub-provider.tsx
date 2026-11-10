@@ -103,6 +103,7 @@ import { saveContractorQuestionnaireOnHub } from "@/lib/hub/contractor-questionn
 import type { ContractorQuestionnaireInput } from "@/lib/domain/contractor-questionnaire";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
+import { syncPreviewSessionCookie } from "@/lib/auth/sync-preview-session";
 import { SIGNED_OUT_STORAGE_KEY } from "@/lib/auth/signed-out-guard";
 import type { CustomerInput } from "@/lib/domain/customers";
 import {
@@ -152,6 +153,8 @@ type HubContextValue = HubState & {
   ready: boolean;
   /** True when AUTH_SESSION_SECRET is unset (browser role picker at /). */
   previewAuth: boolean;
+  /** Preview role picker with DYNAMODB_TABLE_NAME — server actions persist to the table. */
+  previewPersistsToDynamo: boolean;
   flash: (message: string) => void;
   /** Toast plus spinner until {@link clearActionLoading} (e.g. while navigating after an action). */
   flashLoading: (message: string) => void;
@@ -348,12 +351,14 @@ export function HubProvider({
   children,
   initialAuth = null,
   initialPreviewAuth = false,
+  initialPreviewPersistsToDynamo = false,
   initialBootstrap = null,
 }: {
   children: React.ReactNode;
   initialAuth?: InitialAuth | null;
   /** Server-known preview mode (no AUTH_SESSION_SECRET, non-production). */
   initialPreviewAuth?: boolean;
+  initialPreviewPersistsToDynamo?: boolean;
   initialBootstrap?: BootstrapResult | null;
 }) {
   const serverHub = dynamoBootstrap(initialBootstrap);
@@ -386,6 +391,10 @@ export function HubProvider({
   const [deletedCustomerUndo, setDeletedCustomerUndo] = useState<DeletedCustomerSnapshot | null>(null);
   const deletedCustomerUndoTimerRef = useRef<number | null>(null);
   const [previewAuth, setPreviewAuth] = useState(initialPreviewAuth && previewAuthAllowed());
+  const previewPersistsToDynamo =
+    initialPreviewPersistsToDynamo && previewAuthAllowed() && initialPreviewAuth;
+  const previewPersistsToDynamoRef = useRef(previewPersistsToDynamo);
+  previewPersistsToDynamoRef.current = previewPersistsToDynamo;
   const [ready, setReady] = useState(() => Boolean(serverHub && initialAuth?.role));
   const [hubDataSource, setHubDataSource] = useState<"preview" | "dynamodb" | null>(() =>
     serverHub && initialAuth?.role ? "dynamodb" : null,
@@ -703,6 +712,9 @@ export function HubProvider({
     if (!state || !sourceRef.current || !bootstrappedRef.current) return;
     if (sourceRef.current === "dynamodb") {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: state.role, cleanerId: state.cleanerId }));
+      if (previewPersistsToDynamoRef.current && state.role) {
+        void syncPreviewSessionCookie(state.role, state.cleanerId);
+      }
       return;
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -1374,6 +1386,7 @@ export function HubProvider({
     ...data,
     ready,
     previewAuth,
+    previewPersistsToDynamo,
     flash: (message) => setToast(message),
     flashLoading: (message) => {
       setToast(message);
@@ -1421,6 +1434,8 @@ export function HubProvider({
         } catch {
           /* still clear local session */
         }
+      } else if (previewPersistsToDynamo) {
+        await syncPreviewSessionCookie(null, null);
       }
       const full = previewDynamoHubRef.current;
       if (full) {
