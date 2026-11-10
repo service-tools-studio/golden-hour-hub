@@ -7,6 +7,7 @@ import { useHub } from "@/components/hub-provider";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Field, PrimaryButton, ButtonLoadingLabel, fieldClass } from "@/components/ui";
 import { findCustomerByExactName, validateCustomerInput } from "@/lib/domain/customers";
+import { ADMIN_MARKET_FILTER_LABELS, MARKET_IDS, type MarketId } from "@/lib/domain/markets";
 import type { Customer, Property } from "@/lib/domain/types";
 import { formatPhoneInput } from "@/lib/format";
 
@@ -122,6 +123,7 @@ type PropertyDraft = {
   city: string;
   state: string;
   zip: string;
+  marketId?: MarketId;
   bedrooms: number;
   bathrooms: number;
   squareFeet: number;
@@ -157,6 +159,7 @@ function draftsFor(customer: Customer | undefined, properties: Property[]): Prop
     city: item.city,
     state: item.state,
     zip: item.zip,
+    marketId: item.marketId,
     bedrooms: item.bedrooms,
     bathrooms: item.bathrooms,
     squareFeet: item.squareFeet,
@@ -268,6 +271,7 @@ export function CustomerForm({
         city: item.city,
         state: item.state,
         zip: item.zip,
+        marketId: item.marketId,
         bedrooms: Number(item.bedrooms),
         bathrooms: Number(item.bathrooms),
         squareFeet: Number(item.squareFeet),
@@ -276,21 +280,27 @@ export function CustomerForm({
     };
     const decision = validateCustomerInput(input);
     if (!decision.ok) {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       setError({ field: decision.field ?? "form", message: decision.message, at: Date.now() });
       return null;
     }
-    const result = await hub.saveCustomer(decision.value, customer?.customerId);
-    if (!result.ok || !result.customerId) {
-      setError({
-        field: "form",
-        message: result.ok ? "That customer could not be saved." : result.message,
-        at: Date.now(),
-      });
-      return null;
+    setSaving(true);
+    try {
+      const result = await hub.saveCustomer(decision.value, customer?.customerId);
+      if (!result.ok || !result.customerId) {
+        setError({
+          field: "form",
+          message: result.ok ? "That customer could not be saved." : result.message,
+          at: Date.now(),
+        });
+        return null;
+      }
+      setError(null);
+      captureBaseline();
+      return result.customerId;
+    } finally {
+      setSaving(false);
     }
-    setError(null);
-    captureBaseline();
-    return result.customerId;
   }
 
   function captureBaseline() {
@@ -305,16 +315,21 @@ export function CustomerForm({
     document.getElementById(`property-${scrollToPropertyId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [scrollToPropertyId]);
 
+  function scrollFieldIntoView(field: string) {
+    const match = /^properties\.(\d+)\.(.+)$/.exec(field);
+    const draft = match ? latest.current.properties[Number(match[1])] : undefined;
+    const byId = draft && match ? document.getElementById(`property-${draft.key}-${match[2]}`) : document.getElementById(`customer-${field}`);
+    const node = document.querySelector(`[data-field="${field}"]`) ?? byId;
+    if (!(node instanceof HTMLElement)) return;
+    node.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
   useEffect(() => {
-    if (!error) return;
-    const match = /^properties\.(\d+)\.(\w+)$/.exec(error.field);
-    let id = `customer-${error.field}`;
-    if (match) {
-      const draft = latest.current.properties[Number(match[1])];
-      if (draft) id = `property-${draft.key}-${match[2]}`;
-    }
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [error]);
+    if (!error || saving) return;
+    const field = error.field;
+    const frame = requestAnimationFrame(() => scrollFieldIntoView(field));
+    return () => cancelAnimationFrame(frame);
+  }, [error, saving]);
 
   function isDirty(): boolean {
     return JSON.stringify({ form: liveForm(), properties: latest.current.properties }) !== JSON.stringify(initial.current);
@@ -331,17 +346,12 @@ export function CustomerForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (saving) return;
-        setSaving(true);
         void (async () => {
-          try {
-            const customerId = await persist();
-            if (!customerId) return;
-            hub.flash("changes saved");
-            if (onSaved) onSaved(customerId);
-            else router.push(`/admin/customers/${customerId}`);
-          } finally {
-            setSaving(false);
-          }
+          const customerId = await persist();
+          if (!customerId) return;
+          hub.flash("changes saved");
+          if (onSaved) onSaved(customerId);
+          else router.push(`/admin/customers/${customerId}`);
         })();
       }}
     >
@@ -392,6 +402,7 @@ export function CustomerForm({
           const cityError = fieldMessage(`properties.${index}.city`);
           const stateError = fieldMessage(`properties.${index}.state`);
           const zipError = fieldMessage(`properties.${index}.zip`);
+          const marketError = fieldMessage(`properties.${index}.marketId`);
           const bedroomsError = fieldMessage(`properties.${index}.bedrooms`);
           const bathroomsError = fieldMessage(`properties.${index}.bathrooms`);
           const squareFeetError = fieldMessage(`properties.${index}.squareFeet`);
@@ -464,6 +475,34 @@ export function CustomerForm({
                     aria-invalid={Boolean(zipError)}
                   />
                 </Field>
+              </div>
+              <div
+                id={`property-${property.key}-marketId`}
+                data-field={`properties.${index}.marketId`}
+                className="scroll-mt-24"
+              >
+                <p className={`mb-1.5 text-sm font-medium ${marketError ? "text-red-700" : "text-ink/80"}`}>Market</p>
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Market" aria-invalid={Boolean(marketError)}>
+                  {MARKET_IDS.map((marketId) => (
+                    <button
+                      key={marketId}
+                      type="button"
+                      role="radio"
+                      aria-checked={property.marketId === marketId}
+                      onClick={() => updateProperty(property.key, { marketId })}
+                      className={`min-h-12 rounded-2xl text-sm font-semibold ${
+                        property.marketId === marketId ? "bg-ink text-cream" : "bg-cream"
+                      }`}
+                    >
+                      {ADMIN_MARKET_FILTER_LABELS[marketId]}
+                    </button>
+                  ))}
+                </div>
+                {marketError ? (
+                  <span role="alert" className="mt-1.5 block text-sm font-semibold text-red-700">
+                    {marketError}
+                  </span>
+                ) : null}
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <NumberStepper

@@ -15,6 +15,7 @@ import {
   type AvailabilityFit,
 } from "@/lib/domain/availability";
 import { personName } from "@/lib/domain/cleaners";
+import { cleanerMatchesJobMarket } from "@/lib/domain/markets";
 import type { CleanerProfile } from "@/lib/domain/types";
 import { hourWindowLabel } from "@/lib/format";
 
@@ -42,14 +43,20 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
     ]);
   }, [job, hub.assignments]);
 
-  const choices = useMemo(
+  const marketCleaners = useMemo(
     () =>
       hub.cleaners.filter(
         (cleaner) =>
-          cleaner.status === "ACTIVE" &&
-          (!taken.has(cleaner.cleanerId) || cleaner.cleanerId === addingCleanerId),
+          cleaner.status === "ACTIVE" && job && cleanerMatchesJobMarket(cleaner, job.snapshot.marketId),
       ),
-    [addingCleanerId, hub.cleaners, taken],
+    [hub.cleaners, job],
+  );
+  const choices = useMemo(
+    () =>
+      marketCleaners.filter(
+        (cleaner) => !taken.has(cleaner.cleanerId) || cleaner.cleanerId === addingCleanerId,
+      ),
+    [addingCleanerId, marketCleaners, taken],
   );
 
   const duration = job?.expectedDurationMinutes ?? 240;
@@ -120,7 +127,11 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
       />
       <div className="space-y-3 px-5 pt-4">
         {choices.length === 0 ? (
-          <p className="text-sm text-ink/70">Every active cleaner is already on this cleaning.</p>
+          <p className="text-sm text-ink/70">
+            {marketCleaners.length === 0
+              ? "No cleaners in this market."
+              : "Every active cleaner in this market is already on this cleaning."}
+          </p>
         ) : (
           <CleanerSearchField query={query} onQuery={setQuery} disabled={busy} />
         )}

@@ -21,6 +21,8 @@ function testJob(jobId: string): Job {
       city: "Portland",
       state: "OR",
       zip: "97201",
+      marketId: "portland",
+      timeZone: "America/Los_Angeles",
       bedrooms: 3,
       bathrooms: 2,
       squareFeet: 1800,
@@ -55,6 +57,7 @@ describe("job draft persist plan", () => {
           typicalHelperCount: 0,
           maxHelperCount: 0,
           typicalHourlyRateCents: 3000,
+          homeMarketId: "portland" as const,
           createdAt: STAMP,
           createdBy: "kelsey",
           updatedAt: STAMP,
@@ -71,6 +74,35 @@ describe("job draft persist plan", () => {
     assert.equal(plan.puts[0]?.pk, "JOB#job-1");
     assert.equal(plan.deletes.length, 0);
     assert.deepEqual(after.hub.jobs[0]?.draftCleanerIds, ["ada"]);
+  });
+
+  it("addJobCleanerOnHub rejects a cleaner from the other market", () => {
+    const hub = {
+      ...emptyHub("2026-11-05"),
+      jobs: [testJob("job-1")],
+      cleaners: [
+        {
+          cleanerId: "rio",
+          firstName: "Rio",
+          lastName: "Cleaner",
+          email: "rio@test.com",
+          mobilePhone: "6025550100",
+          status: "ACTIVE" as const,
+          typicalHelperCount: 0,
+          maxHelperCount: 0,
+          typicalHourlyRateCents: 3000,
+          homeMarketId: "phoenix" as const,
+          createdAt: STAMP,
+          createdBy: "kelsey",
+          updatedAt: STAMP,
+          updatedBy: "kelsey",
+        },
+      ],
+    };
+    const after = addJobCleanerOnHub(hub, "job-1", "rio");
+    assert.equal(after.ok, false);
+    if (after.ok) return;
+    assert.equal(after.message, "This cleaner works in a different market than this cleaning.");
   });
 
   it("jobCleanerRemoveIsDraftOnly is false when a live assignment exists", () => {
@@ -130,6 +162,7 @@ describe("job draft persist plan", () => {
       typicalHelperCount: 0,
       maxHelperCount: 0,
       typicalHourlyRateCents: 3000,
+      homeMarketId: "portland" as const,
       createdAt: STAMP,
       createdBy: "kelsey",
       updatedAt: STAMP,

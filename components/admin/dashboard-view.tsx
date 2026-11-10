@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { AdminMarketTabs, useAdminMarket } from "@/components/admin/admin-market";
 import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
@@ -13,31 +14,33 @@ import {
   jobCountsAsUpcoming,
 } from "@/lib/domain/scheduling";
 import { editableAvailabilityHorizonEnd } from "@/lib/domain/time";
-import type { Job, JobAssignment } from "@/lib/domain/types";
+import { customerMatchesAdminMarket, jobMatchesAdminMarket } from "@/lib/domain/markets";
 import { crewLine, formatLongDate, relativeDay, serviceLabel } from "@/lib/format";
 
 const heading = "text-sm font-semibold uppercase tracking-[0.14em] text-ink/50";
 
 export function DashboardView() {
   const hub = useHub();
+  const { marketFilter, viewingToday } = useAdminMarket();
   const now = useNow();
   const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    setDismissedJobIds(readDashboardDismissedJobIds(hub.today));
-  }, [hub.today]);
+    setDismissedJobIds(readDashboardDismissedJobIds(viewingToday));
+  }, [viewingToday]);
 
   function dismissFromDashboard(jobId: string) {
-    dismissDashboardJob(hub.today, jobId);
+    dismissDashboardJob(viewingToday, jobId);
     setDismissedJobIds((current) => new Set([...current, jobId]));
   }
 
-  const happening = hub.jobs
+  const marketJobs = hub.jobs.filter((job) => jobMatchesAdminMarket(job, marketFilter));
+  const happening = marketJobs
     .filter((job) => jobCleaningInProgress(job, hub.assignments, now))
     .sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = hub.jobs
+  const upcoming = marketJobs
     .filter(
-      (job) => jobCountsAsUpcoming(job, hub.assignments, hub.today, now) && !happening.includes(job),
+      (job) => jobCountsAsUpcoming(job, hub.assignments, viewingToday, now) && !happening.includes(job),
     )
     .sort((a, b) => a.date.localeCompare(b.date));
   const staffingHorizon = editableAvailabilityHorizonEnd(hub.today);
@@ -48,7 +51,11 @@ export function DashboardView() {
   });
   const needsAttention = unstaffed.filter((job) => job.date <= staffingHorizon);
   const missingPhone = hub.customers
-    .filter((customer) => customer.phone.replace(/\D/g, "") === "")
+    .filter(
+      (customer) =>
+        customer.phone.replace(/\D/g, "") === "" &&
+        customerMatchesAdminMarket(customer.customerId, hub.properties, marketFilter),
+    )
     .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
   const staffed = upcoming
     .filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon)
@@ -58,10 +65,10 @@ export function DashboardView() {
     <Screen>
       <PageHeader
         title="Dashboard"
-        subtitle={formatLongDate(hub.today)}
+        subtitle={formatLongDate(viewingToday)}
         action={
           <Link
-            href={`/admin/jobs/new?date=${hub.today}`}
+            href={`/admin/jobs/new?date=${viewingToday}`}
             aria-label="Book a new cleaning"
             className="mt-1 flex size-11 shrink-0 items-center justify-center self-center rounded-full bg-ink text-cream"
           >
@@ -69,7 +76,8 @@ export function DashboardView() {
           </Link>
         }
       />
-      <div className="space-y-8 px-5 pt-5">
+      <div className="space-y-8 px-5 pt-4">
+        <AdminMarketTabs />
         {happening.length > 0 ? (
           <section className="space-y-3">
             <h2 className={heading}>Happening Now</h2>
@@ -137,6 +145,7 @@ function JobStaffingCard({
   onDismiss?: (jobId: string) => void;
 }) {
   const hub = useHub();
+  const { viewingToday } = useAdminMarket();
   const now = useNow();
   const job = hub.jobs.find((item) => item.jobId === jobId);
   if (!job) return null;
@@ -152,7 +161,7 @@ function JobStaffingCard({
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   const availabilityFollowUp = assignments.some((item) => item.availabilityConflictWeekStart);
-  const showDismiss = dismissable && jobCleaningHasEnded(job, hub.assignments, hub.today, now);
+  const showDismiss = dismissable && jobCleaningHasEnded(job, hub.assignments, viewingToday, now);
   return (
     <Card
       className={`relative ${showDismiss ? "pb-10" : ""} ${full ? "ring-2 ring-mint" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}`}
@@ -171,7 +180,7 @@ function JobStaffingCard({
           <div>
             <p className="text-lg font-semibold">{job.snapshot.customerDisplayName}</p>
             <p className="text-sm text-ink/70">
-              {serviceLabel(job.serviceType)} · {relativeDay(job.date, hub.today)}
+              {serviceLabel(job.serviceType)} · {relativeDay(job.date, viewingToday)}
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">

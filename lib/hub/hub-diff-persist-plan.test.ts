@@ -20,6 +20,7 @@ describe("buildHubDiffPersistPlan", () => {
           city: "Portland",
           state: "OR",
           zip: "97201",
+          marketId: "portland",
           bedrooms: 3,
           bathrooms: 2,
           squareFeet: 1800,

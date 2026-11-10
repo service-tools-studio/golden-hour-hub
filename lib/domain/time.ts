@@ -207,14 +207,18 @@ export function availabilityWeekOpensForEditing(serviceDate: string): string {
   return addDays(mondayOf(serviceDate), -7);
 }
 
-export function todayInBusinessZone(now = new Date()): string {
-  const parts = zonedParts(now);
+export function todayInTimeZone(timeZone: string, now = new Date()): string {
+  const parts = zonedParts(now, timeZone);
   return formatYmd(parts.year, parts.month, parts.day);
 }
 
-export function zonedParts(instant: Date): ZonedParts {
+export function todayInBusinessZone(now = new Date()): string {
+  return todayInTimeZone(BUSINESS_TIME_ZONE, now);
+}
+
+export function zonedParts(instant: Date, timeZone = BUSINESS_TIME_ZONE): ZonedParts {
   const formatted = new Intl.DateTimeFormat("en-US", {
-    timeZone: BUSINESS_TIME_ZONE,
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

@@ -19,6 +19,7 @@ function testCleaner(cleanerId: string): CleanerProfile {
     typicalHelperCount: 0,
     maxHelperCount: 0,
     typicalHourlyRateCents: 3000,
+    homeMarketId: "portland",
     createdAt: STAMP,
     createdBy: "kelsey",
     updatedAt: STAMP,

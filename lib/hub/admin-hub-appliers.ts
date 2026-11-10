@@ -11,6 +11,7 @@ import {
   validateCustomerInput,
   type CustomerInput,
 } from "../domain/customers.ts";
+import { CROSS_MARKET_STAFFING_MESSAGE, DEFAULT_MARKET_ID, cleanerMatchesJobMarket } from "../domain/markets.ts";
 import { expireJobInvitesIfHeadcountMet } from "../domain/invitations.ts";
 import {
   dateMatchesRule,
@@ -145,6 +146,7 @@ export function saveCustomerOnHub(
       city: item.city,
       state: item.state,
       zip: item.zip,
+      marketId: item.marketId ?? prior?.marketId ?? DEFAULT_MARKET_ID,
       bedrooms: item.bedrooms,
       bathrooms: item.bathrooms,
       squareFeet: item.squareFeet,
@@ -377,6 +379,9 @@ export function staffCleanerOnHub(hub: HubData, input: StaffCleanerInput): Admin
   if (!detail) return { ok: false, message: "Save this cleaner's details before staffing them." };
   const cleaner = hub.cleaners.find((item) => item.cleanerId === input.cleanerId);
   if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+  if (!cleanerMatchesJobMarket(cleaner, job.snapshot.marketId)) {
+    return { ok: false, message: CROSS_MARKET_STAFFING_MESSAGE };
+  }
   const already = hub.assignments.some(
     (assignment) =>
       assignment.jobId === job.jobId &&
@@ -462,6 +467,9 @@ export function addJobCleanerOnHub(hub: HubData, jobId: string, cleanerId: strin
   if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be changed." };
   const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
   if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+  if (!cleanerMatchesJobMarket(cleaner, job.snapshot.marketId)) {
+    return { ok: false, message: CROSS_MARKET_STAFFING_MESSAGE };
+  }
   const named = (job.draftCleanerIds ?? []).includes(cleaner.cleanerId);
   const assigned = hub.assignments.some(
     (assignment) =>
@@ -541,6 +549,9 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
     (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
   );
   if (!property) return { ok: false, message: "Choose one of this customer's properties." };
+  if (cleaners.some((cleaner) => cleaner && !cleanerMatchesJobMarket(cleaner, property.marketId))) {
+    return { ok: false, message: CROSS_MARKET_STAFFING_MESSAGE };
+  }
   if (!isValidDate(input.date)) return { ok: false, message: "Choose a date." };
   const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
   if (!arrivalTimes.ok) return arrivalTimes;

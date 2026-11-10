@@ -6,6 +6,7 @@ import {
   scheduleLookbackStart,
   shiftMonth,
   timeFromWheelClock,
+  todayInTimeZone,
   wheelClockFromTime,
 } from "./time.ts";
 
@@ -23,6 +24,14 @@ describe("availability time wheel", () => {
     assert.equal(timeFromWheelClock(atNoon.hour, atNoon.minute, atNoon.suffix), "12:00");
     const midnight = applyAvailabilityTimeWheelPatch(atNoon, { suffix: "AM" });
     assert.equal(timeFromWheelClock(midnight.hour, midnight.minute, midnight.suffix), "00:00");
+  });
+});
+
+describe("today in a viewing timezone", () => {
+  it("can be a later calendar day in Phoenix than in Portland in winter", () => {
+    const instant = new Date("2026-11-10T07:00:00.000Z");
+    assert.equal(todayInTimeZone("America/Los_Angeles", instant), "2026-11-09");
+    assert.equal(todayInTimeZone("America/Phoenix", instant), "2026-11-10");
   });
 });
 

@@ -17,6 +17,7 @@ import {
 import { subtractConfirmedBookingsFromAvailability, toAssignmentSchedule } from "@/lib/domain/scheduling";
 import { CustomerCombobox } from "@/components/admin/customer-combobox";
 import { searchCustomers } from "@/lib/domain/customers";
+import { cleanerMatchesJobMarket } from "@/lib/domain/markets";
 import { recurrenceSummary } from "@/lib/domain/recurrence";
 import {
   addDays,
@@ -236,12 +237,29 @@ export function CleaningForm({
   useUnsavedNavigation(settled, () => dirty, setLeaveHref);
   useHubSyncBlocker(() => dirty);
 
-  const roster = leadCleanerId
+  const roster = hub.cleaners.filter((item) => {
+    if (!property) return false;
+    if (item.status !== "ACTIVE" && item.cleanerId !== leadCleanerId) return false;
+    if (!cleanerMatchesJobMarket(item, property.marketId)) return false;
+    return true;
+  });
+  const orderedRoster = leadCleanerId
     ? [
-        ...hub.cleaners.filter((item) => item.cleanerId === leadCleanerId),
-        ...hub.cleaners.filter((item) => item.status === "ACTIVE" && item.cleanerId !== leadCleanerId),
+        ...roster.filter((item) => item.cleanerId === leadCleanerId),
+        ...roster.filter((item) => item.cleanerId !== leadCleanerId),
       ]
-    : hub.cleaners.filter((item) => item.status === "ACTIVE");
+    : roster;
+
+  useEffect(() => {
+    if (!property) return;
+    setDraftCleanerIds((ids) => {
+      const next = ids.filter((id) => {
+        const cleaner = hub.cleaners.find((item) => item.cleanerId === id);
+        return Boolean(cleaner && cleanerMatchesJobMarket(cleaner, property.marketId));
+      });
+      return next.length === ids.length ? ids : next;
+    });
+  }, [hub.cleaners, property]);
   function toggleDraft(id: string) {
     setMessage(null);
     if (draftCleanerIds.includes(id)) {
@@ -252,7 +270,7 @@ export function CleaningForm({
     }
     setDraftCleanerIds([...draftCleanerIds, id]);
     setCleanerArrivals((current) => {
-      const person = roster.find((item) => item.cleanerId === id);
+      const person = orderedRoster.find((item) => item.cleanerId === id);
       if (!person) return current;
       const windows = hub.availability.filter((window) => window.cleanerId === id && window.date === date);
       const opening = firstOpenStart(windows, arrivalStart);
@@ -551,7 +569,7 @@ export function CleaningForm({
             {afterDate ? afterDate(date) : null}
             {afterArrival ? afterArrival(arrivalStart, arrivalEnd) : null}
             <Cleaners
-              cleaners={roster}
+              cleaners={orderedRoster}
               date={date}
               assignments={hub.assignments}
               windows={hub.availability.filter((window) => window.date === date)}

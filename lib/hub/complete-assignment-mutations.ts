@@ -13,6 +13,7 @@ import {
   applyScheduleConflictWarning,
   isConfirmedScheduleConflictReason,
 } from "../domain/scheduling.ts";
+import { CROSS_MARKET_STAFFING_MESSAGE, cleanerMatchesJobMarket } from "../domain/markets.ts";
 import { planOccurrenceStaffing } from "../domain/recurrence.ts";
 import { addDays, mondayOf } from "../domain/time.ts";
 import type {
@@ -123,6 +124,9 @@ function saveCleanerDetailsOnHub(hub: HubData, input: SaveCleanerDetailsInput): 
   if (already) return { ok: false, message: "That cleaner is already assigned on this cleaning." };
   const cleaner = hub.cleaners.find((item) => item.cleanerId === input.cleanerId);
   if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+  if (!cleanerMatchesJobMarket(cleaner, job.snapshot.marketId)) {
+    return { ok: false, message: CROSS_MARKET_STAFFING_MESSAGE };
+  }
   const customer = hub.customers.find((item) => item.customerId === job.customerId && item.status === "ACTIVE");
   if (!customer) return { ok: false, message: "Choose a customer." };
   const property = hub.properties.find(
@@ -190,6 +194,9 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
   const cleanerId = existing?.cleanerId ?? input.cleanerId;
   const cleaner = hub.cleaners.find((item) => item.cleanerId === cleanerId);
   if (!cleaner || cleaner.status !== "ACTIVE") return { ok: false, message: "That cleaner is not active." };
+  if (!existing && !cleanerMatchesJobMarket(cleaner, job.snapshot.marketId)) {
+    return { ok: false, message: CROSS_MARKET_STAFFING_MESSAGE };
+  }
   if (!existing && !(job.draftCleanerIds ?? []).includes(cleaner.cleanerId)) {
     return { ok: false, message: "Add that cleaner to the cleaning before saving their details." };
   }
