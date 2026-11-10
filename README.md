@@ -33,6 +33,33 @@ Open [http://localhost:3000](http://localhost:3000). With `AUTH_SESSION_SECRET` 
 npm test
 ```
 
+### End-to-end tests (Playwright)
+
+Uses a **dedicated** DynamoDB table (default `GoldenHourHub-e2e`). `globalSetup` clears and reseeds that table before the suite.
+
+1. AWS credentials in `.env.local` are enough, or copy [e2e/env.example](e2e/env.example) to `e2e/.env` to override the table name. Prepare/tests always target **`GoldenHourHub-e2e`** (override with `E2E_DYNAMODB_TABLE_NAME`).
+2. `npm install` then **`npm run playwright:install`** (downloads Chromium; required once per machine after `@playwright/test` updates)
+3. `npm run test:e2e` (starts Next on port **3099** with `E2E_PREVIEW_AUTH=true` so Cognito is not required; stop an existing `npm run dev` if the e2e server cannot acquire the Next dev lock)
+
+```bash
+npm run e2e:prepare   # clear + seed only
+npm run test:e2e:ui   # Playwright UI (headed Chrome + step-through)
+```
+
+In **UI mode**, the preview stays empty until you **run** a test: that starts Next on [http://localhost:3099](http://localhost:3099) (not your usual `npm run dev` port). You are not meant to browse the app inside the UI like a normal tab—either watch the headed window while tests run, or open port 3099 yourself while the UI session is running after a test has started the server.
+
+### CI and deployment gates
+
+E2E tests are **not** run on Vercel’s build image (they need DynamoDB, Chromium, and `next dev` on port 3099). Use **GitHub Actions** as the gate; block merges and production deploys when CI is red.
+
+1. **Workflow:** [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `npm test`, `npm run build`, and `npm run test:e2e` on every PR and push to `main`.
+2. **GitHub OIDC → IAM role** (recommended): Add identity provider `token.actions.githubusercontent.com` (audience `sts.amazonaws.com`), create a role trusted by `repo:service-tools-studio/golden-hour-hub:*` with DynamoDB access **only** on `GoldenHourHub-e2e`. Set repo secret **`AWS_ROLE_ARN`** to that role’s ARN. The workflow uses `aws-actions/configure-aws-credentials` (no long-lived access keys).
+3. **Optional GitHub secret:** `E2E_AUTH_SESSION_SECRET` — strong value (e.g. `openssl rand -base64 32`); if unset, CI uses a built-in placeholder for preview Dynamo saves.
+4. **Block bad merges:** GitHub → Settings → Branches → branch protection on `main` → require status checks **Unit tests**, **Production build**, and **Playwright E2E**.
+5. **Block bad production deploys (Vercel):** Project → Settings → Git → enable waiting for GitHub checks before promoting production (wording varies by plan), or rely on “never merge until CI is green” so `main` only moves when all three jobs pass.
+
+Failed E2E runs upload `playwright-report/` as a workflow artifact for debugging.
+
 With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER=twilio` and the Twilio variables to send for real (cleaner invite/assign, reminders, and removal notices only — customer texts are always manual from the admin UI). Point your Twilio number’s **incoming message webhook** at `https://<your-host>/api/twilio/sms/inbound` (POST) so replies **START**, **YES**, and **UNSTOP** re-enable scheduling texts, **STOP** / **HELP** stay in sync with Hub, and other inbound texts get a short “not monitored” auto-reply. After upgrade, US SMS usually requires an **approved primary compliance profile** in [Twilio Trust Hub](https://console.twilio.com/us1/account/trust-hub) and often **A2P 10DLC** brand/campaign registration before messages deliver. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
 
 ## AWS setup

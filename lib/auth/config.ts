@@ -5,6 +5,7 @@ import { previewAuthAllowed } from "@/lib/auth/preview-mode";
 /** Local preview: pick admin or cleaner in the browser when no session secret is set (never in production). */
 export function previewAuthEnabled(): boolean {
   if (!previewAuthAllowed()) return false;
+  if (process.env.E2E_PREVIEW_AUTH === "true") return true;
   return !process.env.AUTH_SESSION_SECRET?.trim();
 }
 

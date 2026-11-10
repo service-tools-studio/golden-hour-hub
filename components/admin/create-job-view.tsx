@@ -100,6 +100,7 @@ export function CreateJobView({
         crumb={{ href: `/admin/schedule?date=${serviceDate}`, label: "Schedule" }}
       />
       <CleaningForm
+        key={`${customerId}:${propertyId}:${serviceDate}`}
         initial={initial}
         leadCleanerId={fromAvailability ? cleaner?.cleanerId : undefined}
         canClearCleaners={openBooking}

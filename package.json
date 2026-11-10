@@ -14,7 +14,11 @@
     "seed:cleaners": "node --env-file=.env.local --experimental-strip-types scripts/seed-cleaners.ts",
     "dynamo:clear": "node --env-file=.env.local --experimental-strip-types scripts/clear-dynamo-table.ts",
     "dynamo:backfill-customer-gsi": "node --env-file=.env.local --experimental-strip-types scripts/backfill-customer-gsi.ts",
-    "dynamo:backfill-markets": "node --env-file=.env.local --experimental-strip-types scripts/backfill-markets.ts"
+    "dynamo:backfill-markets": "node --env-file=.env.local --experimental-strip-types scripts/backfill-markets.ts",
+    "e2e:prepare": "node --experimental-strip-types scripts/e2e-prepare.ts",
+    "playwright:install": "playwright install chromium",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui --headed"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1152.0",
@@ -26,6 +30,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4",
     "@types/google.maps": "^3.66.6",
     "@types/node": "^20",
