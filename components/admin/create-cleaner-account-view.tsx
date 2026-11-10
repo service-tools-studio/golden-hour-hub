@@ -2,22 +2,29 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createCleanerAccountAction } from "@/app/actions/cleaner-admin";
 import { useHub } from "@/components/hub-provider";
+import { useAdminMarket } from "@/components/admin/admin-market";
 import { Card, FormSubmitNotice, PageHeader, PrimaryButton, Screen } from "@/components/ui";
 import { maxCrewSize, typicalCrewSize } from "@/lib/domain/cleaners";
 import { formatPhoneInput } from "@/lib/domain/customers";
 import { parseDollarsToCents } from "@/lib/domain/compensation";
+import { ADMIN_MARKET_FILTER_LABELS, MARKET_IDS, type MarketId } from "@/lib/domain/markets";
 import type { CreateCleanerAccountFieldErrors } from "@/lib/hub/create-cleaner-account";
 
 export function CreateCleanerAccountView() {
   const hub = useHub();
   const router = useRouter();
+  const { viewingMarketId } = useAdminMarket();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [mobilePhone, setMobilePhone] = useState("");
+  const [homeMarketId, setHomeMarketId] = useState<MarketId>(viewingMarketId);
+  useEffect(() => {
+    setHomeMarketId(viewingMarketId);
+  }, [viewingMarketId]);
   const [helpersOn, setHelpersOn] = useState(false);
   const [typicalHelperCount, setTypicalHelperCount] = useState(0);
   const [maxHelperCount, setMaxHelperCount] = useState(0);
@@ -48,6 +55,7 @@ export function CreateCleanerAccountView() {
       lastName,
       email,
       mobilePhone,
+      homeMarketId,
       typicalHelperCount: typical,
       maxHelperCount: maximum,
       typicalHourlyRateCents,
@@ -132,6 +140,28 @@ export function CreateCleanerAccountView() {
               <span className="mt-1 block text-sm font-semibold text-red-700">{fieldErrors.mobilePhone}</span>
             ) : null}
           </label>
+          <div className="mt-4">
+            <p className="text-sm font-medium">Market</p>
+            <div className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Market">
+              {MARKET_IDS.map((marketId) => (
+                <button
+                  key={marketId}
+                  type="button"
+                  role="radio"
+                  aria-checked={homeMarketId === marketId}
+                  onClick={() => setHomeMarketId(marketId)}
+                  className={`min-h-12 rounded-2xl text-sm font-semibold ${
+                    homeMarketId === marketId ? "bg-ink text-cream" : "bg-cream"
+                  }`}
+                >
+                  {ADMIN_MARKET_FILTER_LABELS[marketId]}
+                </button>
+              ))}
+            </div>
+            {fieldErrors.homeMarketId ? (
+              <span className="mt-1 block text-sm font-semibold text-red-700">{fieldErrors.homeMarketId}</span>
+            ) : null}
+          </div>
         </Card>
 
         <Card>

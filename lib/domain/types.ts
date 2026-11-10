@@ -6,8 +6,10 @@
  */
 
 import type { ContractorBusinessQuestionnaire, ContractorQuestionnaireInput } from "./contractor-questionnaire.ts";
+import type { MarketId } from "./markets.ts";
 
 export const BUSINESS_TIME_ZONE = "America/Los_Angeles";
+export type { MarketId } from "./markets.ts";
 
 export type AppRole = "ADMIN" | "CLEANER";
 
@@ -53,6 +55,8 @@ export type CleanerProfile = {
   maxHelperCount: number;
   /** Default per-person hourly pay in cents for staffing and estimates. */
   typicalHourlyRateCents: number;
+  /** Home city for staffing and availability hours. */
+  homeMarketId: MarketId;
   /** True when the cleaner opted in to automated scheduling SMS; false when they declined. */
   smsSchedulingOptIn?: boolean;
   /** When the cleaner last completed SMS enrollment (opt-in or decline), ISO. */
@@ -121,6 +125,8 @@ export type Property = {
   city: string;
   state: string;
   zip: string;
+  /** Service market; owns the property timezone. */
+  marketId: MarketId;
   bedrooms: number;
   bathrooms: number;
   squareFeet: number;
@@ -154,6 +160,9 @@ export type JobCustomerSnapshot = {
   city: string;
   state: string;
   zip: string;
+  marketId: MarketId;
+  /** IANA timezone copied from the property’s market at snapshot time. */
+  timeZone: string;
   bedrooms: number;
   bathrooms: number;
   squareFeet: number;

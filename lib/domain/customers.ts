@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID, isMarketId, readMarketId, timeZoneForMarket, type MarketId } from "./markets.ts";
 import type { Customer, JobCustomerSnapshot, Property, Result } from "./types.ts";
 
 export type PropertyInput = {
@@ -8,6 +9,7 @@ export type PropertyInput = {
   city: string;
   state: string;
   zip: string;
+  marketId?: MarketId;
   bedrooms: number;
   bathrooms: number;
   squareFeet: number;
@@ -144,6 +146,9 @@ function validateProperty(input: PropertyInput, index: number): Result<{ value: 
   if (zip !== "" && !/^\d{5}$/.test(zip)) {
     return { ok: false, field: propertyField(index, "zip"), message: "Enter a 5-digit ZIP code." };
   }
+  if (!isMarketId(input.marketId)) {
+    return { ok: false, field: propertyField(index, "marketId"), message: "Choose Portland or Phoenix." };
+  }
   if (!Number.isInteger(input.bedrooms) || input.bedrooms < 0 || input.bedrooms > 20) {
     return { ok: false, field: propertyField(index, "bedrooms"), message: "Enter the number of bedrooms." };
   }
@@ -163,6 +168,7 @@ function validateProperty(input: PropertyInput, index: number): Result<{ value: 
       city,
       state,
       zip,
+      marketId: input.marketId,
       bedrooms: input.bedrooms,
       bathrooms: input.bathrooms,
       squareFeet: input.squareFeet,
@@ -229,6 +235,8 @@ export function snapshotVisit(customer: Customer, property: Property): JobCustom
     city: property.city,
     state: property.state,
     zip: property.zip,
+    marketId: readMarketId(property.marketId, DEFAULT_MARKET_ID),
+    timeZone: timeZoneForMarket(readMarketId(property.marketId, DEFAULT_MARKET_ID)),
     bedrooms: property.bedrooms,
     bathrooms: property.bathrooms,
     squareFeet: property.squareFeet,

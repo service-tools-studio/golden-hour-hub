@@ -1,5 +1,6 @@
 import { deriveCrewSettings } from "../domain/cleaners.ts";
 import { normalizePhone } from "../domain/customers.ts";
+import { isMarketId, type MarketId } from "../domain/markets.ts";
 import type { CleanerProfile } from "../domain/types.ts";
 import type { HubData } from "../mock/seed.ts";
 
@@ -8,6 +9,7 @@ export type CreateCleanerAccountInput = {
   lastName: string;
   email: string;
   mobilePhone: string;
+  homeMarketId: MarketId;
   typicalHelperCount: number;
   maxHelperCount: number;
   typicalHourlyRateCents: number;
@@ -58,6 +60,10 @@ export function validateCreateCleanerAccountInput(
     fieldErrors.maxHelperCount = crew.message;
   }
 
+  if (!isMarketId(normalized.homeMarketId)) {
+    fieldErrors.homeMarketId = "Choose Portland or Phoenix.";
+  }
+
   if (!Number.isInteger(normalized.typicalHourlyRateCents) || normalized.typicalHourlyRateCents < 0) {
     fieldErrors.typicalHourlyRateCents = "Enter a valid hourly rate.";
   }
@@ -94,6 +100,7 @@ export function buildNewCleanerProfile(
     typicalHelperCount: input.typicalHelperCount,
     maxHelperCount: input.maxHelperCount,
     typicalHourlyRateCents: input.typicalHourlyRateCents,
+    homeMarketId: input.homeMarketId,
     createdAt: now,
     createdBy,
     updatedAt: now,

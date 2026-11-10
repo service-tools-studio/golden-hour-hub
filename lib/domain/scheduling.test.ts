@@ -681,6 +681,7 @@ describe("customers", () => {
     city: "Portland",
     state: "OR",
     zip: "97214",
+    marketId: "portland" as const,
     bedrooms: 3,
     bathrooms: 2,
     squareFeet: 1800,
@@ -726,6 +727,7 @@ describe("customers", () => {
       city: "Portland",
       state: "OR",
       zip: "",
+      marketId: "portland" as const,
       bedrooms: 2,
       bathrooms: 1,
       squareFeet: 900,
@@ -748,6 +750,7 @@ describe("customers", () => {
           city: "Portland",
           state: "OR",
           zip: "97202",
+          marketId: "portland" as const,
           bedrooms: 2,
           bathrooms: 1,
           squareFeet: 900,
@@ -765,6 +768,7 @@ describe("customers", () => {
       city: "Portland",
       state: "or",
       zip: "97202",
+      marketId: "portland" as const,
       bedrooms: 2,
       bathrooms: 1,
       squareFeet: 900,
@@ -815,6 +819,17 @@ describe("customers", () => {
     });
     assert.equal(address.ok, false);
     if (!address.ok) assert.equal(address.field, "properties.0.streetAddress");
+    const market = validateCustomerInput({
+      firstName: "Amy",
+      lastName: "Johnson",
+      phone: "(503) 555-0199",
+      properties: [{ ...home, marketId: undefined }],
+    });
+    assert.equal(market.ok, false);
+    if (!market.ok) {
+      assert.equal(market.field, "properties.0.marketId");
+      assert.equal(market.message, "Choose Portland or Phoenix.");
+    }
   });
 });
 

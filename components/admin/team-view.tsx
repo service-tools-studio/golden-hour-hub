@@ -8,6 +8,7 @@ import {
 } from "@/components/availability-week-editor";
 import { useRouter } from "next/navigation";
 import { sendAvailabilityReminders } from "@/app/actions/reminders";
+import { AdminMarketTabs, useAdminMarket } from "@/components/admin/admin-market";
 import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
@@ -19,12 +20,18 @@ import { editableAvailabilityWeeks, formatWeekRange, nextAvailabilityWeek } from
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { cleanerCrewSummary, formatPhone } from "@/lib/format";
 import { CleanerSearchField, searchCleaners } from "@/components/admin/cleaner-search";
+import { cleanerMatchesAdminMarket } from "@/lib/domain/markets";
 import type { CleanerStatus } from "@/lib/domain/types";
 
 export function TeamView() {
   const hub = useHub();
+  const { marketFilter } = useAdminMarket();
   const [query, setQuery] = useState("");
-  const cleaners = useMemo(() => searchCleaners(hub.cleaners, query), [hub.cleaners, query]);
+  const marketCleaners = useMemo(
+    () => hub.cleaners.filter((cleaner) => cleanerMatchesAdminMarket(cleaner, marketFilter)),
+    [hub.cleaners, marketFilter],
+  );
+  const cleaners = useMemo(() => searchCleaners(marketCleaners, query), [marketCleaners, query]);
   const filtering = query.trim() !== "";
   return (
     <Screen>
@@ -40,10 +47,14 @@ export function TeamView() {
         }
       />
       <div className="space-y-3 px-5 pt-4">
-        <WeekSubmissions />
+        <AdminMarketTabs />
+        <WeekSubmissions cleaners={marketCleaners} />
         <CleanerSearchField query={query} onQuery={setQuery} />
         {filtering && cleaners.length === 0 ? (
           <p className="px-1 text-sm text-ink/55">No cleaners match.</p>
+        ) : null}
+        {!filtering && marketCleaners.length === 0 ? (
+          <p className="px-1 text-sm text-ink/55">No cleaners in this market.</p>
         ) : null}
         {cleaners.map((cleaner) => (
           <Link key={cleaner.cleanerId} href={`/admin/team/${cleaner.cleanerId}`} className="block">
@@ -68,10 +79,10 @@ export function TeamView() {
   );
 }
 
-function WeekSubmissions() {
+function WeekSubmissions({ cleaners }: { cleaners: Array<{ cleanerId: string; firstName: string; lastName: string; status: CleanerStatus }> }) {
   const hub = useHub();
   const week = nextAvailabilityWeek(hub.today);
-  const submissions = listSubmissionStatus(hub.cleaners, hub.submissions, week.weekStart);
+  const submissions = listSubmissionStatus(cleaners, hub.submissions, week.weekStart);
   const submittedCount = submissions.filter((item) => item.submitted).length;
   const missing = submissions.filter((item) => !item.submitted);
   const [notice, setNotice] = useState<string | null>(null);
@@ -91,6 +102,9 @@ function WeekSubmissions() {
       <Card>
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">Next Week Availability</p>
         <h2 className="mt-1 text-2xl font-semibold">{formatWeekRange(week.weekStart, week.weekEnd)}</h2>
+        {submissions.length === 0 ? (
+          <p className="mt-4 text-sm text-ink/70">No cleaners in this market.</p>
+        ) : null}
         <ul className="mt-4 space-y-3">
           {submissions.map((item) => (
             <li key={item.cleanerId} className="flex items-center justify-between gap-3">

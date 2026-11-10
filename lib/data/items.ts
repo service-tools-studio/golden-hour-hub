@@ -14,6 +14,7 @@ import type {
   RecurringSeries,
 } from "../domain/types.ts";
 import { buildCustomerSearchKeys } from "../domain/customers.ts";
+import { readMarketId, timeZoneForMarket } from "../domain/markets.ts";
 import { readQuestionnaireFromRecord, readQuestionnaireDraftFromRecord } from "../domain/contractor-questionnaire.ts";
 
 export type DynamoItem = {
@@ -285,6 +286,7 @@ function readCleaner(item: DynamoItem): CleanerProfile {
       typeof item.typicalHourlyRateCents === "number" && item.typicalHourlyRateCents >= 0
         ? item.typicalHourlyRateCents
         : 3000,
+    homeMarketId: readMarketId(item.homeMarketId),
     cognitoSub: optionalString(item, "cognitoSub"),
     smsSchedulingOptIn: typeof item.smsSchedulingOptIn === "boolean" ? item.smsSchedulingOptIn : undefined,
     smsOptInRecordedAt: optionalString(item, "smsOptInRecordedAt"),
@@ -327,6 +329,7 @@ function readProperty(item: DynamoItem): Property {
     city: stringField(item, "city"),
     state: stringField(item, "state"),
     zip: stringField(item, "zip"),
+    marketId: readMarketId(item.marketId),
     bedrooms: numberField(item, "bedrooms"),
     bathrooms: numberField(item, "bathrooms"),
     squareFeet: numberField(item, "squareFeet"),
@@ -369,6 +372,18 @@ function readSeries(item: DynamoItem): RecurringSeries {
   };
 }
 
+function readJobSnapshot(value: unknown): Job["snapshot"] {
+  const snapshot = (value ?? {}) as Job["snapshot"];
+  const marketId = readMarketId(snapshot.marketId);
+  return {
+    ...snapshot,
+    marketId,
+    timeZone: typeof snapshot.timeZone === "string" && snapshot.timeZone.length > 0
+      ? snapshot.timeZone
+      : timeZoneForMarket(marketId),
+  };
+}
+
 function readJob(item: DynamoItem): Job {
   return {
     jobId: stringField(item, "jobId"),
@@ -378,7 +393,7 @@ function readJob(item: DynamoItem): Job {
     serviceType: item.serviceType as Job["serviceType"],
     date: stringField(item, "date"),
     headcountNeeded: numberField(item, "headcountNeeded"),
-    snapshot: item.snapshot as Job["snapshot"],
+    snapshot: readJobSnapshot(item.snapshot),
     specialInstructions: stringField(item, "specialInstructions"),
     pricePerVisitCents: optionalNumber(item, "pricePerVisitCents"),
     arrivalWindowStart: optionalString(item, "arrivalWindowStart"),

@@ -17,6 +17,7 @@ describe("create-cleaner-account", () => {
             lastName: "Thielbar",
             email: "paige@example.com",
             mobilePhone: "5035550100",
+            homeMarketId: "portland",
             typicalHelperCount: 0,
             maxHelperCount: 0,
             typicalHourlyRateCents: 3000,
@@ -33,6 +34,7 @@ describe("create-cleaner-account", () => {
         lastName: "Person",
         email: "paige@example.com",
         mobilePhone: "5035550199",
+        homeMarketId: "portland",
         typicalHelperCount: 0,
         maxHelperCount: 0,
         typicalHourlyRateCents: 3000,
@@ -52,6 +54,7 @@ describe("create-cleaner-account", () => {
         lastName: "Stiles",
         email: "Jennifer@Example.COM",
         mobilePhone: "(503) 574-0595",
+        homeMarketId: "phoenix",
         typicalHelperCount: 0,
         maxHelperCount: 0,
         typicalHourlyRateCents: 3000,
@@ -62,5 +65,13 @@ describe("create-cleaner-account", () => {
     if (!result.ok) return;
     assert.equal(result.value.email, "jennifer@example.com");
     assert.equal(result.value.mobilePhone, "5035740595");
+    assert.equal(result.value.homeMarketId, "phoenix");
+    const profile = buildNewCleanerProfile(
+      result.value,
+      "new",
+      "2026-11-09T00:00:00.000Z",
+      "admin@example.com",
+    );
+    assert.equal(profile.homeMarketId, "phoenix");
   });
 });

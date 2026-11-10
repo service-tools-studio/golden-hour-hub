@@ -23,6 +23,10 @@ describe("DynamoDB item mapping", () => {
 
     const restored = itemsToHub(items, today);
     assert.equal(restored.cleaners.find((cleaner) => cleaner.cleanerId === "claudia")?.maxHelperCount, 2);
+    assert.equal(restored.cleaners.find((cleaner) => cleaner.cleanerId === "claudia")?.homeMarketId, "portland");
+    assert.ok(restored.properties.every((property) => property.marketId === "portland"));
+    assert.ok(restored.jobs.every((job) => job.snapshot.marketId === "portland"));
+    assert.ok(restored.jobs.every((job) => job.snapshot.timeZone === "America/Los_Angeles"));
     assert.equal(restored.jobs.length, data.jobs.length);
     assert.equal(restored.assignments.length, data.assignments.length);
     const dates = restored.jobs.filter((job) => job.seriesId).map((job) => `${job.seriesId}|${job.date}`);
@@ -54,6 +58,7 @@ describe("DynamoDB item mapping", () => {
     );
     assert.equal(restored.cleaners[0].maxHelperCount, 0);
     assert.equal(restored.cleaners[0].typicalHelperCount, 0);
+    assert.equal(restored.cleaners[0].homeMarketId, "portland");
   });
 
   it("round-trips businessQuestionnaire on cleaner profiles", () => {

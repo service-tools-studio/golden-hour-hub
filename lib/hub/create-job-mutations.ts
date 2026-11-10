@@ -1,5 +1,6 @@
 import { validateOptionalVisitArrival } from "../domain/arrival.ts";
 import { snapshotVisit } from "../domain/customers.ts";
+import { CROSS_MARKET_STAFFING_MESSAGE, cleanerMatchesJobMarket } from "../domain/markets.ts";
 import { mergeRecurringHorizon, validateRecurrenceRule } from "../domain/recurrence.ts";
 import { dayOfWeek, isValidDate } from "../domain/time.ts";
 import type { Job, RecurrenceRule, RecurringSeries, ServiceType } from "../domain/types.ts";
@@ -47,6 +48,9 @@ export function createJobOnHub(hub: HubData, input: CreateJobInput, actor: strin
     (item) => item.propertyId === input.propertyId && item.customerId === customer.customerId && item.status === "ACTIVE",
   );
   if (!property) return { ok: false, message: "Choose one of this customer's properties." };
+  if (cleaners.some((cleaner) => cleaner && !cleanerMatchesJobMarket(cleaner, property.marketId))) {
+    return { ok: false, message: CROSS_MARKET_STAFFING_MESSAGE };
+  }
   const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
   if (!arrivalTimes.ok) return arrivalTimes;
   if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {

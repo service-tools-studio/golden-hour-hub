@@ -23,6 +23,8 @@ function job(jobId: string, date: string): Job {
       city: "Portland",
       state: "OR",
       zip: "97201",
+      marketId: "portland",
+      timeZone: "America/Los_Angeles",
       bedrooms: 2,
       bathrooms: 1,
       squareFeet: 1000,

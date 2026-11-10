@@ -16,6 +16,7 @@ function cleaner(overrides: Partial<CleanerProfile> = {}): CleanerProfile {
     typicalHelperCount: 0,
     maxHelperCount: 0,
     typicalHourlyRateCents: 5000,
+    homeMarketId: "portland",
     createdAt: "2026-01-01T00:00:00.000Z",
     createdBy: "test",
     updatedAt: "2026-01-01T00:00:00.000Z",

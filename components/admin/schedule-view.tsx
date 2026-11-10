@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AdminMarketTabs, useAdminMarket } from "@/components/admin/admin-market";
 import { useHub } from "@/components/hub-provider";
 import { PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { personName } from "@/lib/domain/cleaners";
@@ -18,6 +19,7 @@ import {
   sundayOf,
   timeFromMinutes,
 } from "@/lib/domain/time";
+import { jobMatchesAdminMarket } from "@/lib/domain/markets";
 import type { CleanerProfile, Job, JobAssignment, RecurringSeries } from "@/lib/domain/types";
 import { formatLongDate, serviceLabel } from "@/lib/format";
 
@@ -25,12 +27,17 @@ type View = "day" | "month";
 
 export function ScheduleView({ initialDate, initialView = "month" }: { initialDate?: string; initialView?: View }) {
   const hub = useHub();
+  const { marketFilter, viewingToday } = useAdminMarket();
   useEffect(() => {
     if (!hub.ready) return;
     hub.refreshRecurringHorizon();
   }, [hub.ready, hub.refreshRecurringHorizon]);
   const [view, setView] = useState<View>(initialView);
-  const [date, setDate] = useState(initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : hub.today);
+  const [date, setDate] = useState(initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : viewingToday);
+  const marketJobs = useMemo(
+    () => hub.jobs.filter((job) => jobMatchesAdminMarket(job, marketFilter)),
+    [hub.jobs, marketFilter],
+  );
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [dayViewKey, setDayViewKey] = useState(0);
@@ -38,7 +45,10 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
   const cleaners = hub.cleaners.filter((cleaner) => cleaner.status === "ACTIVE");
   const cleanerIds = cleaners.map((cleaner) => cleaner.cleanerId);
 
-  const matches = useMemo(() => searchCleanings(hub.jobs, hub.assignments, hub.cleaners, query), [hub.assignments, hub.cleaners, hub.jobs, query]);
+  const matches = useMemo(
+    () => searchCleanings(marketJobs, hub.assignments, hub.cleaners, query),
+    [hub.assignments, hub.cleaners, marketJobs, query],
+  );
 
   useEffect(() => {
     if (searchOpen) searchField.current?.focus();
@@ -74,17 +84,29 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
           </div>
         }
       />
+      <div className="px-5 pt-4">
+        <AdminMarketTabs />
+      </div>
       {searchOpen ? (
         <ScheduleSearch query={query} onQuery={setQuery} onClose={closeSearch} fieldRef={searchField} matches={matches} />
       ) : (
         <div className="space-y-4 px-5 pt-4">
           {view === "day" ? (
-            <DayView key={dayViewKey} date={date} cleanerIds={cleanerIds} onDate={setDate} onMonthView={() => setView("month")} />
+            <DayView
+              key={dayViewKey}
+              date={date}
+              today={viewingToday}
+              cleanerIds={cleanerIds}
+              jobs={marketJobs}
+              onDate={setDate}
+              onMonthView={() => setView("month")}
+            />
           ) : null}
           {view === "month" ? (
             <MonthView
               date={date}
-              cleanerIds={cleanerIds}
+              today={viewingToday}
+              jobs={marketJobs}
               onPickDay={(next) => {
                 setDate(next);
                 setView("day");
@@ -98,7 +120,7 @@ export function ScheduleView({ initialDate, initialView = "month" }: { initialDa
           <button
             type="button"
             onClick={() => {
-              setDate(hub.today);
+              setDate(viewingToday);
               setView("day");
               setDayViewKey((key) => key + 1);
             }}
@@ -269,17 +291,21 @@ const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
 
 function DayView({
   date,
+  today,
   cleanerIds,
+  jobs,
   onDate,
   onMonthView,
 }: {
   date: string;
+  today: string;
   cleanerIds: string[];
+  jobs: Job[];
   onDate: (date: string) => void;
   onMonthView: () => void;
 }) {
   const hub = useHub();
-  const scheduled = useDatesWithScheduledJobs();
+  const scheduled = useDatesWithScheduledJobs(jobs);
   const monthStart = firstOfMonth(date);
   useEffect(() => {
     void hub.ensureScheduleJobsForMonth(monthStart);
@@ -353,14 +379,14 @@ function DayView({
                     key={day}
                     type="button"
                     onClick={() => onDate(day)}
-                    aria-current={day === hub.today ? "date" : undefined}
+                    aria-current={day === today ? "date" : undefined}
                     className="flex min-h-11 flex-col items-center justify-center py-0.5"
                   >
                     <span
                       className={`flex size-9 items-center justify-center rounded-full text-base ${
                         day === date
                           ? "bg-ink font-semibold text-cream"
-                          : day === hub.today
+                          : day === today
                             ? "bg-mint font-semibold text-ink"
                             : "text-ink"
                       }`}
@@ -380,13 +406,21 @@ function DayView({
         </div>
       </DaySwipeArea>
       <DaySwipeArea onSwipe={(step) => onDate(addDays(date, step))}>
-        <ScheduleDayAgenda date={date} cleanerIds={cleanerIds} />
+        <ScheduleDayAgenda date={date} cleanerIds={cleanerIds} jobs={jobs} />
       </DaySwipeArea>
     </div>
   );
 }
 
-function ScheduleDayAgenda({ date, cleanerIds }: { date: string; cleanerIds: string[] }) {
+function ScheduleDayAgenda({
+  date,
+  cleanerIds,
+  jobs,
+}: {
+  date: string;
+  cleanerIds: string[];
+  jobs: Job[];
+}) {
   const hub = useHub();
   const ids = cleanerIds.join("\0");
   const list = useMemo(
@@ -395,11 +429,11 @@ function ScheduleDayAgenda({ date, cleanerIds }: { date: string; cleanerIds: str
         date,
         cleanerIds: ids ? ids.split("\0") : [],
         cleaners: hub.cleaners,
-        jobs: hub.jobs,
+        jobs,
         assignments: hub.assignments,
         series: hub.series,
       }),
-    [date, hub.assignments, hub.cleaners, hub.jobs, hub.series, ids],
+    [date, hub.assignments, hub.cleaners, hub.series, ids, jobs],
   );
 
   if (list.timed.length === 0 && list.untimed.length === 0) {
@@ -747,29 +781,30 @@ function monthRows(monthStart: string): (string | null)[][] {
   return rows;
 }
 
-function useDatesWithScheduledJobs() {
-  const hub = useHub();
+function useDatesWithScheduledJobs(jobs: Job[]) {
   return useMemo(() => {
     const dates = new Set<string>();
-    for (const job of hub.jobs) {
+    for (const job of jobs) {
       if (job.status === "CANCELED") continue;
       dates.add(job.date);
     }
     return dates;
-  }, [hub.jobs]);
+  }, [jobs]);
 }
 
 function MonthView({
   date,
-  cleanerIds,
+  today,
+  jobs,
   onPickDay,
 }: {
   date: string;
-  cleanerIds: string[];
+  today: string;
+  jobs: Job[];
   onPickDay: (date: string) => void;
 }) {
   const hub = useHub();
-  const scheduled = useDatesWithScheduledJobs();
+  const scheduled = useDatesWithScheduledJobs(jobs);
   const scroller = useRef<HTMLDivElement>(null);
   const focus = firstOfMonth(date);
   const months = [-2, -1, 0, 1, 2, 3].map((delta) => shiftMonth(focus, delta));
@@ -821,11 +856,11 @@ function MonthView({
                         key={day}
                         type="button"
                         onClick={() => onPickDay(day)}
-                        aria-current={day === hub.today ? "date" : undefined}
+                        aria-current={day === today ? "date" : undefined}
                         className="flex min-h-12 flex-col items-center justify-center text-sm text-ink"
                       >
                         <span
-                          className={`flex size-8 items-center justify-center rounded-full ${day === hub.today ? "bg-mint font-semibold" : ""
+                          className={`flex size-8 items-center justify-center rounded-full ${day === today ? "bg-mint font-semibold" : ""
                             }`}
                         >
                           {Number(day.slice(8))}
