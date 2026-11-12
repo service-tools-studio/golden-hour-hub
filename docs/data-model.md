@@ -262,6 +262,7 @@ Retention: rows are deleted when a cleaner is removed from a job (all logs for t
 | Series by id                       | Get `SERIES#id` / `PROFILE`                                                 |
 | Active series to generate          | Query GSI1 `SERIES#ACTIVE`                                                  |
 | Jobs on a date                     | Query GSI1 `JOBDATE#date`                                                   |
+| Admin hub: all cleanings           | For each customer, query GSI2 `CUSTOMER#id` / `sk begins_with JOB#`, then load each `JOB#id` partition |
 | Assignments on a job               | Query `JOB#id`, `sk begins_with ASSIGN#`                                    |
 | One cleaner’s assignments          | Query GSI1 `CLEANER#id`, `sk begins_with` the date                          |
 | Confirmed conflicts                | That cleaner query, keep `CONFIRMED`, compare blocked ranges                |

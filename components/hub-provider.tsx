@@ -49,6 +49,7 @@ import { completeAssignmentAction } from "@/app/actions/admin-assignments";
 import {
   bootstrapHub,
   bootstrapAdminHubSupplement,
+  loadJobPartitionAction,
   loadScheduleJobsRangeAction,
   type BootstrapResult,
 } from "@/app/actions/hub-data";
@@ -75,7 +76,7 @@ import {
   hubMutationPatch,
   mergeAvailabilityWeekIntoHub,
   mergeHubPatchIntoHub,
-  retainJobsBeforeDate,
+  retainHubJobsOnFullSync,
   type HubPatchRemove,
   type MergeHubPatchOptions,
 } from "@/lib/hub/merge-hub-patch";
@@ -193,6 +194,8 @@ type HubContextValue = HubState & {
   mergeAdminHub: (remote: HubData) => void;
   /** Fetch jobs for a past calendar month when that month is shown on the schedule. */
   ensureScheduleJobsForMonth: (monthStart: string) => Promise<void>;
+  /** Load one JOB# partition when it is missing from the in-memory hub. */
+  ensureHubJob: (jobId: string) => Promise<boolean>;
   saveCustomer: (input: CustomerInput, customerId?: string) => AsyncActionResult;
   deleteCustomer: (customerId: string) => AsyncActionResult;
   saveSeries: (seriesId: string, input: SaveSeriesInput) => AsyncActionResult;
@@ -419,6 +422,7 @@ export function HubProvider({
   const hubRevisionRef = useRef<number | null>(serverHub?.revision ?? null);
   const scheduleLookbackMonthsRef = useRef(new Set<string>());
   const scheduleLookbackInflightRef = useRef(new Map<string, Promise<void>>());
+  const hubJobHydrateInflightRef = useRef(new Map<string, Promise<void>>());
   const skipPersistForRemoteSyncRef = useRef(false);
   const staffingSaveInFlightRef = useRef(false);
   const actionLoadingRef = useRef(0);
@@ -487,7 +491,7 @@ export function HubProvider({
           ? withCurrentHorizon(
               mergeHubPatchIntoHub(prev, hubPayload, { replaceAvailabilityForPatchCleaners: true }),
             )
-          : withCurrentHorizon(retainJobsBeforeDate(prev, hubPayload, todayInBusinessZone()));
+          : withCurrentHorizon(retainHubJobsOnFullSync(prev, hubPayload, todayInBusinessZone()));
       if (remote.mode === "patch" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;
       if (remote.mode === "full" && sortedHubSnapshot(prev) === sortedHubSnapshot(mergedBase)) return;
       const next = { ...mergedBase, role: prev.role, cleanerId: prev.cleanerId };
@@ -782,6 +786,40 @@ export function HubProvider({
     });
     scheduleLookbackInflightRef.current.set(monthKey, pending);
     await pending;
+  }, [setState]);
+
+  const ensureHubJob = useCallback(async (jobId: string): Promise<boolean> => {
+    if (!bootstrappedRef.current || sourceRef.current !== "dynamodb" || stateRef.current?.role !== "ADMIN") {
+      return false;
+    }
+    const trimmed = jobId.trim();
+    if (!trimmed) return false;
+    if (stateRef.current.jobs.some((job) => job.jobId === trimmed)) return true;
+    const inflight = hubJobHydrateInflightRef.current.get(trimmed);
+    if (inflight) {
+      await inflight;
+      return stateRef.current?.jobs.some((job) => job.jobId === trimmed) ?? false;
+    }
+    const pending = (async (): Promise<boolean> => {
+      const remote = await loadJobPartitionAction(trimmed);
+      if (!remote.ok) return false;
+      setState((prev) => {
+        if (!prev) return prev;
+        if (prev.jobs.some((job) => job.jobId === trimmed)) return prev;
+        return {
+          ...withCurrentHorizon(
+            mergeHubPatchIntoHub(prev, remote.data, { replaceAssignmentsForPatchJobs: true }),
+          ),
+          role: prev.role,
+          cleanerId: prev.cleanerId,
+        };
+      });
+      return true;
+    })().finally(() => {
+      hubJobHydrateInflightRef.current.delete(trimmed);
+    });
+    hubJobHydrateInflightRef.current.set(trimmed, pending);
+    return pending;
   }, [setState]);
 
   const refreshRecurringHorizon = useCallback(() => {
@@ -1511,6 +1549,7 @@ export function HubProvider({
     submitContractorQuestionnaire,
     mergeAdminHub,
     ensureScheduleJobsForMonth,
+    ensureHubJob,
     saveCustomer,
     deleteCustomer,
     saveSeries,

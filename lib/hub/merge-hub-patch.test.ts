@@ -267,4 +267,14 @@ describe("retainJobsBeforeDate", () => {
     assert.equal(merged.assignments.find((item) => item.assignmentId === "a-oct")?.status, "CONFIRMED");
     assert.equal(merged.assignments.find((item) => item.assignmentId === "a-today")?.status, "CONFIRMED");
   });
+
+  it("does not keep future jobs omitted from a full reload", () => {
+    const current = {
+      ...emptyHub("2026-11-09"),
+      jobs: [asJob({ jobId: "new", date: "2026-11-20" })],
+    };
+    const incoming = { ...emptyHub("2026-11-09"), jobs: [], assignments: [] };
+    const merged = retainJobsBeforeDate(current, incoming, "2026-11-09");
+    assert.equal(merged.jobs.some((job) => job.jobId === "new"), false);
+  });
 });

@@ -371,7 +371,7 @@ function DayView({
               </button>
             </div>
           </div>
-          <h2 className="mt-1 px-1 text-4xl font-semibold tracking-tight">{monthTitle(date)}</h2>
+          <ScheduleMonthHeading date={date} className="mt-1 px-1" />
           <div className="mt-3 grid grid-cols-7 px-1">
             {WEEKDAY_LETTERS.map((label, index) => (
               <p key={`${label}-${index}`} className="pb-1 text-center text-[11px] font-semibold text-ink/40">
@@ -824,9 +824,28 @@ function pendingLabel(assignment: JobAssignment): string {
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
-function monthTitle(date: string): string {
-  const { year, month, day } = { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)), day: Number(date.slice(8, 10)) };
-  return new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+function calendarDateParts(date: string): { year: number; month: number; day: number } {
+  return { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)), day: Number(date.slice(8, 10)) };
+}
+
+function monthName(date: string): string {
+  const { year, month, day } = calendarDateParts(date);
+  return new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year, month - 1, day, 12)),
+  );
+}
+
+function yearLabel(date: string): string {
+  return String(calendarDateParts(date).year);
+}
+
+function ScheduleMonthHeading({ date, className }: { date: string; className?: string }) {
+  return (
+    <h2 className={`text-4xl font-semibold tracking-tight ${className ?? ""}`}>
+      {monthName(date)}
+      <span className="ml-2 align-baseline text-base font-normal tabular-nums tracking-normal text-ink/25">{yearLabel(date)}</span>
+    </h2>
+  );
 }
 
 function shortMonthTitle(monthStart: string): string {
@@ -877,11 +896,13 @@ function MonthView({
   const scheduled = useDatesWithScheduledJobs(jobs);
   const scroller = useRef<HTMLDivElement>(null);
   const focus = firstOfMonth(date);
-  const months = [-2, -1, 0, 1, 2, 3].map((delta) => shiftMonth(focus, delta));
+  const months = [-2, -1, 0, ...Array.from({ length: 14 }, (_, index) => index + 1)].map((delta) =>
+    shiftMonth(focus, delta),
+  );
 
   useEffect(() => {
     if (!hub.ready) return;
-    for (const delta of [-2, -1, 0, 1, 2, 3]) {
+    for (const delta of [-2, -1, 0, ...Array.from({ length: 14 }, (_, index) => index + 1)]) {
       void hub.ensureScheduleJobsForMonth(shiftMonth(focus, delta));
     }
   }, [hub.ready, focus, hub.ensureScheduleJobsForMonth]);
@@ -923,7 +944,7 @@ function MonthView({
       <div ref={scroller} className="max-h-[calc(100dvh-18rem)] overflow-y-auto">
         {months.map((month) => (
           <section key={month} data-month={month.slice(0, 7)} className="px-1 pt-3">
-            <h2 className="px-1 text-4xl font-semibold tracking-tight">{monthTitle(month)}</h2>
+            <ScheduleMonthHeading date={month} className="px-1" />
             <div className="mt-2">
               {monthRows(month).map((row, rowIndex) => (
                 <div key={`${month}-${rowIndex}`} className="grid grid-cols-7">

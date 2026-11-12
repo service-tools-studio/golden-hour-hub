@@ -4,9 +4,7 @@ import { RECURRING_HORIZON_DAYS } from "../domain/recurrence.ts";
 import {
   addDays,
   eachDate,
-  editableAvailabilityHorizonEnd,
   mondayOf,
-  scheduleLookbackStart,
   todayInBusinessZone,
 } from "../domain/time.ts";
 import { emptyHub, type HubData } from "../mock/seed.ts";
@@ -16,35 +14,25 @@ import {
   dedupeItemsByKey,
   mapWithConcurrency,
   queryAllCustomerPartitionItems,
+  discoverJobIdsForCustomers,
+  discoverJobIdsFromCleaners,
   queryJobProfilesInDateRange,
   queryItemsByPk,
+  readJobIdFromItem,
   queryRelationIndex,
   queryScheduleIndex,
 } from "./dynamo-queries.ts";
 import { finalizeLoadedHub, type FinalizeHubOptions } from "./hub-reconcile.ts";
 
 export type LoadHubSliceOptions = FinalizeHubOptions & {
-  /**
-   * Availability, weekly submissions, and BQ from each cleaner partition.
-   * Default on. Fast admin bootstrap can keep this on without loading the 56-day job horizon.
-   */
+  /** Availability, weekly submissions, and BQ from each cleaner partition. Default on. */
   loadTeamSchedulingExtras?: boolean;
   loadSeries?: boolean;
+  /** @deprecated Admin loads all customer jobs via RelationIndex; ignored. */
   jobHorizonEnd?: string;
 };
 
-function readJobId(item: DynamoItem): string | null {
-  if (typeof item.jobId === "string" && item.jobId.length > 0) return item.jobId;
-  if (typeof item.pk === "string" && item.pk.startsWith("JOB#")) return item.pk.slice("JOB#".length);
-  if (typeof item.gsi2sk === "string") {
-    const fromCustomerJob = /^JOB#[^#]+#(.+)$/.exec(item.gsi2sk);
-    if (fromCustomerJob?.[1]) return fromCustomerJob[1];
-  }
-  if (typeof item.gsi1sk === "string" && item.gsi1sk.length > 0 && !item.gsi1sk.startsWith("JOB#")) {
-    return item.gsi1sk;
-  }
-  return null;
-}
+const readJobId = readJobIdFromItem;
 
 async function loadCustomerSeriesItems(customerIds: string[]): Promise<DynamoItem[]> {
   if (customerIds.length === 0) return [];
@@ -87,65 +75,44 @@ async function loadTeamSchedulingExtraItems(
   });
 }
 
+async function discoverAllAdminJobIds(customerIds: string[], cleanerIds: string[]): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const jobId of await discoverJobIdsForCustomers(customerIds)) ids.add(jobId);
+  for (const jobId of await discoverJobIdsFromCleaners(cleanerIds)) ids.add(jobId);
+  return [...ids];
+}
+
 async function fetchAdminHubItems(options: {
   loadTeamSchedulingExtras: boolean;
   loadSeries: boolean;
-  jobHorizonEnd: string;
 }): Promise<DynamoItem[]> {
   const today = todayInBusinessZone();
   const horizonEnd = addDays(today, RECURRING_HORIZON_DAYS);
   const availabilityStart = mondayOf(today);
-  const jobRangeStart = scheduleLookbackStart(today);
 
-  const [cleanersActive, cleanersInactive, listedCustomers, jobProfilesInHorizon] = await Promise.all([
+  const [cleanersActive, cleanersInactive, customerPropertyRows] = await Promise.all([
     queryScheduleIndex("CLEANER_STATUS#ACTIVE"),
     queryScheduleIndex("CLEANER_STATUS#INACTIVE"),
-    options.loadSeries
-      ? queryAllCustomerPartitionItems()
-      : queryScheduleIndex("CUSTOMER#ALL"),
-    queryJobProfilesInDateRange(jobRangeStart, options.jobHorizonEnd),
+    queryAllCustomerPartitionItems(),
   ]);
-  const customerPropertyRows =
-    options.loadSeries || listedCustomers.length > 0
-      ? listedCustomers
-      : await queryAllCustomerPartitionItems();
 
   const customerIds = [
     ...new Set(
-      [
-        ...customerPropertyRows
-          .filter((item) => item.entity === "customer")
-          .map((item) => {
-            if (typeof item.customerId === "string") return item.customerId;
-            if (item.pk.startsWith("CUSTOMER#")) return item.pk.slice("CUSTOMER#".length);
-            return null;
-          }),
-        ...jobProfilesInHorizon
-          .map((item) => (typeof item.customerId === "string" ? item.customerId : null))
-          .filter((value): value is string => Boolean(value)),
-      ].filter((value): value is string => Boolean(value)),
+      customerPropertyRows
+        .filter((item) => item.entity === "customer")
+        .map((item) => {
+          if (typeof item.customerId === "string") return item.customerId;
+          if (item.pk.startsWith("CUSTOMER#")) return item.pk.slice("CUSTOMER#".length);
+          return null;
+        })
+        .filter((value): value is string => Boolean(value)),
     ),
   ];
 
-  const loadedCustomerIds = new Set(
-    customerPropertyRows
-      .filter((item) => item.entity === "customer")
-      .map((item) => String(item.customerId ?? (item.pk.startsWith("CUSTOMER#") ? item.pk.slice(9) : "")))
-      .filter(Boolean),
-  );
-  const missingCustomerIds = customerIds.filter((id) => !loadedCustomerIds.has(id));
-  const extraCustomerRows =
-    missingCustomerIds.length > 0
-      ? dedupeItemsByKey(
-          (await mapWithConcurrency(missingCustomerIds, 32, (customerId) => queryItemsByPk(`CUSTOMER#${customerId}`))).flat(),
-        )
-      : [];
+  const allCustomerPropertyRows = customerPropertyRows;
 
-  const allCustomerPropertyRows = dedupeItemsByKey([...customerPropertyRows, ...extraCustomerRows]);
-
-  const jobIds = [
-    ...new Set(jobProfilesInHorizon.map(readJobId).filter((value): value is string => Boolean(value))),
-  ];
+  const cleanerIds = cleanerIdsFromProfileItems([...cleanersActive, ...cleanersInactive]);
+  const jobIds = await discoverAllAdminJobIds(customerIds, cleanerIds);
 
   const [customerSeries, jobPartitions, teamExtras] = await Promise.all([
     options.loadSeries ? loadCustomerSeriesItems(customerIds) : Promise.resolve([] as DynamoItem[]),
@@ -190,9 +157,6 @@ export async function loadAdminHubSlices(options: LoadHubSliceOptions = {}): Pro
   const items = await fetchAdminHubItems({
     loadTeamSchedulingExtras,
     loadSeries: options.loadSeries ?? loadTeamSchedulingExtras,
-    jobHorizonEnd:
-      options.jobHorizonEnd ??
-      (loadTeamSchedulingExtras ? addDays(today, RECURRING_HORIZON_DAYS) : editableAvailabilityHorizonEnd(today)),
   });
   if (items.length === 0) {
     return emptyHub(today);
@@ -209,6 +173,18 @@ export async function loadAdminHubTeamExtraSlice(): Promise<HubData> {
   return itemsToHub(items, today);
 }
 
+/** One job partition (PROFILE + assignments) when JOBDATE index omits it. */
+export async function loadAdminHubJobPartitionSlice(jobId: string): Promise<HubData> {
+  const today = todayInBusinessZone();
+  const trimmed = jobId.trim();
+  if (!trimmed) return emptyHub(today);
+  const partition = await queryItemsByPk(`JOB#${trimmed}`);
+  if (!partition.some((item) => item.sk === "PROFILE" && item.entity === "job")) {
+    return emptyHub(today);
+  }
+  return itemsToHub(dedupeItemsByKey(partition), today);
+}
+
 /** Jobs and assignments for a closed date range (schedule lookback). No horizon merge. */
 export async function loadAdminHubJobsInDateRange(startDate: string, endDate: string): Promise<HubData> {
   const today = todayInBusinessZone();
@@ -220,13 +196,10 @@ export async function loadAdminHubJobsInDateRange(startDate: string, endDate: st
   return itemsToHub(dedupeItemsByKey(jobPartitions), today);
 }
 
-/** Remaining jobs, series, availability, and BQ after a fast admin bootstrap. */
+/** Series, availability, and BQ after admin bootstrap (jobs load with the main admin slice). */
 export async function loadAdminHubRemainderSlice(): Promise<HubData> {
   const today = todayInBusinessZone();
-  const horizonEnd = addDays(today, RECURRING_HORIZON_DAYS);
-  const remainderStart = addDays(editableAvailabilityHorizonEnd(today), 1);
-  const [jobProfiles, customerPartitions, extras] = await Promise.all([
-    remainderStart <= horizonEnd ? queryJobProfilesInDateRange(remainderStart, horizonEnd) : Promise.resolve([] as DynamoItem[]),
+  const [customerPartitions, extras] = await Promise.all([
     queryAllCustomerPartitionItems(),
     loadAdminHubTeamExtraItems(),
   ]);
@@ -238,12 +211,8 @@ export async function loadAdminHubRemainderSlice(): Promise<HubData> {
         .filter((value): value is string => Boolean(value)),
     ),
   ];
-  const jobIds = [...new Set(jobProfiles.map(readJobId).filter((value): value is string => Boolean(value)))];
-  const [jobPartitions, series] = await Promise.all([
-    loadJobPartitions(jobIds),
-    loadCustomerSeriesItems(customerIds),
-  ]);
-  const items = dedupeItemsByKey([...customerPartitions, ...jobPartitions, ...series, ...extras]);
+  const series = await loadCustomerSeriesItems(customerIds);
+  const items = dedupeItemsByKey([...customerPartitions, ...series, ...extras]);
   if (items.length === 0) return emptyHub(today);
   return itemsToHub(items, today);
 }

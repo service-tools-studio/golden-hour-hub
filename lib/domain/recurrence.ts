@@ -35,7 +35,8 @@ import {
 } from "./time.ts";
 
 /** How far ahead recurring job occurrences are created. */
-export const RECURRING_HORIZON_DAYS = 56;
+/** How far ahead recurring series occurrences are generated in hub (no fixed cap on schedule display). */
+export const RECURRING_HORIZON_DAYS = 365;
 
 const DAY_LABEL: Record<DayOfWeek, string> = {
   MONDAY: "Monday",

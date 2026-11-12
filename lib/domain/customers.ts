@@ -253,7 +253,13 @@ export function searchCustomers(customers: Customer[], properties: Property[], q
   return active.filter((customer) => {
     const keys = buildCustomerSearchKeys(customer);
     const homes = properties.filter((property) => property.customerId === customer.customerId);
-    const nameMatch = keys.nameKeys.some((key) => key.includes(text));
+    const textParts = text.split(" ").filter((part) => part.length > 0);
+    const firstNorm = normalizeSearchText(customer.firstName);
+    const lastNorm = normalizeSearchText(customer.lastName);
+    const nameMatch =
+      keys.nameKeys.some((key) => key.includes(text)) ||
+      (textParts.length >= 2 &&
+        textParts.every((part) => firstNorm.includes(part) || lastNorm.includes(part)));
     const addressMatch = homes.some(
       (property) =>
         normalizeSearchText(property.streetAddress).includes(text) ||

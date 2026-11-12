@@ -1,3 +1,4 @@
+import { scheduleLookbackStart } from "../domain/time.ts";
 import { emptyHub, type HubData } from "../mock/seed.ts";
 
 export type HubPatchRemove = {
@@ -215,18 +216,27 @@ export function mergeHubPatchIntoHub(
   };
 }
 
-/** Keep already-fetched past jobs when a full hub reload only covers today forward. */
-export function retainJobsBeforeDate(current: HubData, incoming: HubData, beforeDate: string): HubData {
+/** Keep past lookback jobs missing from a full reload (JOBDATE fallback while paginating). */
+export function retainHubJobsOnFullSync(current: HubData, incoming: HubData, today: string): HubData {
   const incomingIds = new Set(incoming.jobs.map((job) => job.jobId));
-  const keptJobs = current.jobs.filter((job) => job.date < beforeDate && !incomingIds.has(job.jobId));
+  const lookbackStart = scheduleLookbackStart(today);
+  const keptJobs = current.jobs.filter((job) => {
+    if (incomingIds.has(job.jobId)) return false;
+    return job.date < today && job.date >= lookbackStart;
+  });
   if (keptJobs.length === 0) return incoming;
   const keptIds = new Set(keptJobs.map((job) => job.jobId));
   const keptAssignments = current.assignments.filter((assignment) => keptIds.has(assignment.jobId));
   return {
     ...incoming,
     jobs: [...keptJobs, ...incoming.jobs],
-    assignments: [...keptAssignments, ...incoming.assignments],
+    assignments: [...keptAssignments, ...incoming.assignments.filter((assignment) => !keptIds.has(assignment.jobId))],
   };
+}
+
+/** @deprecated Use {@link retainHubJobsOnFullSync}. */
+export function retainJobsBeforeDate(current: HubData, incoming: HubData, beforeDate: string): HubData {
+  return retainHubJobsOnFullSync(current, incoming, beforeDate);
 }
 
 function inAvailabilityWeek(

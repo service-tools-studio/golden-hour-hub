@@ -130,13 +130,12 @@ function readCustomerIdFromSearchRow(item: DynamoItem): string | null {
 }
 
 export async function discoverCustomerIds(): Promise<string[]> {
-  const gsiProfiles = await queryScheduleIndex("CUSTOMER#ALL");
   const ids = new Set<string>();
+  const gsiProfiles = await queryScheduleIndex("CUSTOMER#ALL");
   for (const item of gsiProfiles) {
     const id = readCustomerId(item);
     if (id) ids.add(id);
   }
-  if (ids.size > 0) return [...ids];
   const searchNameRows = await queryItemsByPk("SEARCH#NAME");
   for (const item of searchNameRows) {
     const id = readCustomerIdFromSearchRow(item);
@@ -156,6 +155,50 @@ export async function queryAllCustomerPartitionItems(): Promise<DynamoItem[]> {
 }
 
 /** Job PROFILE rows indexed by service date (ScheduleIndex `JOBDATE#YYYY-MM-DD`). */
+export function readJobIdFromItem(item: DynamoItem): string | null {
+  if (typeof item.jobId === "string" && item.jobId.length > 0) return item.jobId;
+  if (typeof item.pk === "string" && item.pk.startsWith("JOB#")) return item.pk.slice("JOB#".length);
+  if (typeof item.gsi2sk === "string") {
+    const fromCustomerJob = /^JOB#[^#]+#(.+)$/.exec(item.gsi2sk);
+    if (fromCustomerJob?.[1]) return fromCustomerJob[1];
+  }
+  if (typeof item.gsi1sk === "string" && item.gsi1sk.length > 0 && !item.gsi1sk.startsWith("JOB#")) {
+    return item.gsi1sk;
+  }
+  return null;
+}
+
+/** Job ids from assignment rows indexed under each cleaner (includes far-future staffed visits). */
+export async function discoverJobIdsFromCleaners(cleanerIds: string[]): Promise<string[]> {
+  if (cleanerIds.length === 0) return [];
+  const chunks = await mapWithConcurrency(cleanerIds, 16, (cleanerId) =>
+    queryScheduleIndex(`CLEANER#${cleanerId}`),
+  );
+  const ids = new Set<string>();
+  for (const items of chunks) {
+    for (const item of items) {
+      if (typeof item.jobId === "string" && item.jobId.length > 0) ids.add(item.jobId);
+    }
+  }
+  return [...ids];
+}
+
+/** Every job id listed on RelationIndex for the given customers (full cleaning history). */
+export async function discoverJobIdsForCustomers(customerIds: string[]): Promise<string[]> {
+  if (customerIds.length === 0) return [];
+  const chunks = await mapWithConcurrency(customerIds, 16, (customerId) =>
+    queryRelationIndex(`CUSTOMER#${customerId}`, "JOB#"),
+  );
+  const ids = new Set<string>();
+  for (const items of chunks) {
+    for (const item of items) {
+      const id = readJobIdFromItem(item);
+      if (id) ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
 export async function queryJobProfilesInDateRange(startDate: string, endDate: string): Promise<DynamoItem[]> {
   const { eachDate } = await import("../domain/time.ts");
   const dates = eachDate(startDate, endDate);

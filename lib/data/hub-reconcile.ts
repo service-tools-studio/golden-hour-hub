@@ -30,7 +30,7 @@ export async function finalizeLoadedHub(
     return before.status !== assignment.status || before.attentionReason !== assignment.attentionReason;
   });
   const shouldPersist =
-    options.persistReconciliation !== false &&
+    options.persistReconciliation === true &&
     (next.jobs.length !== data.jobs.length ||
       next.assignments.length !== data.assignments.length ||
       assignmentsReconciled);

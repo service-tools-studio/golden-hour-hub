@@ -86,7 +86,7 @@ export type LoadHubOptions = {
   persistReconciliation?: boolean;
 };
 
-/** Load hub data from DynamoDB (slice queries; optional reconcile persist for cron/legacy). */
+/** Load hub data from DynamoDB. Reconcile persist is opt-in (`persistReconciliation: true`) so loads never delete Dynamo rows by default. */
 export async function loadHub(options: LoadHubOptions = {}): Promise<HubData> {
   const { loadAdminHubSlices } = await import("./load-admin-hub.ts");
   return loadAdminHubSlices(options);

@@ -516,11 +516,11 @@ describe("rolling eight-week horizon", () => {
     };
   }
 
-  it("creates occurrences only through today plus eight weeks", () => {
+  it("creates occurrences only through the recurring horizon", () => {
     const today = "2026-09-27";
     const through = recurringHorizonThrough(today);
     assert.equal(through, addDays(today, RECURRING_HORIZON_DAYS));
-    assert.equal(RECURRING_HORIZON_DAYS, 56);
+    assert.equal(RECURRING_HORIZON_DAYS, 365);
     const result = mergeRecurringHorizon({
       today,
       series: [series()],
@@ -722,7 +722,12 @@ describe("rolling eight-week horizon", () => {
       nowIso: "2026-09-28T00:00:00.000Z",
     });
     const dates = result.jobs.map((job) => job.date).sort();
-    assert.deepEqual(dates, ["2026-10-23", "2026-11-06", "2026-11-20"]);
+    const through = recurringHorizonThrough(today);
+    assert.equal(dates[0], "2026-10-23");
+    assert.ok(dates.length > 3);
+    assert.ok(dates.every((date) => date >= today && date <= through));
+    const weekday = dayOfWeek("2026-10-23");
+    assert.ok(dates.every((date) => dayOfWeek(date) === weekday));
   });
 
   it("fills weekly horizon when every week had no weekday chip but a later visit exists", () => {

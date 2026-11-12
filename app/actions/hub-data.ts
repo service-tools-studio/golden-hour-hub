@@ -1,7 +1,11 @@
 "use server";
 
 import { AuthError, requireAdmin } from "@/lib/auth/guards";
-import { loadAdminHubCustomerDetailSlice, loadAdminHubJobsInDateRange } from "@/lib/data/load-admin-hub";
+import {
+  loadAdminHubCustomerDetailSlice,
+  loadAdminHubJobPartitionSlice,
+  loadAdminHubJobsInDateRange,
+} from "@/lib/data/load-admin-hub";
 import { dynamoConfigured } from "@/lib/data/repository";
 import { addDays, isValidDate, scheduleLookbackStart, todayInBusinessZone } from "@/lib/domain/time";
 import { loadRemoteHub, loadRemoteHubAdminSupplement, type BootstrapResult, type HubVersionResult } from "@/lib/hub/bootstrap-remote";
@@ -32,6 +36,23 @@ export async function loadCustomerDetailAction(
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("loadCustomerDetailAction failed.", error);
     return { ok: false, message: "Could not load this customer's cleanings." };
+  }
+}
+
+export async function loadJobPartitionAction(
+  jobId: string,
+): Promise<{ ok: true; data: HubData } | { ok: false; message: string } | { source: "preview" }> {
+  try {
+    await requireAdmin();
+    if (!dynamoConfigured()) return { source: "preview" };
+    if (!jobId.trim()) return { ok: false, message: "That cleaning could not be found." };
+    const data = await loadAdminHubJobPartitionSlice(jobId);
+    if (data.jobs.length === 0) return { ok: false, message: "That cleaning could not be found." };
+    return { ok: true, data };
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
+    console.error("loadJobPartitionAction failed.", error);
+    return { ok: false, message: "Could not load this cleaning." };
   }
 }
 

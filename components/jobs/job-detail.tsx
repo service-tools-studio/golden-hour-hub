@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { NavigatingLink } from "@/components/navigating-link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useHub } from "@/components/hub-provider";
 import { useJobCleanerBusyAction, useJobCleanerMutation } from "@/components/job-cleaner-busy";
 import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
@@ -69,7 +69,25 @@ export function AdminJobDetail({ jobId, from }: { jobId: string; from?: Cleaning
   const fromSchedule = from === "schedule";
   const hub = useHub();
   const job = hub.jobs.find((item) => item.jobId === jobId);
-  if (!job) return <Missing label="That cleaning could not be found." href="/admin" />;
+  const [jobLoadFailed, setJobLoadFailed] = useState(false);
+  useEffect(() => {
+    if (job || !hub.ready || jobLoadFailed) return;
+    let cancelled = false;
+    void hub.ensureHubJob(jobId).then((loaded) => {
+      if (!cancelled && !loaded) setJobLoadFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hub, hub.ready, job, jobId, jobLoadFailed]);
+  if (!job) {
+    if (jobLoadFailed) return <Missing label="That cleaning could not be found." href="/admin" />;
+    return (
+      <Screen>
+        <p className="px-5 pt-8 text-sm text-ink/55">Loading cleaning…</p>
+      </Screen>
+    );
+  }
   const customer = hub.customers.find((item) => item.customerId === job.customerId);
   const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
   const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;

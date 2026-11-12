@@ -773,6 +773,8 @@ describe("customers", () => {
     assert.equal(searchCustomers([jeff], [main], "555-1234").length, 1);
     assert.equal(searchCustomers([jeff], [main], "main st").length, 1);
     assert.equal(searchCustomers([jeff], [main], "nobody").length, 0);
+    assert.equal(searchCustomers([jeff], [main], "bachrach jeff").length, 1);
+    assert.equal(searchCustomers([jeff], [main], "jeff b").length, 1);
   });
 
   it("builds prefix search keys and snapshots the service location", () => {
