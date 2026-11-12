@@ -15,7 +15,7 @@ import type {
 } from "../domain/types.ts";
 import { buildCustomerSearchKeys } from "../domain/customers.ts";
 import { readMarketId, timeZoneForMarket } from "../domain/markets.ts";
-import { normalizeLegacyAssignment } from "../domain/assignment-legacy.ts";
+import { normalizeLegacyAssignment, type LegacyAssignmentRow } from "../domain/assignment-legacy.ts";
 import { readQuestionnaireFromRecord, readQuestionnaireDraftFromRecord } from "../domain/contractor-questionnaire.ts";
 
 export type DynamoItem = {
@@ -440,7 +440,7 @@ function readAssignment(item: DynamoItem): JobAssignment {
     createdAt: stringField(item, "createdAt"),
     updatedAt: stringField(item, "updatedAt"),
   };
-  return normalizeLegacyAssignment(row);
+  return normalizeLegacyAssignment(row as LegacyAssignmentRow);
 }
 
 function readAvailability(item: DynamoItem): AvailabilityWindow {

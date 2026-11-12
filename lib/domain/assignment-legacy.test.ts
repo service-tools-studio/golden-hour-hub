@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { normalizeLegacyAssignment } from "./assignment-legacy.ts";
+import { normalizeLegacyAssignment, type LegacyAssignmentRow } from "./assignment-legacy.ts";
 import type { JobAssignment } from "./types.ts";
 
 const base: JobAssignment = {
@@ -24,7 +24,7 @@ describe("normalizeLegacyAssignment", () => {
       status: "PENDING_AVAILABILITY",
       pendingCrewSize: 2,
     };
-    const normalized = normalizeLegacyAssignment(row);
+    const normalized = normalizeLegacyAssignment(row as LegacyAssignmentRow);
     assert.equal(normalized.status, "CONFIRMED");
     assert.equal(normalized.confirmedCrewSize, 2);
     assert.equal(normalized.confirmedTotalPayCents, 10000);
@@ -43,7 +43,7 @@ describe("normalizeLegacyAssignment", () => {
       attentionReason: "This conflicts with another confirmed job for Claudia.",
       proposedCrewSize: 2,
     };
-    const normalized = normalizeLegacyAssignment(row);
+    const normalized = normalizeLegacyAssignment(row as LegacyAssignmentRow);
     assert.equal(normalized.status, "CONFIRMED");
     assert.equal(normalized.confirmedCrewSize, 2);
     assert.match(normalized.attentionReason ?? "", /conflicts with another confirmed job/);
