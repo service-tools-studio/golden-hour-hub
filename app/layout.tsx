@@ -4,7 +4,7 @@ import { HubProvider } from "@/components/hub-provider";
 import { JobCleanerBusyDebugProbe } from "@/components/job-cleaner-busy-debug";
 import { previewAuthEnabled } from "@/lib/auth/config";
 import { previewPersistsToDynamo } from "@/lib/auth/preview-dynamo";
-import { getServerSession } from "@/lib/auth/session";
+import { resolveHubAuthSession } from "@/lib/auth/guards";
 import { loadRemoteHub } from "@/lib/hub/bootstrap-remote";
 import { hubSiteMetadata } from "@/lib/site-metadata";
 import "./globals.css";
@@ -23,7 +23,7 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const session = await getServerSession();
+  const session = await resolveHubAuthSession();
   const initialAuth = session ? { role: session.role, cleanerId: session.cleanerId } : null;
   const initialBootstrap = session ? await loadRemoteHub(session) : null;
   return (

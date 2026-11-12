@@ -1,11 +1,11 @@
 import "server-only";
 
 import { unstable_noStore as noStore } from "next/cache";
-import { AuthError } from "@/lib/auth/guards";
+import { AuthError, resolveHubAuthSession } from "@/lib/auth/guards";
 import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { cognitoConfigured, previewAuthEnabled } from "@/lib/auth/config";
 import { previewAuthAllowed } from "@/lib/auth/preview-mode";
-import { getServerSession, type AuthSession } from "@/lib/auth/session";
+import type { AuthSession } from "@/lib/auth/session";
 import { readHubChangeManifest } from "@/lib/data/hub-change-manifest";
 import { loadAdminHubRemainderSlice, loadAdminHubSlices, loadCleanerHubSlices, loadHubPartitions } from "@/lib/data/load-admin-hub";
 import { dynamoConfigured } from "@/lib/data/repository";
@@ -35,16 +35,22 @@ type RemoteAccess =
   | { source: "dynamodb"; role: "CLEANER"; cleanerId: string };
 
 async function remoteHubAccess(sessionOverride?: AuthSession | null): Promise<RemoteAccess> {
-  if (previewAuthEnabled()) {
-    if (dynamoConfigured()) return { source: "dynamodb", role: "ADMIN" };
+  if (previewAuthEnabled() && !dynamoConfigured()) {
     return { source: "preview" };
   }
-  if (!cognitoConfigured()) {
-    return { ok: false, message: "Sign-in is not configured." };
-  }
+
   try {
-    const session = sessionOverride !== undefined ? sessionOverride : await getServerSession();
-    if (!session) return { ok: false, message: "Sign in required." };
+    const session = await resolveHubAuthSession(sessionOverride ?? undefined);
+    if (!session) {
+      if (previewAuthEnabled() && dynamoConfigured()) {
+        return { source: "dynamodb", role: "ADMIN" };
+      }
+      if (!cognitoConfigured()) {
+        if (previewAuthAllowed()) return { source: "preview" };
+        return { ok: false, message: "Sign in required." };
+      }
+      return { ok: false, message: "Sign in required." };
+    }
     if (!dynamoConfigured()) {
       if (previewAuthAllowed()) return { source: "preview" };
       return { ok: false, message: "Hub database is not configured." };

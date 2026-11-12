@@ -2,7 +2,7 @@ import "server-only";
 
 import type { AppRole } from "@/lib/domain/types";
 import type { AuthSession } from "@/lib/auth/session";
-import { refreshServerSessionCookie } from "@/lib/auth/session";
+import { getServerSession, refreshServerSessionCookie } from "@/lib/auth/session";
 import { readPreviewAuthSession } from "@/lib/auth/preview-session";
 
 export class AuthError extends Error {
@@ -15,11 +15,22 @@ export class AuthError extends Error {
   }
 }
 
+/** Cognito session when present; otherwise preview role cookie (same role semantics as sign-in). */
+export async function resolveHubAuthSession(
+  explicit?: AuthSession | null,
+  options: { refreshCognito?: boolean } = {},
+): Promise<AuthSession | null> {
+  if (explicit) return explicit;
+  const cognito = options.refreshCognito
+    ? await refreshServerSessionCookie()
+    : await getServerSession();
+  if (cognito) return cognito;
+  return readPreviewAuthSession();
+}
+
 export async function requireSession(): Promise<AuthSession> {
-  const session = await refreshServerSessionCookie();
+  const session = await resolveHubAuthSession(undefined, { refreshCognito: true });
   if (session) return session;
-  const preview = await readPreviewAuthSession();
-  if (preview) return preview;
   throw new AuthError("UNAUTHORIZED", "Sign in required.");
 }
 

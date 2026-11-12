@@ -141,11 +141,11 @@ export function CleanerHome() {
   const flagged = hub.assignments.filter(
     (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "NEEDS_ATTENTION",
   );
+  const historyAssignmentStatuses = new Set(["CONFIRMED", "PENDING_AVAILABILITY", "NEEDS_ATTENTION"] as const);
   const committed = hub.assignments
     .filter(
       (assignment) =>
-        assignment.cleanerId === cleaner.cleanerId &&
-        (assignment.status === "CONFIRMED" || assignment.status === "PENDING_AVAILABILITY"),
+        assignment.cleanerId === cleaner.cleanerId && historyAssignmentStatuses.has(assignment.status),
     )
     .flatMap((assignment) => {
       const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
