@@ -51,6 +51,38 @@ export function twilioRequestSignatureValid(
   );
 }
 
+/** Must include every URL we pass to Twilio as `StatusCallback` (see `twilioStatusCallbackUrl` in sms.ts). */
+export function statusWebhookSignatureUrls(request: Request): string[] {
+  const urls = new Set<string>();
+  const add = (base: string | undefined) => {
+    if (!base) return;
+    for (const variant of urlSignatureVariants(base)) urls.add(variant);
+  };
+  add(process.env.TWILIO_STATUS_CALLBACK_URL?.trim());
+  add(requestWebhookUrl(request));
+  const appBase = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (appBase) add(`${appBase}/api/twilio/sms/status`);
+  const inboundConfigured = process.env.TWILIO_INBOUND_WEBHOOK_URL?.trim();
+  if (inboundConfigured) {
+    add(inboundConfigured.replace(/\/inbound\/?$/, "/status"));
+  } else {
+    add(twilioInboundWebhookUrl(request).replace(/\/inbound\/?$/, "/status"));
+  }
+  return [...urls];
+}
+
+export function twilioStatusWebhookSignatureValid(
+  authToken: string,
+  signature: string,
+  request: Request,
+  params: Record<string, string>,
+): boolean {
+  if (!signature) return false;
+  return statusWebhookSignatureUrls(request).some((url) =>
+    validateTwilioSignature(authToken, signature, url, params),
+  );
+}
+
 export function formDataToParamRecord(form: FormData): Record<string, string> {
   const params: Record<string, string> = {};
   form.forEach((value, key) => {

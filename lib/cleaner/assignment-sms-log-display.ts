@@ -22,7 +22,10 @@ export function assignmentSmsLogDelivery(log: AssignmentSmsLog): {
 } {
   switch (log.status) {
     case "delivered":
-      return { received: "Yes", receivedAt: log.updatedAt };
+      if (!log.deliveryConfirmedAt) {
+        return { received: "Pending", receivedAt: null };
+      }
+      return { received: "Yes", receivedAt: log.deliveryConfirmedAt };
     case "mock":
       return { received: "—", receivedAt: null };
     case "failed":
@@ -63,4 +66,10 @@ export function mapTwilioMessageStatus(raw: string | undefined): AssignmentSmsDe
   if (status === "undelivered") return "undelivered";
   if (status === "failed" || status === "canceled") return "failed";
   return "unknown";
+}
+
+/** When a message is first logged or refreshed via API poll — not delivery webhooks. */
+export function mapTwilioMessageStatusWithoutDelivery(raw: string | undefined): AssignmentSmsDeliveryStatus {
+  const status = mapTwilioMessageStatus(raw);
+  return status === "delivered" ? "sent" : status;
 }

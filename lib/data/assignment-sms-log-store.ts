@@ -106,6 +106,8 @@ function readAssignmentSmsLog(item: DynamoItem): AssignmentSmsLog {
     twilioMessageSid: typeof item.twilioMessageSid === "string" ? item.twilioMessageSid : undefined,
     status: item.status as AssignmentSmsLog["status"],
     errorMessage: typeof item.errorMessage === "string" ? item.errorMessage : undefined,
+    deliveryConfirmedAt:
+      typeof item.deliveryConfirmedAt === "string" ? item.deliveryConfirmedAt : undefined,
     sentAt: String(item.sentAt),
     updatedAt: String(item.updatedAt),
   };
@@ -145,6 +147,7 @@ export async function updateAssignmentSmsLogByTwilioSid(input: {
   status: AssignmentSmsLog["status"];
   errorMessage?: string;
   updatedAt: string;
+  deliveryConfirmedAt?: string;
 }): Promise<boolean> {
   if (!dynamoConfigured()) return false;
   const found = await doc().send(
@@ -164,13 +167,22 @@ export async function updateAssignmentSmsLogByTwilioSid(input: {
     new UpdateCommand({
       TableName: tableName(),
       Key: { pk: item.pk, sk: item.sk },
-      UpdateExpression: "SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage",
+      UpdateExpression: input.deliveryConfirmedAt
+        ? "SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage, deliveryConfirmedAt = :deliveryConfirmedAt"
+        : "SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage",
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: {
-        ":status": input.status,
-        ":updatedAt": input.updatedAt,
-        ":errorMessage": input.errorMessage ?? null,
-      },
+      ExpressionAttributeValues: input.deliveryConfirmedAt
+        ? {
+            ":status": input.status,
+            ":updatedAt": input.updatedAt,
+            ":errorMessage": input.errorMessage ?? null,
+            ":deliveryConfirmedAt": input.deliveryConfirmedAt,
+          }
+        : {
+            ":status": input.status,
+            ":updatedAt": input.updatedAt,
+            ":errorMessage": input.errorMessage ?? null,
+          },
     }),
   );
   return true;
@@ -213,6 +225,7 @@ export async function patchAssignmentSmsLog(
     status: AssignmentSmsLog["status"];
     updatedAt: string;
     errorMessage?: string;
+    deliveryConfirmedAt?: string;
   },
 ): Promise<void> {
   if (!dynamoConfigured()) return;
@@ -223,13 +236,22 @@ export async function patchAssignmentSmsLog(
         pk: assignmentPk(log.assignmentId),
         sk: `SMS#${log.sentAt}#${log.smsLogId}`,
       },
-      UpdateExpression: "SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage",
+      UpdateExpression: patch.deliveryConfirmedAt
+        ? "SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage, deliveryConfirmedAt = :deliveryConfirmedAt"
+        : "SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage",
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: {
-        ":status": patch.status,
-        ":updatedAt": patch.updatedAt,
-        ":errorMessage": patch.errorMessage ?? null,
-      },
+      ExpressionAttributeValues: patch.deliveryConfirmedAt
+        ? {
+            ":status": patch.status,
+            ":updatedAt": patch.updatedAt,
+            ":errorMessage": patch.errorMessage ?? null,
+            ":deliveryConfirmedAt": patch.deliveryConfirmedAt,
+          }
+        : {
+            ":status": patch.status,
+            ":updatedAt": patch.updatedAt,
+            ":errorMessage": patch.errorMessage ?? null,
+          },
     }),
   );
 }

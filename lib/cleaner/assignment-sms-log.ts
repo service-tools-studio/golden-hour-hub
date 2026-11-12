@@ -4,13 +4,14 @@ import type { AssignmentSmsDeliveryStatus, AssignmentSmsKind, AssignmentSmsLog }
 import { putAssignmentSmsLog, updateAssignmentSmsLogByTwilioSid, patchAssignmentSmsLog } from "../data/assignment-sms-log-store.ts";
 import type { SmsSendResult } from "../services/sms-types.ts";
 import { lookupTwilioMessageStatus } from "../services/sms.ts";
-import { mapTwilioMessageStatus } from "./assignment-sms-log-display.ts";
+import { mapTwilioMessageStatus, mapTwilioMessageStatusWithoutDelivery } from "./assignment-sms-log-display.ts";
 
 export {
   assignmentSmsKindLabel,
   assignmentSmsLogDelivery,
   assignmentSmsStatusLabel,
   mapTwilioMessageStatus,
+  mapTwilioMessageStatusWithoutDelivery,
 } from "./assignment-sms-log-display.ts";
 
 function bodyPreview(body: string): string {
@@ -41,7 +42,7 @@ export async function recordAssignmentSmsLog(input: {
       ? "mock"
       : input.errorMessage
         ? "failed"
-        : mapTwilioMessageStatus(input.twilioStatus);
+        : mapTwilioMessageStatusWithoutDelivery(input.twilioStatus);
   if (provider === "twilio" && input.result.confirmed && status !== "delivered") {
     status = status === "unknown" ? "sent" : status;
   }
@@ -78,7 +79,12 @@ const TERMINAL_SMS_STATUSES = new Set<AssignmentSmsDeliveryStatus>([
 export async function syncAssignmentSmsLogsWithTwilio(logs: AssignmentSmsLog[]): Promise<AssignmentSmsLog[]> {
   const next: AssignmentSmsLog[] = [];
   for (const log of logs) {
-    if (log.provider !== "twilio" || !log.twilioMessageSid || TERMINAL_SMS_STATUSES.has(log.status)) {
+    if (log.provider !== "twilio" || !log.twilioMessageSid) {
+      next.push(log);
+      continue;
+    }
+    const deliverySettled = log.status === "delivered" && Boolean(log.deliveryConfirmedAt);
+    if (deliverySettled || (TERMINAL_SMS_STATUSES.has(log.status) && log.status !== "delivered")) {
       next.push(log);
       continue;
     }
@@ -87,21 +93,29 @@ export async function syncAssignmentSmsLogsWithTwilio(logs: AssignmentSmsLog[]):
       next.push(log);
       continue;
     }
-    const status = mapTwilioMessageStatus(remote.status);
-    if (status === log.status) {
+    const polled = mapTwilioMessageStatus(remote.status);
+    const status = polled === "delivered" ? "delivered" : mapTwilioMessageStatusWithoutDelivery(remote.status);
+    const deliveryConfirmedAt =
+      status === "delivered" ? log.deliveryConfirmedAt ?? new Date().toISOString() : undefined;
+    if (
+      status === log.status &&
+      (status !== "delivered" || log.deliveryConfirmedAt === deliveryConfirmedAt)
+    ) {
       next.push(log);
       continue;
     }
-    const updatedAt = new Date().toISOString();
+    const updatedAt = deliveryConfirmedAt ?? new Date().toISOString();
     await patchAssignmentSmsLog(log, {
       status,
       updatedAt,
       errorMessage: remote.errorMessage,
+      deliveryConfirmedAt,
     });
     next.push({
       ...log,
       status,
       updatedAt,
+      deliveryConfirmedAt: deliveryConfirmedAt ?? log.deliveryConfirmedAt,
       errorMessage: remote.errorMessage ?? log.errorMessage,
     });
   }
@@ -113,11 +127,13 @@ export async function applyTwilioDeliveryStatusUpdate(input: {
   twilioStatus: string;
   errorMessage?: string;
 }): Promise<boolean> {
+  const updatedAt = new Date().toISOString();
   const status = mapTwilioMessageStatus(input.twilioStatus);
   return updateAssignmentSmsLogByTwilioSid({
     twilioMessageSid: input.twilioMessageSid,
     status,
     errorMessage: input.errorMessage,
-    updatedAt: new Date().toISOString(),
+    updatedAt,
+    deliveryConfirmedAt: status === "delivered" ? updatedAt : undefined,
   });
 }

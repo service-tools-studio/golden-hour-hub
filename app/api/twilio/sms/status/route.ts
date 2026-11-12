@@ -2,17 +2,11 @@ import { NextResponse } from "next/server";
 import { applyTwilioDeliveryStatusUpdate } from "@/lib/cleaner/assignment-sms-log";
 import {
   formDataToParamRecord,
-  twilioInboundWebhookUrl,
-  validateTwilioSignature,
+  statusWebhookSignatureUrls,
+  twilioStatusWebhookSignatureValid,
 } from "@/lib/services/twilio-inbound";
 
 export const dynamic = "force-dynamic";
-
-function statusCallbackUrl(request: Request): string {
-  const configured = process.env.TWILIO_STATUS_CALLBACK_URL?.trim();
-  if (configured) return configured;
-  return twilioInboundWebhookUrl(request).replace(/\/inbound\/?$/, "/status");
-}
 
 export async function POST(request: Request) {
   const form = await request.formData();
@@ -21,11 +15,14 @@ export async function POST(request: Request) {
   const signature = request.headers.get("x-twilio-signature") ?? "";
 
   if (authToken) {
-    const url = statusCallbackUrl(request);
-    if (!validateTwilioSignature(authToken, signature, url, params)) {
-      console.error("[twilio:status] invalid signature");
+    if (!twilioStatusWebhookSignatureValid(authToken, signature, request, params)) {
+      console.error("[twilio:status] invalid signature", {
+        urls: statusWebhookSignatureUrls(request),
+      });
       return new NextResponse("Forbidden", { status: 403 });
     }
+  } else {
+    console.warn("[twilio:status] TWILIO_AUTH_TOKEN unset; skipping signature validation");
   }
 
   const messageSid = params.MessageSid ?? params.SmsSid ?? "";
@@ -43,6 +40,8 @@ export async function POST(request: Request) {
     });
     if (updated) {
       console.info(`[twilio:status] ${messageSid} ${messageStatus}`);
+    } else {
+      console.warn(`[twilio:status] no log row for sid ${messageSid} (${messageStatus})`);
     }
   } catch (error) {
     console.error("[twilio:status] update failed", error);

@@ -332,6 +332,8 @@ export type AssignmentSmsLog = {
   twilioMessageSid?: string;
   status: AssignmentSmsDeliveryStatus;
   errorMessage?: string;
+  /** Set only from the Twilio status callback when the message is delivered. */
+  deliveryConfirmedAt?: string;
   sentAt: string;
   updatedAt: string;
 };
