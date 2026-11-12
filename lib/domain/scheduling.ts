@@ -156,7 +156,7 @@ export function assignmentCountsAsUpcoming(
   today: string,
   nowMs: number,
 ): boolean {
-  if (assignment.status !== "CONFIRMED") return false;
+  if (assignment.status !== "CONFIRMED" && assignment.status !== "PENDING_AVAILABILITY") return false;
   if (job.status !== "SCHEDULED") return false;
   const clock = assignmentCleaningClock(job, assignment);
   if (clock.date < today) return false;
@@ -165,6 +165,23 @@ export function assignmentCountsAsUpcoming(
   const endMs = jobCleaningEndMs(clock, []);
   if (!Number.isFinite(endMs)) return true;
   return nowMs < endMs;
+}
+
+/** Past cleanings for cleaner job history (excludes future and same-day still on the roster). */
+export function assignmentBelongsInCleanerJobHistory(
+  assignment: Pick<JobAssignment, "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes">,
+  job: Pick<JobCleaningClock, "jobId" | "status">,
+  today: string,
+  nowMs: number,
+): boolean {
+  if (job.status !== "SCHEDULED") return false;
+  if (assignment.serviceDate > today) return false;
+  if (assignment.status === "NEEDS_ATTENTION" || assignment.status === "PENDING_AVAILABILITY") {
+    return assignment.serviceDate < today;
+  }
+  if (assignment.status !== "CONFIRMED") return false;
+  if (assignment.serviceDate < today) return true;
+  return !assignmentCountsAsUpcoming(assignment, job, today, nowMs);
 }
 
 /** Outstanding invite the cleaner can still accept or decline. */

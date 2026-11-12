@@ -36,6 +36,7 @@ import {
   assignmentCrewStepperMax,
   invitationAttendanceBounds,
   claimHeadcount,
+  assignmentBelongsInCleanerJobHistory,
   assignmentCountsAsUpcoming,
   cleanerInvitationIsExpired,
   invitedAssignmentIsActionable,
@@ -101,6 +102,19 @@ describe("jobCountsAsUpcoming", () => {
     assert.equal(jobCountsAsUpcoming(job, [], today, end - 1), true);
     assert.equal(jobCountsAsUpcoming(job, [], today, end), false);
     assert.equal(jobCountsAsUpcoming(job, [], today, end + 60_000), false);
+  });
+
+  it("treats pending availability like confirmed for upcoming", () => {
+    const job = { jobId: "job-1", status: "SCHEDULED" as const };
+    const assignment = {
+      status: "PENDING_AVAILABILITY" as const,
+      serviceDate: "2026-11-13",
+      arrivalWindowStart: "09:15",
+      arrivalWindowEnd: "09:15",
+      expectedDurationMinutes: undefined,
+    };
+    assert.equal(assignmentCountsAsUpcoming(assignment, job, "2026-11-12", Date.now()), true);
+    assert.equal(assignmentBelongsInCleanerJobHistory(assignment, job, "2026-11-12", Date.now()), false);
   });
 
   it("drops a confirmed assignment after its block ends", () => {

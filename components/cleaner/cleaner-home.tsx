@@ -12,6 +12,7 @@ import {
   calculateBlockedRange,
   calculateRemainingHeadcount,
   cleanerInvitationIsExpired,
+  assignmentBelongsInCleanerJobHistory,
   assignmentIsCleanerHomeCommitted,
   invitedAssignmentIsActionable,
   isWithinRange,
@@ -39,15 +40,6 @@ import {
   formatArrival,
   formatLongDate,
 } from "@/lib/format";
-
-function assignmentUpcomingClock(
-  assignment: JobAssignment,
-): Pick<JobAssignment, "status" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "expectedDurationMinutes"> {
-  if (assignment.status === "PENDING_AVAILABILITY") {
-    return { ...assignment, status: "CONFIRMED" };
-  }
-  return assignment;
-}
 
 const AVAILABILITY_MISMATCH_MESSAGE =
   "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
@@ -163,16 +155,10 @@ export function CleanerHome() {
   const upcoming = active.filter(
     (item) =>
       !happening.includes(item) &&
-      assignmentCountsAsUpcoming(assignmentUpcomingClock(item.assignment), item.job, hub.today, now),
+      assignmentCountsAsUpcoming(item.assignment, item.job, hub.today, now),
   );
-  const upcomingIds = new Set(upcoming.map((item) => item.assignment.assignmentId));
-  const happeningIds = new Set(happening.map((item) => item.assignment.assignmentId));
   const history = committed
-    .filter(
-      (item) =>
-        !upcomingIds.has(item.assignment.assignmentId) &&
-        !happeningIds.has(item.assignment.assignmentId),
-    )
+    .filter((item) => assignmentBelongsInCleanerJobHistory(item.assignment, item.job, hub.today, now))
     .sort(
       (a, b) =>
         b.assignment.serviceDate.localeCompare(a.assignment.serviceDate) ||
