@@ -263,7 +263,12 @@ type ScheduleDayItem = {
   jobId: string;
   href: string;
   title: string;
-  subtitle: string;
+  /** Unstaffed row message (e.g. no cleaner assigned). */
+  subtitle?: string;
+  serviceTypeLabel?: string;
+  staffNames?: string;
+  /** Extra status after service line (e.g. invitation pending). */
+  statusNote?: string;
   location?: string;
   startMin: number;
   endMin: number;
@@ -308,8 +313,11 @@ function DayView({
   const scheduled = useDatesWithScheduledJobs(jobs);
   const monthStart = firstOfMonth(date);
   useEffect(() => {
+    if (!hub.ready) return;
     void hub.ensureScheduleJobsForMonth(monthStart);
-  }, [hub.ensureScheduleJobsForMonth, monthStart]);
+    void hub.ensureScheduleJobsForMonth(shiftMonth(monthStart, -1));
+    void hub.ensureScheduleJobsForMonth(shiftMonth(monthStart, 1));
+  }, [hub.ready, hub.ensureScheduleJobsForMonth, monthStart]);
 
   function shiftSelectedMonth(delta: number) {
     const dayNum = Number(date.slice(8, 10));
@@ -488,7 +496,22 @@ function ScheduleDayRow({ item }: { item: ScheduleDayItem }) {
       >
         <div className="min-w-0 flex-1">
           <span className="block truncate text-base font-semibold text-ink">{item.title}</span>
-          {item.subtitle ? <span className="mt-0.5 block truncate text-sm text-ink/70">{item.subtitle}</span> : null}
+          {item.serviceTypeLabel ? (
+            <span className="mt-0.5 block truncate text-sm text-ink/70">
+              <span>{item.serviceTypeLabel}</span>
+              {item.staffNames ? (
+                <>
+                  <span className="text-ink/55"> : </span>
+                  <span className="text-xs font-normal text-ink/55">{item.staffNames}</span>
+                </>
+              ) : null}
+              {item.statusNote ? (
+                <span className="text-xs font-normal text-ink/55"> · {item.statusNote}</span>
+              ) : null}
+            </span>
+          ) : item.subtitle ? (
+            <span className="mt-0.5 block truncate text-sm text-ink/70">{item.subtitle}</span>
+          ) : null}
           {item.location ? (
             <span className="mt-1 flex items-start gap-1 text-sm text-ink/55">
               <PinIcon />
@@ -655,10 +678,10 @@ function buildScheduleDayList(input: {
   for (const [jobId, bucket] of buckets) {
     const { job, staffed } = bucket;
     const href = `/admin/jobs/${jobId}?from=schedule`;
-    const title = job.snapshot.customerDisplayName;
     const location = job.snapshot.streetAddress;
 
     if (staffed.length === 0) {
+      const title = job.snapshot.customerDisplayName;
       const series = job.seriesId ? input.series.find((item) => item.seriesId === job.seriesId) : undefined;
       const arrivalStart = job.arrivalWindowStart ?? series?.defaultArrivalWindowStart;
       const arrivalEnd = job.arrivalWindowEnd ?? series?.defaultArrivalWindowEnd;
@@ -751,20 +774,23 @@ function buildScheduleDayList(input: {
     }
 
     const allConfirmed = staffed.every(({ assignment }) => assignment.status === "CONFIRMED");
-    const subtitle = allConfirmed
-      ? serviceLabel(job.serviceType)
-      : staffed
-          .map(({ assignment, cleaner }) => {
-            const who = personName(cleaner.firstName, cleaner.lastName);
-            return assignment.status === "CONFIRMED" ? who : `${who} · ${pendingLabel(assignment)}`;
-          })
-          .join(" · ");
+    const statusNote = allConfirmed
+      ? undefined
+      : [
+          ...new Set(
+            staffed
+              .filter(({ assignment }) => assignment.status !== "CONFIRMED")
+              .map(({ assignment }) => pendingLabel(assignment)),
+          ),
+        ].join(" · ") || undefined;
 
     const item: ScheduleDayItem = {
       jobId,
       href,
-      title,
-      subtitle,
+      title: job.snapshot.customerDisplayName,
+      serviceTypeLabel: serviceLabel(job.serviceType),
+      staffNames: scheduleDayStaffNames(staffed),
+      statusNote,
       location,
       startMin: hasStart ? startMin : 0,
       endMin: hasStart ? endMin : 0,
@@ -778,6 +804,14 @@ function buildScheduleDayList(input: {
   timed.sort((a, b) => a.startMin - b.startMin || a.title.localeCompare(b.title));
   untimed.sort((a, b) => a.title.localeCompare(b.title));
   return { timed, untimed };
+}
+
+function scheduleDayStaffNames(staffed: Array<{ cleaner: CleanerProfile }>): string | undefined {
+  const names = staffed
+    .map(({ cleaner }) => cleaner.firstName.trim())
+    .filter((name) => name.length > 0);
+  if (names.length === 0) return undefined;
+  return names.join(" & ");
 }
 
 function pendingLabel(assignment: JobAssignment): string {
@@ -845,6 +879,13 @@ function MonthView({
   const focus = firstOfMonth(date);
   const months = [-2, -1, 0, 1, 2, 3].map((delta) => shiftMonth(focus, delta));
 
+  useEffect(() => {
+    if (!hub.ready) return;
+    for (const delta of [-2, -1, 0, 1, 2, 3]) {
+      void hub.ensureScheduleJobsForMonth(shiftMonth(focus, delta));
+    }
+  }, [hub.ready, focus, hub.ensureScheduleJobsForMonth]);
+
   useLayoutEffect(() => {
     const node = scroller.current;
     const target = node?.querySelector<HTMLElement>(`[data-month="${date.slice(0, 7)}"]`);
@@ -854,7 +895,7 @@ function MonthView({
 
   useEffect(() => {
     const node = scroller.current;
-    if (!node) return;
+    if (!node || !hub.ready) return;
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -868,7 +909,7 @@ function MonthView({
     const sections = node.querySelectorAll("[data-month]");
     for (const section of sections) observer.observe(section);
     return () => observer.disconnect();
-  }, [focus, hub.ensureScheduleJobsForMonth]);
+  }, [focus, hub.ready, hub.ensureScheduleJobsForMonth]);
 
   return (
     <div className="rounded-3xl bg-white px-2 pb-4">

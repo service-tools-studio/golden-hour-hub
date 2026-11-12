@@ -120,8 +120,10 @@ import { reconcileScheduleConflictWarnings } from "@/lib/domain/scheduling";
 import {
   addDays,
   firstOfMonth,
+  lastDateOfMonth,
   mondayOf,
   scheduleLookbackRangeForMonth,
+  scheduleLookbackStart,
   todayInBusinessZone,
 } from "@/lib/domain/time";
 import { emptyHub, type HubData } from "@/lib/mock/seed";
@@ -733,13 +735,27 @@ export function HubProvider({
   }, [state]);
 
   const ensureScheduleJobsForMonth = useCallback(async (monthStart: string) => {
-    if (sourceRef.current !== "dynamodb" || stateRef.current?.role !== "ADMIN") return;
+    if (
+      !bootstrappedRef.current ||
+      sourceRef.current !== "dynamodb" ||
+      stateRef.current?.role !== "ADMIN"
+    ) {
+      return;
+    }
     const monthKey = monthStart.slice(0, 7);
     if (scheduleLookbackMonthsRef.current.has(monthKey)) return;
     const today = todayInBusinessZone();
-    const range = scheduleLookbackRangeForMonth(firstOfMonth(monthStart), today);
+    const monthFirst = firstOfMonth(monthStart);
+    const range = scheduleLookbackRangeForMonth(monthFirst, today);
     if (!range) {
-      scheduleLookbackMonthsRef.current.add(monthKey);
+      const lookbackStart = scheduleLookbackStart(today);
+      const yesterday = addDays(today, -1);
+      const monthEnd = lastDateOfMonth(monthFirst);
+      const pastLookbackPossible =
+        monthEnd >= lookbackStart && monthFirst <= yesterday;
+      if (!pastLookbackPossible) {
+        scheduleLookbackMonthsRef.current.add(monthKey);
+      }
       return;
     }
     const inflight = scheduleLookbackInflightRef.current.get(monthKey);

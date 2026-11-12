@@ -1,7 +1,14 @@
 import "server-only";
 
 import { RECURRING_HORIZON_DAYS } from "../domain/recurrence.ts";
-import { addDays, eachDate, editableAvailabilityHorizonEnd, mondayOf, todayInBusinessZone } from "../domain/time.ts";
+import {
+  addDays,
+  eachDate,
+  editableAvailabilityHorizonEnd,
+  mondayOf,
+  scheduleLookbackStart,
+  todayInBusinessZone,
+} from "../domain/time.ts";
 import { emptyHub, type HubData } from "../mock/seed.ts";
 import type { DynamoItem } from "./items.ts";
 import { itemsToHub } from "./items.ts";
@@ -88,6 +95,7 @@ async function fetchAdminHubItems(options: {
   const today = todayInBusinessZone();
   const horizonEnd = addDays(today, RECURRING_HORIZON_DAYS);
   const availabilityStart = mondayOf(today);
+  const jobRangeStart = scheduleLookbackStart(today);
 
   const [cleanersActive, cleanersInactive, listedCustomers, jobProfilesInHorizon] = await Promise.all([
     queryScheduleIndex("CLEANER_STATUS#ACTIVE"),
@@ -95,7 +103,7 @@ async function fetchAdminHubItems(options: {
     options.loadSeries
       ? queryAllCustomerPartitionItems()
       : queryScheduleIndex("CUSTOMER#ALL"),
-    queryJobProfilesInDateRange(today, options.jobHorizonEnd),
+    queryJobProfilesInDateRange(jobRangeStart, options.jobHorizonEnd),
   ]);
   const customerPropertyRows =
     options.loadSeries || listedCustomers.length > 0
