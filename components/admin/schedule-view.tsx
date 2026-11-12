@@ -6,6 +6,7 @@ import { AdminMarketTabs, useAdminMarket } from "@/components/admin/admin-market
 import { useHub } from "@/components/hub-provider";
 import { PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { personName } from "@/lib/domain/cleaners";
+import { isUnsetArrival } from "@/lib/domain/arrival";
 import { hasKnownDurationMinutes } from "@/lib/domain/duration";
 import { calculateBlockedRange } from "@/lib/domain/scheduling";
 import { minutesFromTime } from "@/lib/domain/time";
@@ -496,10 +497,12 @@ function ScheduleDayRow({ item }: { item: ScheduleDayItem }) {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end justify-center text-sm leading-tight text-ink">
-          {item.timed && startClock && endClock ? (
+          {item.timed && startClock ? (
             <>
               <span className="font-medium">{startClock}</span>
-              <span className="text-ink/45">{endClock}</span>
+              {endClock && item.endMin > item.startMin ? (
+                <span className="text-ink/45">{endClock}</span>
+              ) : null}
             </>
           ) : (
             <span className="max-w-[5.5rem] text-right text-ink/55">Time not set</span>
@@ -660,16 +663,21 @@ function buildScheduleDayList(input: {
       const arrivalStart = job.arrivalWindowStart ?? series?.defaultArrivalWindowStart;
       const arrivalEnd = job.arrivalWindowEnd ?? series?.defaultArrivalWindowEnd;
       const visitDuration = job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes;
+      const hasArrival = Boolean(arrivalStart && arrivalEnd && !isUnsetArrival(arrivalStart, arrivalEnd));
       const span =
-        arrivalStart && arrivalEnd && hasKnownDurationMinutes(visitDuration)
+        hasArrival && hasKnownDurationMinutes(visitDuration)
           ? calculateBlockedRange({
               date: job.date,
-              arrivalWindowStart: arrivalStart,
-              arrivalWindowEnd: arrivalEnd,
-              expectedDurationMinutes: visitDuration,
+              arrivalWindowStart: arrivalStart!,
+              arrivalWindowEnd: arrivalEnd!,
+              expectedDurationMinutes: visitDuration!,
             }).spans.find((item) => item.date === input.date)
-          : arrivalStart
-            ? { date: job.date, startMin: minutesFromTime(arrivalStart), endMin: minutesFromTime(arrivalStart) }
+          : hasArrival
+            ? {
+                date: job.date,
+                startMin: minutesFromTime(arrivalStart!),
+                endMin: minutesFromTime(arrivalEnd!),
+              }
             : undefined;
       const item: ScheduleDayItem = {
         jobId,
@@ -680,7 +688,7 @@ function buildScheduleDayList(input: {
         startMin: span?.startMin ?? 0,
         endMin: span?.endMin ?? 0,
         segments: ["unassigned"],
-        timed: Boolean(span && hasKnownDurationMinutes(visitDuration) && span.endMin > span.startMin),
+        timed: Boolean(span),
       };
       if (item.timed) timed.push(item);
       else untimed.push(item);
@@ -695,28 +703,51 @@ function buildScheduleDayList(input: {
     const segments = staffed.map(({ assignment }) => assignmentSegmentTone(assignment));
     let startMin = 24 * 60;
     let endMin = 0;
-    let allTimed = true;
+    let hasStart = false;
     for (const { assignment } of staffed) {
-      if (!assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) {
-        allTimed = false;
-        break;
+      if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) continue;
+      if (!assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) continue;
+      const arrivalStart = minutesFromTime(assignment.arrivalWindowStart);
+      hasStart = true;
+      startMin = Math.min(startMin, arrivalStart);
+      if (hasKnownDurationMinutes(assignment.expectedDurationMinutes)) {
+        const span = calculateBlockedRange({
+          date: job.date,
+          arrivalWindowStart: assignment.arrivalWindowStart,
+          arrivalWindowEnd: assignment.arrivalWindowEnd,
+          expectedDurationMinutes: assignment.expectedDurationMinutes,
+        }).spans.find((item) => item.date === input.date);
+        if (span) {
+          startMin = Math.min(startMin, span.startMin);
+          endMin = Math.max(endMin, span.endMin);
+        }
+      } else {
+        endMin = Math.max(endMin, minutesFromTime(assignment.arrivalWindowEnd));
       }
-      if (!hasKnownDurationMinutes(assignment.expectedDurationMinutes)) {
-        allTimed = false;
-        break;
+    }
+    if (!hasStart) {
+      const series = job.seriesId ? input.series.find((item) => item.seriesId === job.seriesId) : undefined;
+      const arrivalStart = job.arrivalWindowStart ?? series?.defaultArrivalWindowStart;
+      const arrivalEnd = job.arrivalWindowEnd ?? series?.defaultArrivalWindowEnd;
+      if (arrivalStart && arrivalEnd && !isUnsetArrival(arrivalStart, arrivalEnd)) {
+        hasStart = true;
+        startMin = minutesFromTime(arrivalStart);
+        const visitDuration = job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes;
+        if (hasKnownDurationMinutes(visitDuration)) {
+          const span = calculateBlockedRange({
+            date: job.date,
+            arrivalWindowStart: arrivalStart,
+            arrivalWindowEnd: arrivalEnd,
+            expectedDurationMinutes: visitDuration!,
+          }).spans.find((item) => item.date === input.date);
+          if (span) {
+            startMin = span.startMin;
+            endMin = span.endMin;
+          }
+        } else {
+          endMin = minutesFromTime(arrivalEnd);
+        }
       }
-      const span = calculateBlockedRange({
-        date: job.date,
-        arrivalWindowStart: assignment.arrivalWindowStart,
-        arrivalWindowEnd: assignment.arrivalWindowEnd,
-        expectedDurationMinutes: assignment.expectedDurationMinutes,
-      }).spans.find((item) => item.date === input.date);
-      if (!span || span.endMin <= span.startMin) {
-        allTimed = false;
-        break;
-      }
-      startMin = Math.min(startMin, span.startMin);
-      endMin = Math.max(endMin, span.endMin);
     }
 
     const allConfirmed = staffed.every(({ assignment }) => assignment.status === "CONFIRMED");
@@ -735,10 +766,10 @@ function buildScheduleDayList(input: {
       title,
       subtitle,
       location,
-      startMin: allTimed ? startMin : 0,
-      endMin: allTimed ? endMin : 0,
+      startMin: hasStart ? startMin : 0,
+      endMin: hasStart ? endMin : 0,
       segments,
-      timed: allTimed,
+      timed: hasStart,
     };
     if (item.timed) timed.push(item);
     else untimed.push(item);
