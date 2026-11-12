@@ -921,17 +921,25 @@ function ScheduleFacts({
     return (
       <p className={`mt-2 text-sm ${muted ? "text-ink/40" : "text-ink/65"}`}>
         <span className="font-semibold text-ink/80">{facts.arrive}</span>
-        <span className="text-ink/35"> · </span>
-        {facts.length}
-        <span className="text-ink/35"> · </span>
-        ends {facts.ends}
+        {facts.length ? (
+          <>
+            <span className="text-ink/35"> · </span>
+            {facts.length}
+          </>
+        ) : null}
+        {facts.ends ? (
+          <>
+            <span className="text-ink/35"> · </span>
+            ends {facts.ends}
+          </>
+        ) : null}
       </p>
     );
   }
   const items = [
     ["Start", facts.arrive],
-    ["Est. on site", facts.length],
-    ["Est. end", facts.ends],
+    ...(facts.length ? ([["Est. on site", facts.length]] as const) : []),
+    ...(facts.ends ? ([["Est. end", facts.ends]] as const) : []),
   ] as const;
   return (
     <div className={`mt-3 flex flex-wrap gap-x-6 gap-y-2 rounded-2xl px-3 py-2.5 ${muted ? "bg-white/50" : "bg-cream"}`}>

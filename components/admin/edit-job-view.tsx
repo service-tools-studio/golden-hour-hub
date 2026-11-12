@@ -649,15 +649,11 @@ export function EditJobView({
                     : `${cleaner.firstName} has not submitted this week yet. Assigning directly confirms ${cleaner.firstName} on this cleaning now; if their availability does not fit when they submit it, the assignment will show as needs attention.`
                 }
                 inviteLabel={
-                  showSettledNotificationActions
+                  showSettledNotificationActions || followUpReady
                     ? "Resend invite"
-                    : followUpReady
-                      ? "Send follow up"
-                      : "Save and send invite"
+                    : "Save and send invite"
                 }
-                onInvite={() =>
-                  followUpReady && !showSettledNotificationActions ? sendInviteFollowUp() : submit("INVITE")
-                }
+                onInvite={() => submit("INVITE")}
                 onSave={submit}
               />
             ) : null}

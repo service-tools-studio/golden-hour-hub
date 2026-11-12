@@ -272,7 +272,7 @@ export function formatScheduleFacts(input: {
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
   expectedDurationMinutes?: number;
-}): { arrive: string; length: string; ends: string } {
+}): { arrive: string; length: string | null; ends: string | null } {
   const duration =
     input.expectedDurationMinutes !== undefined && input.expectedDurationMinutes > 0
       ? input.expectedDurationMinutes
@@ -280,15 +280,15 @@ export function formatScheduleFacts(input: {
   if (isUnsetArrival(input.arrivalWindowStart, input.arrivalWindowEnd)) {
     return {
       arrive: VISIT_START_TIME_TBD_LABEL,
-      length: duration ? compactDuration(duration) : "—",
-      ends: "—",
+      length: duration ? compactDuration(duration) : null,
+      ends: null,
     };
   }
   if (duration === undefined) {
     return {
       arrive: formatTimeLabel(input.arrivalWindowStart!),
-      length: "—",
-      ends: "—",
+      length: null,
+      ends: null,
     };
   }
   const blocked = calculateBlockedRange({
