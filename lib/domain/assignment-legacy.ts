@@ -48,8 +48,25 @@ function promoteConflictNeedsAttention(assignment: JobAssignment): JobAssignment
   };
 }
 
+function needsConflictPromotion(assignment: Pick<JobAssignment, "status" | "attentionReason">): boolean {
+  return (
+    assignment.status === "NEEDS_ATTENTION" &&
+    (isConfirmedScheduleConflictReason(assignment.attentionReason) ||
+      isUncertainSameDayScheduleReason(assignment.attentionReason))
+  );
+}
+
 /** Map legacy stored rows to current in-memory assignment shape. */
 export function normalizeLegacyAssignment(assignment: LegacyAssignmentRow): JobAssignment {
+  if (
+    assignment.status !== LEGACY_PENDING_AVAILABILITY_STATUS &&
+    assignment.pendingCrewSize === undefined &&
+    assignmentStatusFromStore(assignment.status) === assignment.status &&
+    !needsConflictPromotion(assignment as JobAssignment)
+  ) {
+    return assignment as JobAssignment;
+  }
+
   let next: JobAssignment;
   if (assignment.status === LEGACY_PENDING_AVAILABILITY_STATUS) {
     const crewSize =

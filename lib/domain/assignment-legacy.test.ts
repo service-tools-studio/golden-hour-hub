@@ -33,7 +33,7 @@ describe("normalizeLegacyAssignment", () => {
 
   it("leaves current statuses unchanged", () => {
     const confirmed = { ...base, status: "CONFIRMED" as const, confirmedCrewSize: 1 };
-    assert.equal(normalizeLegacyAssignment(confirmed), confirmed);
+    assert.deepEqual(normalizeLegacyAssignment(confirmed), confirmed);
   });
 
   it("promotes legacy conflict NEEDS_ATTENTION to confirmed", () => {
