@@ -59,7 +59,7 @@ export type CleaningValues = {
   serviceType: ServiceType;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   headcountNeeded: number;
   specialInstructions: string;
   cleanerIds: string[];
@@ -336,7 +336,7 @@ export function CleaningForm({
       serviceType,
       arrivalWindowStart: arrivalStartTbd ? undefined : arrivalStart,
       arrivalWindowEnd: arrivalStartTbd ? undefined : arrivalEnd,
-      expectedDurationMinutes: duration ?? 0,
+      expectedDurationMinutes: duration ?? undefined,
       headcountNeeded: headcount,
       specialInstructions: instructions,
       cleanerIds: draftCleanerIds,
@@ -364,8 +364,11 @@ export function CleaningForm({
   }
 
   async function submit(nextHref?: string) {
-    if (duration === null || !Number.isInteger(duration) || duration < 30 || duration > 12 * 60) {
-      setMessage("Choose an estimated cleaning time.");
+    if (
+      duration !== null &&
+      (!Number.isInteger(duration) || duration < 30 || duration > 12 * 60)
+    ) {
+      setMessage("Enter a duration between 30 minutes and 12 hours.");
       return false;
     }
     if (allowRecurringSchedule && serviceType === "RECURRING" && recurringEnabled && arrivalStartTbd) {
@@ -378,7 +381,10 @@ export function CleaningForm({
       return false;
     }
     const result = await Promise.resolve(
-      onSubmit({ ...values(), expectedDurationMinutes: duration, pricePerVisitCents: parsedPrice }, nextHref),
+      onSubmit(
+        { ...values(), expectedDurationMinutes: duration ?? undefined, pricePerVisitCents: parsedPrice },
+        nextHref,
+      ),
     );
     if (!result.ok) {
       setMessage(result.message ?? "The cleaning could not be saved.");
@@ -574,9 +580,11 @@ export function CleaningForm({
               assignments={hub.assignments}
               windows={hub.availability.filter((window) => window.date === date)}
               span={
-                arrivalStartTbd || duration === null
+                arrivalStartTbd
                   ? null
-                  : cleaningTimeSpan(arrivalStart, arrivalEnd, duration)
+                  : duration === null
+                    ? { start: arrivalStart, end: arrivalStart }
+                    : cleaningTimeSpan(arrivalStart, arrivalEnd, duration)
               }
               selected={draftCleanerIds}
               arrivals={cleanerArrivals}
@@ -772,7 +780,9 @@ function Cleaners({
                       {pills.map((pill) => (
                         <span
                           key={`${pill.start}-${pill.end}`}
-                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/55"}`}
+                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            pill.fits ? "bg-mint text-ink" : pill.lateStart ? "bg-gold text-ink" : "bg-ink/10 text-ink/55"
+                          }`}
                         >
                           {hourWindowLabel(pill.start, pill.end)}
                         </span>
@@ -826,7 +836,7 @@ function Cleaners({
                     <span
                       key={`${pill.start}-${pill.end}`}
                       className={`rounded-full px-1.5 py-px text-[11px] font-semibold leading-4 ${
-                        pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/60"
+                        pill.fits ? "bg-mint text-ink" : pill.lateStart ? "bg-gold text-ink" : "bg-ink/10 text-ink/60"
                       }`}
                     >
                       {hourWindowLabel(pill.start, pill.end)}

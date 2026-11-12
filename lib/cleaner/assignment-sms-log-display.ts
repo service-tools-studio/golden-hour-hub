@@ -15,7 +15,7 @@ export function assignmentSmsKindLabel(kind: AssignmentSmsKind): string {
   }
 }
 
-/** Whether Twilio reported delivery and when (if known). */
+/** Whether Twilio reported delivery and when (if known). Mock logs are not received. */
 export function assignmentSmsLogDelivery(log: AssignmentSmsLog): {
   received: string;
   receivedAt: string | null;
@@ -24,7 +24,7 @@ export function assignmentSmsLogDelivery(log: AssignmentSmsLog): {
     case "delivered":
       return { received: "Yes", receivedAt: log.updatedAt };
     case "mock":
-      return { received: "Yes", receivedAt: log.sentAt };
+      return { received: "—", receivedAt: null };
     case "failed":
     case "undelivered":
       return { received: "No", receivedAt: null };

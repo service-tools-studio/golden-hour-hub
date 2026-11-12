@@ -204,7 +204,7 @@ export type DraftCleanerDetail = {
   cleanerId: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   proposedCrewSize: number;
   payType: PayType;
   payPerPersonCents: number;
@@ -213,7 +213,7 @@ export type DraftCleanerDetail = {
 export type AssignmentNotice = {
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   proposedCrewSize: number;
   payType: PayType;
   payPerPersonCents: number;
@@ -248,7 +248,7 @@ export type JobAssignment = {
   availabilityConflictWeekStart?: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   payType: PayType;
   /** Cents. Flat: per person for the job. Hourly: per person per hour. */
   payPerPersonCents: number;
@@ -277,7 +277,7 @@ export type StaffingTemplateEntry = {
   proposedCrewSize: number;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   payType: PayType;
   payPerPersonCents: number;
 };
@@ -295,7 +295,7 @@ export type RecurringSeries = {
   defaultHeadcountNeeded: number;
   defaultArrivalWindowStart: string;
   defaultArrivalWindowEnd: string;
-  defaultExpectedDurationMinutes: number;
+  defaultExpectedDurationMinutes?: number;
   defaultServiceType: ServiceType;
   defaultSpecialInstructions?: string;
   /** Default customer price for generated visits. Admin only. */

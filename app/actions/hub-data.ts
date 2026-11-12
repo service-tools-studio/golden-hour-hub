@@ -1,7 +1,7 @@
 "use server";
 
 import { AuthError, requireAdmin } from "@/lib/auth/guards";
-import { loadAdminHubJobsInDateRange } from "@/lib/data/load-admin-hub";
+import { loadAdminHubCustomerDetailSlice, loadAdminHubJobsInDateRange } from "@/lib/data/load-admin-hub";
 import { dynamoConfigured } from "@/lib/data/repository";
 import { addDays, isValidDate, scheduleLookbackStart, todayInBusinessZone } from "@/lib/domain/time";
 import { loadRemoteHub, loadRemoteHubAdminSupplement, type BootstrapResult, type HubVersionResult } from "@/lib/hub/bootstrap-remote";
@@ -17,6 +17,22 @@ export async function bootstrapAdminHubSupplement(): Promise<
   { ok: false; message: string } | { source: "preview" } | { ok: true; data: HubData }
 > {
   return loadRemoteHubAdminSupplement();
+}
+
+export async function loadCustomerDetailAction(
+  customerId: string,
+): Promise<{ ok: true; data: HubData } | { ok: false; message: string } | { source: "preview" }> {
+  try {
+    await requireAdmin();
+    if (!dynamoConfigured()) return { source: "preview" };
+    if (!customerId.trim()) return { ok: false, message: "That customer could not be found." };
+    const data = await loadAdminHubCustomerDetailSlice(customerId.trim());
+    return { ok: true, data };
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
+    console.error("loadCustomerDetailAction failed.", error);
+    return { ok: false, message: "Could not load this customer's cleanings." };
+  }
 }
 
 export async function loadScheduleJobsRangeAction(

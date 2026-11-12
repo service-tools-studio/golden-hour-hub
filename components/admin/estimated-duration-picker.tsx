@@ -22,14 +22,14 @@ export function EstimatedDurationPicker({
   id,
 }: {
   value: number | null;
-  onChange: (minutes: number) => void;
+  onChange: (minutes: number | null) => void;
   id?: string;
 }) {
   const [open, setOpen] = useState(false);
   const titleId = useId();
   const options = useMemo(() => durationOptions(value), [value]);
 
-  function choose(minutes: number) {
+  function choose(minutes: number | null) {
     onChange(minutes);
     setOpen(false);
   }
@@ -45,7 +45,7 @@ export function EstimatedDurationPicker({
         className={`${fieldClass} flex items-center justify-between gap-2 text-left`}
       >
         <span className={value === null ? "text-ink/45" : undefined}>
-          {value === null ? "" : formatDurationSelectLabel(value)}
+          {value === null ? "None" : formatDurationSelectLabel(value)}
         </span>
         <ChevronDown className="shrink-0 text-ink/45" />
       </button>
@@ -69,8 +69,22 @@ export function EstimatedDurationPicker({
                 <ul
                   className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
                   role="listbox"
-                  aria-activedescendant={value === null ? undefined : `duration-${value}`}
+                  aria-activedescendant={value === null ? "duration-none" : `duration-${value}`}
                 >
+                  <li role="presentation">
+                    <button
+                      type="button"
+                      role="option"
+                      id="duration-none"
+                      aria-selected={value === null}
+                      onClick={() => choose(null)}
+                      className={`flex min-h-12 w-full items-center rounded-2xl px-4 text-base font-semibold ${
+                        value === null ? "bg-ink text-cream" : "text-ink hover:bg-cream"
+                      }`}
+                    >
+                      No estimate
+                    </button>
+                  </li>
                   {options.map((minutes) => {
                     const selected = minutes === value;
                     return (

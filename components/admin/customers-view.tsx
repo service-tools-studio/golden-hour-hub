@@ -1,5 +1,8 @@
 "use client";
 
+import { loadCustomerDetailAction } from "@/app/actions/hub-data";
+import { customerDetailLoadSucceeded } from "@/lib/hub/bootstrap-result";
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -228,6 +231,7 @@ export function CustomerDetail({
   const [focusPropertyId, setFocusPropertyId] = useState<string | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<{ href?: string } | null>(null);
   const [savedReturnHref, setSavedReturnHref] = useState<string | null>(null);
+  const customerDetailLoadRef = useRef<string | null>(null);
   const series = hub.series.filter((item) => item.customerId === customerId);
   const editingSeries = editingSeriesId ? series.find((item) => item.seriesId === editingSeriesId) : undefined;
   const editingRecord = editing || Boolean(editingSeries);
@@ -243,8 +247,29 @@ export function CustomerDetail({
 
   useEffect(() => {
     if (!hub.ready) return;
-    hub.refreshRecurringHorizon();
-  }, [hub.ready, hub.refreshRecurringHorizon]);
+    if (hub.previewAuth) {
+      hub.refreshRecurringHorizon();
+      return;
+    }
+    if (customerDetailLoadRef.current === customerId) return;
+    customerDetailLoadRef.current = customerId;
+    let cancelled = false;
+    void loadCustomerDetailAction(customerId).then((result) => {
+      if (cancelled) return;
+      if (customerDetailLoadSucceeded(result)) {
+        hub.mergeAdminHub(result.data);
+        hub.refreshRecurringHorizon();
+      } else {
+        customerDetailLoadRef.current = null;
+      }
+    });
+    return () => {
+      cancelled = true;
+      customerDetailLoadRef.current = null;
+    };
+    // Do not depend on hub.mergeAdminHub — it changes every HubProvider render and caused a fetch loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  }, [customerId, hub.ready, hub.previewAuth]);
 
   function activeForm() {
     return editingSeriesId ? seriesFormRef.current : formRef.current;
@@ -284,12 +309,18 @@ export function CustomerDetail({
       </Screen>
     );
   }
-  const jobs = hub.jobs
-    .filter((job) => job.customerId === customer.customerId)
+  const jobs = hub.jobs.filter((job) => job.customerId === customer.customerId);
+  const upcoming = jobs
+    .filter((job) => jobCountsAsUpcoming(job, hub.assignments, hub.today, now))
     .sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = jobs.filter((job) => jobCountsAsUpcoming(job, hub.assignments, hub.today, now));
   const upcomingIds = new Set(upcoming.map((job) => job.jobId));
-  const history = jobs.filter((job) => job.status === "CANCELED" || !upcomingIds.has(job.jobId));
+  const history = jobs
+    .filter((job) => {
+      if (job.status === "CANCELED") return true;
+      if (job.date < hub.today) return true;
+      return !upcomingIds.has(job.jobId);
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
   const name = `${customer.firstName} ${customer.lastName}`;
   const homes = hub.properties.filter((property) => property.customerId === customer.customerId);
 

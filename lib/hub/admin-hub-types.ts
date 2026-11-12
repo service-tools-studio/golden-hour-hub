@@ -17,7 +17,7 @@ export type CreateJobInput = {
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
   headcountNeeded: number;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   cleanerIds: string[];
   specialInstructions: string;
   pricePerVisitCents?: number;
@@ -30,7 +30,7 @@ export type SaveCleanerDetailsInput = {
   propertyId: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   proposedCrewSize: number;
   payType: PayType;
   payPerPersonCents: number;
@@ -56,7 +56,7 @@ export type UpdateVisitInput = {
   serviceType: ServiceType;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   headcountNeeded: number;
   specialInstructions: string;
   cleanerIds: string[];
@@ -71,7 +71,7 @@ export type UpdateJobInput = {
   propertyId: string;
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   headcountNeeded: number;
   proposedCrewSize: number;
   payType: PayType;

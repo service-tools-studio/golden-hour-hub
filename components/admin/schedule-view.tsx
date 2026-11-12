@@ -6,9 +6,9 @@ import { AdminMarketTabs, useAdminMarket } from "@/components/admin/admin-market
 import { useHub } from "@/components/hub-provider";
 import { PageHeader, PlusIcon, Screen } from "@/components/ui";
 import { personName } from "@/lib/domain/cleaners";
-import {
-  calculateBlockedRange,
-} from "@/lib/domain/scheduling";
+import { hasKnownDurationMinutes } from "@/lib/domain/duration";
+import { calculateBlockedRange } from "@/lib/domain/scheduling";
+import { minutesFromTime } from "@/lib/domain/time";
 import {
   addDays,
   eachDate,
@@ -660,15 +660,18 @@ function buildScheduleDayList(input: {
       const series = job.seriesId ? input.series.find((item) => item.seriesId === job.seriesId) : undefined;
       const arrivalStart = job.arrivalWindowStart ?? series?.defaultArrivalWindowStart;
       const arrivalEnd = job.arrivalWindowEnd ?? series?.defaultArrivalWindowEnd;
+      const visitDuration = job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes;
       const span =
-        arrivalStart && arrivalEnd
+        arrivalStart && arrivalEnd && hasKnownDurationMinutes(visitDuration)
           ? calculateBlockedRange({
               date: job.date,
               arrivalWindowStart: arrivalStart,
               arrivalWindowEnd: arrivalEnd,
-              expectedDurationMinutes: job.expectedDurationMinutes ?? series?.defaultExpectedDurationMinutes ?? 0,
+              expectedDurationMinutes: visitDuration,
             }).spans.find((item) => item.date === input.date)
-          : undefined;
+          : arrivalStart
+            ? { date: job.date, startMin: minutesFromTime(arrivalStart), endMin: minutesFromTime(arrivalStart) }
+            : undefined;
       const item: ScheduleDayItem = {
         jobId,
         href,
@@ -678,7 +681,7 @@ function buildScheduleDayList(input: {
         startMin: span?.startMin ?? 0,
         endMin: span?.endMin ?? 0,
         segments: ["unassigned"],
-        timed: Boolean(span && span.endMin > span.startMin),
+        timed: Boolean(span && hasKnownDurationMinutes(visitDuration) && span.endMin > span.startMin),
       };
       if (item.timed) timed.push(item);
       else untimed.push(item);
@@ -696,6 +699,10 @@ function buildScheduleDayList(input: {
     let allTimed = true;
     for (const { assignment } of staffed) {
       if (!assignment.arrivalWindowStart || !assignment.arrivalWindowEnd) {
+        allTimed = false;
+        break;
+      }
+      if (!hasKnownDurationMinutes(assignment.expectedDurationMinutes)) {
         allTimed = false;
         break;
       }

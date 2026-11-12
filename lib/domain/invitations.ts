@@ -1,11 +1,14 @@
 import { confirmedCompensationCents } from "./compensation.ts";
+import { hasKnownDurationMinutes } from "./duration.ts";
 import {
   availabilityCoversBlockedRange,
+  availabilityCoversJobStart,
   calculateBlockedRange,
   calculateConfirmedHeadcount,
   calculateRemainingHeadcount,
   detectConfirmedAssignmentConflict,
   isConfirmedScheduleConflictReason,
+  isUncertainSameDayScheduleReason,
   toAssignmentSchedule,
   validateRequestedCrewSize,
   type ScheduleWindow,
@@ -177,11 +180,11 @@ export function liveAvailabilityAttentionMessage(input: {
   confirmedAssignments: JobAssignment[];
   arrivalWindowStart: string;
   arrivalWindowEnd: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
 }): string | null {
   const stored = input.assignment.attentionReason;
   if (!stored) return null;
-  if (isConfirmedScheduleConflictReason(stored)) {
+  if (isConfirmedScheduleConflictReason(stored) || isUncertainSameDayScheduleReason(stored)) {
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: input.cleaner.cleanerId,
       candidate: {
@@ -199,13 +202,17 @@ export function liveAvailabilityAttentionMessage(input: {
   }
   if (!isAvailabilityAttentionReason(input.assignment)) return stored;
 
-  const blocked = calculateBlockedRange({
-    date: input.serviceDate,
-    arrivalWindowStart: input.arrivalWindowStart,
-    arrivalWindowEnd: input.arrivalWindowEnd,
-    expectedDurationMinutes: input.expectedDurationMinutes,
-  });
-  const fits = availabilityCoversBlockedRange(input.windows, blocked);
+  const fits = hasKnownDurationMinutes(input.expectedDurationMinutes)
+    ? availabilityCoversBlockedRange(
+        input.windows,
+        calculateBlockedRange({
+          date: input.serviceDate,
+          arrivalWindowStart: input.arrivalWindowStart,
+          arrivalWindowEnd: input.arrivalWindowEnd,
+          expectedDurationMinutes: input.expectedDurationMinutes,
+        }),
+      )
+    : availabilityCoversJobStart(input.windows, input.serviceDate, input.arrivalWindowStart);
   const conflict = detectConfirmedAssignmentConflict({
     cleanerId: input.cleaner.cleanerId,
     candidate: {
@@ -388,13 +395,22 @@ function pendingFailureReason(input: {
   if (isUnsetArrival(input.assignment.arrivalWindowStart, input.assignment.arrivalWindowEnd)) {
     return null;
   }
-  const blocked = calculateBlockedRange({
-    date: input.assignment.serviceDate,
-    arrivalWindowStart: input.assignment.arrivalWindowStart!,
-    arrivalWindowEnd: input.assignment.arrivalWindowEnd!,
-    expectedDurationMinutes: input.assignment.expectedDurationMinutes,
-  });
-  if (!availabilityCoversBlockedRange(input.windows, blocked)) {
+  const fits = hasKnownDurationMinutes(input.assignment.expectedDurationMinutes)
+    ? availabilityCoversBlockedRange(
+        input.windows,
+        calculateBlockedRange({
+          date: input.assignment.serviceDate,
+          arrivalWindowStart: input.assignment.arrivalWindowStart!,
+          arrivalWindowEnd: input.assignment.arrivalWindowEnd!,
+          expectedDurationMinutes: input.assignment.expectedDurationMinutes,
+        }),
+      )
+    : availabilityCoversJobStart(
+        input.windows,
+        input.assignment.serviceDate,
+        input.assignment.arrivalWindowStart!,
+      );
+  if (!fits) {
     return { kind: "outside", message: "This schedule is outside the cleaner's submitted availability." };
   }
   const conflict = detectConfirmedAssignmentConflict({

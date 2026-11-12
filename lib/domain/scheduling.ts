@@ -1,4 +1,5 @@
 import { isUnsetArrival } from "./arrival.ts";
+import { hasKnownDurationMinutes } from "./duration.ts";
 import { maxCrewSize } from "./cleaners.ts";
 import { confirmedCompensationCents } from "./compensation.ts";
 import type {
@@ -32,7 +33,7 @@ export type AssignmentSchedule = {
   serviceDate: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
 };
 
 export type BlockedRange = {
@@ -222,6 +223,7 @@ export function cleaningCoverage(
   let endUtc: Date | null = null;
   for (const assignment of active) {
     if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) continue;
+    if (!hasKnownDurationMinutes(assignment.expectedDurationMinutes)) continue;
     const blocked = calculateBlockedRange({
       date: assignment.serviceDate,
       arrivalWindowStart: assignment.arrivalWindowStart!,
@@ -305,6 +307,11 @@ export function assignmentBlocksCleaningDeletion(status: JobAssignment["status"]
   return status === "CONFIRMED" || status === "PENDING_AVAILABILITY" || status === "NEEDS_ATTENTION";
 }
 
+/** Confirmed roster on cleaner home (history / upcoming), excluding open invites. */
+export function assignmentIsCleanerHomeCommitted(status: JobAssignment["status"]): boolean {
+  return assignmentBlocksCleaningDeletion(status);
+}
+
 export function jobHasCleanerBlockingDeletion(
   assignments: Array<Pick<JobAssignment, "jobId" | "status">>,
   jobId: string,
@@ -376,14 +383,30 @@ export type AssignmentTiming = {
   serviceDate: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
 };
 
 /** Active cleaning time: from arrival window start through expected duration. */
 export function calculateLaborRange(input: AssignmentTiming): { startUtc: Date; endUtc: Date } {
   const startUtc = zonedToUtc(input.serviceDate, input.arrivalWindowStart!);
-  const endUtc = new Date(startUtc.getTime() + input.expectedDurationMinutes * 60_000);
+  const endUtc = new Date(startUtc.getTime() + input.expectedDurationMinutes! * 60_000);
   return { startUtc, endUtc };
+}
+
+export function availabilityCoversJobStart(
+  windows: ScheduleWindow[],
+  date: string,
+  arrivalWindowStart: string,
+): boolean {
+  const startMin = minutesFromTime(arrivalWindowStart);
+  if (!Number.isFinite(startMin)) return false;
+  return windows
+    .filter((window) => window.date === date)
+    .some((window) => {
+      const windowStart = minutesFromTime(window.start);
+      const windowEnd = minutesFromTime(window.end);
+      return Number.isFinite(windowStart) && Number.isFinite(windowEnd) && windowStart <= startMin && startMin < windowEnd;
+    });
 }
 
 export function confirmedScheduleConflictReason(firstName: string): string {
@@ -392,6 +415,46 @@ export function confirmedScheduleConflictReason(firstName: string): string {
 
 export function isConfirmedScheduleConflictReason(reason?: string): boolean {
   return reason?.includes("conflicts with another confirmed job") ?? false;
+}
+
+export function uncertainSameDayScheduleReason(firstName: string): string {
+  return `Same-day scheduling may overlap for ${firstName} because estimated duration is not set on one or both cleanings.`;
+}
+
+export function isUncertainSameDayScheduleReason(reason?: string): boolean {
+  return reason?.includes("estimated duration is not set") ?? false;
+}
+
+function sameServiceStart(a: AssignmentTiming, b: AssignmentTiming): boolean {
+  return (
+    a.serviceDate === b.serviceDate &&
+    !isUnsetArrival(a.arrivalWindowStart, a.arrivalWindowEnd) &&
+    !isUnsetArrival(b.arrivalWindowStart, b.arrivalWindowEnd) &&
+    a.arrivalWindowStart === b.arrivalWindowStart
+  );
+}
+
+function provablyNonOverlapping(a: AssignmentTiming, b: AssignmentTiming): boolean {
+  if (isUnsetArrival(a.arrivalWindowStart, a.arrivalWindowEnd)) return true;
+  if (isUnsetArrival(b.arrivalWindowStart, b.arrivalWindowEnd)) return true;
+  const aHasDuration = hasKnownDurationMinutes(a.expectedDurationMinutes);
+  const bHasDuration = hasKnownDurationMinutes(b.expectedDurationMinutes);
+  if (aHasDuration && bHasDuration) {
+    const laborA = calculateLaborRange(a as AssignmentTiming & { arrivalWindowStart: string; arrivalWindowEnd: string; expectedDurationMinutes: number });
+    const laborB = calculateLaborRange(b as AssignmentTiming & { arrivalWindowStart: string; arrivalWindowEnd: string; expectedDurationMinutes: number });
+    return !rangesOverlap(laborA.startUtc, laborA.endUtc, laborB.startUtc, laborB.endUtc);
+  }
+  const startA = zonedToUtc(a.serviceDate, a.arrivalWindowStart!);
+  const startB = zonedToUtc(b.serviceDate, b.arrivalWindowStart!);
+  if (aHasDuration && !bHasDuration) {
+    const laborA = calculateLaborRange(a as AssignmentTiming & { arrivalWindowStart: string; arrivalWindowEnd: string; expectedDurationMinutes: number });
+    return startB.getTime() >= laborA.endUtc.getTime();
+  }
+  if (!aHasDuration && bHasDuration) {
+    const laborB = calculateLaborRange(b as AssignmentTiming & { arrivalWindowStart: string; arrivalWindowEnd: string; expectedDurationMinutes: number });
+    return startA.getTime() >= laborB.endUtc.getTime();
+  }
+  return false;
 }
 
 export function detectConfirmedAssignmentConflict(input: {
@@ -403,28 +466,80 @@ export function detectConfirmedAssignmentConflict(input: {
   if (isUnsetArrival(input.candidate.arrivalWindowStart, input.candidate.arrivalWindowEnd)) {
     return null;
   }
-  const candidateLabor = calculateLaborRange(input.candidate as AssignmentTiming & {
-    arrivalWindowStart: string;
-    arrivalWindowEnd: string;
-  });
+  const candidateHasDuration = hasKnownDurationMinutes(input.candidate.expectedDurationMinutes);
   for (const assignment of input.confirmedAssignments) {
     if (assignment.cleanerId !== input.cleanerId) continue;
     if (assignment.status !== "CONFIRMED") continue;
     if (assignment.assignmentId === input.ignoreAssignmentId) continue;
+    if (assignment.serviceDate !== input.candidate.serviceDate) continue;
     if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) continue;
-    const otherLabor = calculateLaborRange(assignmentTiming(assignment) as AssignmentTiming & {
-      arrivalWindowStart: string;
-      arrivalWindowEnd: string;
-    });
-    if (
-      rangesOverlap(
-        candidateLabor.startUtc,
-        candidateLabor.endUtc,
-        otherLabor.startUtc,
-        otherLabor.endUtc,
-      )
-    ) {
+    const otherTiming = assignmentTiming(assignment);
+    if (sameServiceStart(input.candidate, otherTiming)) {
       return assignment;
+    }
+    const otherHasDuration = hasKnownDurationMinutes(otherTiming.expectedDurationMinutes);
+    if (candidateHasDuration && otherHasDuration) {
+      const candidateLabor = calculateLaborRange(input.candidate as AssignmentTiming & {
+        arrivalWindowStart: string;
+        arrivalWindowEnd: string;
+        expectedDurationMinutes: number;
+      });
+      const otherLabor = calculateLaborRange(otherTiming as AssignmentTiming & {
+        arrivalWindowStart: string;
+        arrivalWindowEnd: string;
+        expectedDurationMinutes: number;
+      });
+      if (
+        rangesOverlap(
+          candidateLabor.startUtc,
+          candidateLabor.endUtc,
+          otherLabor.startUtc,
+          otherLabor.endUtc,
+        )
+      ) {
+        return assignment;
+      }
+    }
+  }
+  return null;
+}
+
+export function detectUncertainSameDayAssignment(input: {
+  cleanerId: string;
+  candidate: AssignmentTiming;
+  confirmedAssignments: AssignmentSchedule[];
+  ignoreAssignmentId?: string;
+}): AssignmentSchedule | null {
+  if (isUnsetArrival(input.candidate.arrivalWindowStart, input.candidate.arrivalWindowEnd)) {
+    return null;
+  }
+  if (!hasKnownDurationMinutes(input.candidate.expectedDurationMinutes)) {
+    for (const assignment of input.confirmedAssignments) {
+      if (assignment.cleanerId !== input.cleanerId) continue;
+      if (assignment.status !== "CONFIRMED") continue;
+      if (assignment.assignmentId === input.ignoreAssignmentId) continue;
+      if (assignment.serviceDate !== input.candidate.serviceDate) continue;
+      if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) continue;
+      const otherTiming = assignmentTiming(assignment);
+      if (sameServiceStart(input.candidate, otherTiming)) continue;
+      if (!provablyNonOverlapping(input.candidate, otherTiming)) {
+        return assignment;
+      }
+    }
+    return null;
+  }
+  for (const assignment of input.confirmedAssignments) {
+    if (assignment.cleanerId !== input.cleanerId) continue;
+    if (assignment.status !== "CONFIRMED") continue;
+    if (assignment.assignmentId === input.ignoreAssignmentId) continue;
+    if (assignment.serviceDate !== input.candidate.serviceDate) continue;
+    if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) continue;
+    const otherTiming = assignmentTiming(assignment);
+    if (!hasKnownDurationMinutes(otherTiming.expectedDurationMinutes)) {
+      if (sameServiceStart(input.candidate, otherTiming)) continue;
+      if (!provablyNonOverlapping(input.candidate, otherTiming)) {
+        return assignment;
+      }
     }
   }
   return null;
@@ -442,6 +557,7 @@ function assignmentTiming(assignment: AssignmentSchedule): AssignmentTiming {
 function assignmentBlockedInput(assignment: AssignmentSchedule) {
   if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return null;
   const timing = assignmentTiming(assignment);
+  if (!hasKnownDurationMinutes(timing.expectedDurationMinutes)) return null;
   return {
     date: timing.serviceDate,
     arrivalWindowStart: timing.arrivalWindowStart!,
@@ -573,7 +689,13 @@ export function validateCleanerSchedule(input: {
   if (input.cleanerStatus !== "ACTIVE") {
     return { ok: false, message: "This cleaner is not active." };
   }
-  if (!availabilityCoversBlockedRange(input.windows, input.blocked)) {
+  if (hasKnownDurationMinutes(input.timing.expectedDurationMinutes)) {
+    if (!availabilityCoversBlockedRange(input.windows, input.blocked)) {
+      return { ok: false, message: "This schedule is outside your submitted availability." };
+    }
+  } else if (
+  !availabilityCoversJobStart(input.windows, input.timing.serviceDate, input.timing.arrivalWindowStart!)
+  ) {
     return { ok: false, message: "This schedule is outside your submitted availability." };
   }
   const conflict = detectConfirmedAssignmentConflict({
@@ -596,19 +718,26 @@ export function findCompatibleCleaners<T extends { cleanerId: string; status: "A
     date: string;
     arrivalWindowStart: string;
     arrivalWindowEnd: string;
-    expectedDurationMinutes: number;
+    expectedDurationMinutes?: number;
   };
 }): T[] {
-  const blocked = calculateBlockedRange({
-    date: input.required.date,
-    arrivalWindowStart: input.required.arrivalWindowStart,
-    arrivalWindowEnd: input.required.arrivalWindowEnd,
-    expectedDurationMinutes: input.required.expectedDurationMinutes,
-  });
+  const hasDuration = hasKnownDurationMinutes(input.required.expectedDurationMinutes);
+  const blocked = hasDuration
+    ? calculateBlockedRange({
+        date: input.required.date,
+        arrivalWindowStart: input.required.arrivalWindowStart,
+        arrivalWindowEnd: input.required.arrivalWindowEnd,
+        expectedDurationMinutes: input.required.expectedDurationMinutes!,
+      })
+    : null;
   return input.cleaners.filter((cleaner) => {
     if (cleaner.status !== "ACTIVE") return false;
     const windows = input.windowsByCleaner[cleaner.cleanerId] ?? [];
-    if (!availabilityCoversBlockedRange(windows, blocked)) return false;
+    if (hasDuration && blocked) {
+      if (!availabilityCoversBlockedRange(windows, blocked)) return false;
+    } else if (!availabilityCoversJobStart(windows, input.required.date, input.required.arrivalWindowStart)) {
+      return false;
+    }
     const conflict = detectConfirmedAssignmentConflict({
       cleanerId: cleaner.cleanerId,
       candidate: {
@@ -663,7 +792,32 @@ export function applyScheduleConflictWarning(
       pendingCrewSize: undefined,
     };
   }
-  if (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)) {
+  const uncertain = detectUncertainSameDayAssignment({
+    cleanerId: cleaner.cleanerId,
+    candidate: {
+      serviceDate: assignment.serviceDate,
+      arrivalWindowStart: assignment.arrivalWindowStart,
+      arrivalWindowEnd: assignment.arrivalWindowEnd,
+      expectedDurationMinutes: assignment.expectedDurationMinutes,
+    },
+    confirmedAssignments: assignments.filter((item) => item.status === "CONFIRMED").map(toAssignmentSchedule),
+    ignoreAssignmentId: assignment.assignmentId,
+  });
+  if (uncertain) {
+    return {
+      ...assignment,
+      status: "NEEDS_ATTENTION",
+      attentionReason: uncertainSameDayScheduleReason(cleaner.firstName),
+      confirmedCrewSize: undefined,
+      confirmedTotalPayCents: undefined,
+      pendingCrewSize: undefined,
+    };
+  }
+  if (
+    assignment.status === "NEEDS_ATTENTION" &&
+    (isConfirmedScheduleConflictReason(assignment.attentionReason) ||
+      isUncertainSameDayScheduleReason(assignment.attentionReason))
+  ) {
     const crewSize = assignment.proposedCrewSize;
     const confirmedTotalPayCents = confirmedCompensationCents({
       payType: assignment.payType,
@@ -700,7 +854,9 @@ export function reconcileScheduleConflictWarnings(
       if (!cleaner) continue;
       const shouldReconcile =
         assignment.status === "CONFIRMED" ||
-        (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason));
+        (assignment.status === "NEEDS_ATTENTION" &&
+          (isConfirmedScheduleConflictReason(assignment.attentionReason) ||
+            isUncertainSameDayScheduleReason(assignment.attentionReason)));
       if (!shouldReconcile) continue;
       const updated = applyScheduleConflictWarning(assignment, cleaner, next);
       if (

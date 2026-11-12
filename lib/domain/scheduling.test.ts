@@ -41,7 +41,10 @@ import {
   invitedAssignmentIsActionable,
   jobCountsAsUpcoming,
   detectConfirmedAssignmentConflict,
+  detectUncertainSameDayAssignment,
+  uncertainSameDayScheduleReason,
   confirmedScheduleConflictReason,
+  availabilityCoversJobStart,
   reconcileScheduleConflictWarnings,
   findCompatibleCleaners,
   isCleanerAllowedCrewSize,
@@ -329,6 +332,80 @@ describe("blocked time and effective availability", () => {
       ],
     });
     assert.equal(conflict, null);
+  });
+
+  it("blocks two confirmed jobs with the same start time", () => {
+    const conflict = detectConfirmedAssignmentConflict({
+      cleanerId: "claudia",
+      candidate: {
+        serviceDate: "2026-10-06",
+        arrivalWindowStart: "09:00",
+        arrivalWindowEnd: "09:00",
+      },
+      confirmedAssignments: [
+        schedule({
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+          expectedDurationMinutes: undefined,
+        }),
+      ],
+    });
+    assert.ok(conflict);
+  });
+
+  it("flags uncertain same-day overlap when duration is missing", () => {
+    const uncertain = detectUncertainSameDayAssignment({
+      cleanerId: "claudia",
+      candidate: {
+        serviceDate: "2026-10-06",
+        arrivalWindowStart: "11:00",
+        arrivalWindowEnd: "11:00",
+      },
+      confirmedAssignments: [
+        schedule({
+          assignmentId: "other",
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+          expectedDurationMinutes: undefined,
+        }),
+      ],
+    });
+    assert.ok(uncertain);
+    assert.match(uncertainSameDayScheduleReason("Claudia"), /estimated duration is not set/);
+  });
+
+  it("matches availability on start time only when duration is missing", () => {
+    assert.equal(
+      availabilityCoversJobStart([{ date: "2026-10-06", start: "08:00", end: "17:00" }], "2026-10-06", "09:00"),
+      true,
+    );
+    assert.equal(
+      availabilityCoversJobStart([{ date: "2026-10-06", start: "08:00", end: "09:00" }], "2026-10-06", "09:00"),
+      false,
+    );
+  });
+
+  it("finds cleaners by start time when duration is missing", () => {
+    const compatible = findCompatibleCleaners({
+      cleaners: [
+        { cleanerId: "claudia", status: "ACTIVE" as const },
+        { cleanerId: "maria", status: "ACTIVE" as const },
+      ],
+      windowsByCleaner: {
+        claudia: [{ date: "2026-10-06", start: "08:00", end: "17:00" }],
+        maria: [{ date: "2026-10-06", start: "08:00", end: "08:30" }],
+      },
+      confirmedByCleaner: { claudia: [], maria: [] },
+      required: {
+        date: "2026-10-06",
+        arrivalWindowStart: "09:00",
+        arrivalWindowEnd: "09:00",
+      },
+    });
+    assert.deepEqual(
+      compatible.map((cleaner) => cleaner.cleanerId),
+      ["claudia"],
+    );
   });
 });
 
@@ -838,29 +915,62 @@ describe("availability against a cleaning span", () => {
     const span = cleaningTimeSpan("08:00", "08:00", 240);
     assert.deepEqual(span, { start: "08:00", end: "12:00" });
     assert.deepEqual(availabilityAgainstSpan([{ start: "08:00", end: "23:00" }], span), [
-      { start: "08:00", end: "12:00", fits: true },
-      { start: "12:00", end: "23:00", fits: false },
+      { start: "08:00", end: "23:00", fits: true },
     ]);
     assert.deepEqual(availabilityAgainstSpan([{ start: "17:00", end: "21:00" }], span), [
-      { start: "17:00", end: "21:00", fits: false },
+      { start: "17:00", end: "21:00", fits: false, lateStart: true },
     ]);
   });
 
-  it("marks the overlap mint-worthy and the rest of the day outside", () => {
+  it("marks a window mint when it is open at job start", () => {
     assert.deepEqual(availabilityAgainstSpan([{ start: "08:00", end: "17:00" }], { start: "08:00", end: "09:00" }), [
-      { start: "08:00", end: "09:00", fits: true },
-      { start: "09:00", end: "17:00", fits: false },
+      { start: "08:00", end: "17:00", fits: true },
     ]);
   });
 
-  it("keeps a window that misses the cleaning outside the span", () => {
+  it("marks a later window gold when it starts after job start", () => {
     assert.deepEqual(availabilityAgainstSpan([{ start: "10:00", end: "14:00" }], { start: "08:00", end: "09:00" }), [
-      { start: "10:00", end: "14:00", fits: false },
+      { start: "10:00", end: "14:00", fits: false, lateStart: true },
     ]);
   });
 
   it("returns nothing when the cleaner has no windows that day", () => {
     assert.deepEqual(availabilityAgainstSpan([], { start: "08:00", end: "09:00" }), []);
+  });
+
+  it("with a duration, uses the same mint and late rules at job start", () => {
+    assert.deepEqual(
+      availabilityAgainstSpan(
+        [
+          { start: "07:00", end: "11:00" },
+          { start: "12:00", end: "17:00" },
+        ],
+        { start: "08:00", end: "12:00" },
+      ),
+      [
+        { start: "07:00", end: "11:00", fits: true },
+        { start: "12:00", end: "17:00", fits: false, lateStart: true },
+      ],
+    );
+  });
+
+  it("without a duration, marks windows that cover the start mint and later windows late", () => {
+    assert.deepEqual(
+      availabilityAgainstSpan(
+        [
+          { start: "07:00", end: "11:00" },
+          { start: "12:00", end: "17:00" },
+        ],
+        { start: "08:00", end: "08:00" },
+      ),
+      [
+        { start: "07:00", end: "11:00", fits: true },
+        { start: "12:00", end: "17:00", fits: false, lateStart: true },
+      ],
+    );
+    assert.deepEqual(availabilityAgainstSpan([{ start: "09:00", end: "17:00" }], { start: "08:00", end: "08:00" }), [
+      { start: "09:00", end: "17:00", fits: false, lateStart: true },
+    ]);
   });
 
   it("ranks mint staffing ahead of grey then none", () => {

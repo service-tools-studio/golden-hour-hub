@@ -26,7 +26,7 @@ export function CleanerAvailabilityPreview({
   arrivalStart: string;
   arrivalEnd: string;
   startTbd?: boolean;
-  durationMinutes: number;
+  durationMinutes: number | null;
 }) {
   const effectiveWindows = staffingAvailabilityWindows(
     availabilityWindows.map((window) => ({ cleanerId, date, ...window })),
@@ -36,19 +36,27 @@ export function CleanerAvailabilityPreview({
     ignoreAssignmentId,
   );
   const span =
-    !startTbd && arrivalStart && arrivalEnd ? cleaningTimeSpan(arrivalStart, arrivalEnd, durationMinutes) : null;
+    !startTbd && arrivalStart && arrivalEnd
+      ? durationMinutes === null
+        ? { start: arrivalStart, end: arrivalStart }
+        : cleaningTimeSpan(arrivalStart, arrivalEnd, durationMinutes)
+      : null;
   const pills = availabilityAgainstSpan(effectiveWindows, span);
   const fitsSubmitted = Boolean(
     span &&
-      availabilityCoversBlockedRange(
-        effectiveWindows.map((window) => ({ date, start: window.start, end: window.end })),
-        calculateBlockedRange({
-          date,
-          arrivalWindowStart: arrivalStart,
-          arrivalWindowEnd: arrivalEnd,
-          expectedDurationMinutes: durationMinutes,
-        }),
-      ),
+      (durationMinutes === null
+        ? effectiveWindows.some(
+            (window) => window.start <= arrivalStart && arrivalStart < window.end,
+          )
+        : availabilityCoversBlockedRange(
+            effectiveWindows.map((window) => ({ date, start: window.start, end: window.end })),
+            calculateBlockedRange({
+              date,
+              arrivalWindowStart: arrivalStart,
+              arrivalWindowEnd: arrivalEnd,
+              expectedDurationMinutes: durationMinutes,
+            }),
+          )),
   );
 
   return (
@@ -66,7 +74,9 @@ export function CleanerAvailabilityPreview({
             {pills.map((pill) => (
               <span
                 key={`${pill.start}-${pill.end}`}
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/55"}`}
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  pill.fits ? "bg-mint text-ink" : pill.lateStart ? "bg-gold text-ink" : "bg-ink/10 text-ink/55"
+                }`}
               >
                 {hourWindowLabel(pill.start, pill.end)}
               </span>

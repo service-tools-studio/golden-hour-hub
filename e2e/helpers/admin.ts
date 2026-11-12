@@ -37,8 +37,9 @@ export async function waitForNewJobProperty(page: Page): Promise<void> {
   await expect(page.getByText(/E2E (Blvd|St),/)).toBeVisible({ timeout: 60_000 });
 }
 
-/** Rosters need a duration span before availability pills render. */
+/** Optional — rosters show availability from start time alone when duration is unset. */
 export async function pickEstimatedCleaningDuration(page: Page, label = "3 hours"): Promise<void> {
-  await page.getByRole("button", { name: /Estimated cleaning time/ }).click();
+  const field = page.locator("label").filter({ hasText: /Estimated duration/ });
+  await field.getByRole("button").click();
   await page.getByRole("dialog", { name: "Estimated cleaning time" }).getByRole("option", { name: label }).click();
 }

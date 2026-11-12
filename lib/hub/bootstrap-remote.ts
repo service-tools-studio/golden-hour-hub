@@ -11,11 +11,9 @@ import { loadAdminHubRemainderSlice, loadAdminHubSlices, loadCleanerHubSlices, l
 import { dynamoConfigured } from "@/lib/data/repository";
 import { editableAvailabilityHorizonEnd, todayInBusinessZone } from "@/lib/domain/time";
 import type { HubData } from "@/lib/mock/seed";
+import type { BootstrapResult } from "@/lib/hub/bootstrap-result";
 
-export type BootstrapResult =
-  | { ok: false; message: string }
-  | { source: "preview" }
-  | { source: "dynamodb"; data: HubData; revision: number };
+export type { BootstrapResult } from "@/lib/hub/bootstrap-result";
 
 export type HubVersionResult =
   | { ok: false; message: string }
@@ -97,7 +95,7 @@ export async function loadRemoteHub(session?: AuthSession | null): Promise<Boots
         access.role === "ADMIN"
           ? {
               loadTeamSchedulingExtras: true,
-              loadSeries: false,
+              loadSeries: true,
               jobHorizonEnd: editableAvailabilityHorizonEnd(todayInBusinessZone()),
             }
           : {},

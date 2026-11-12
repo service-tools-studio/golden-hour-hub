@@ -6,11 +6,13 @@ import { useHub } from "@/components/hub-provider";
 import { ExpiredInvitationCard, InvitationCard } from "@/components/cleaner/invitation-card";
 import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
+import { hasKnownDurationMinutes } from "@/lib/domain/duration";
 import {
   assignmentCountsAsUpcoming,
   calculateBlockedRange,
   calculateRemainingHeadcount,
   cleanerInvitationIsExpired,
+  assignmentIsCleanerHomeCommitted,
   invitedAssignmentIsActionable,
   isWithinRange,
 } from "@/lib/domain/scheduling";
@@ -52,6 +54,7 @@ const AVAILABILITY_MISMATCH_MESSAGE =
 
 function inProgress(assignment: JobAssignment, now: number): boolean {
   if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return false;
+  if (!hasKnownDurationMinutes(assignment.expectedDurationMinutes)) return false;
   return isWithinRange(
     calculateBlockedRange({
       date: assignment.serviceDate,
@@ -141,11 +144,10 @@ export function CleanerHome() {
   const flagged = hub.assignments.filter(
     (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "NEEDS_ATTENTION",
   );
-  const historyAssignmentStatuses = new Set(["CONFIRMED", "PENDING_AVAILABILITY", "NEEDS_ATTENTION"] as const);
   const committed = hub.assignments
     .filter(
       (assignment) =>
-        assignment.cleanerId === cleaner.cleanerId && historyAssignmentStatuses.has(assignment.status),
+        assignment.cleanerId === cleaner.cleanerId && assignmentIsCleanerHomeCommitted(assignment.status),
     )
     .flatMap((assignment) => {
       const job = hub.jobs.find((item) => item.jobId === assignment.jobId);

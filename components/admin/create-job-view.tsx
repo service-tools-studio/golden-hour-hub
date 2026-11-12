@@ -87,7 +87,7 @@ export function CreateJobView({
     arrivalWindowStart: arrivalStart,
     arrivalWindowEnd: arrivalStart,
     headcountNeeded: 1,
-    expectedDurationMinutes: 0,
+    expectedDurationMinutes: undefined,
     specialInstructions: "",
     cleanerIds: fromAvailability && cleaner ? [cleaner.cleanerId] : [],
   };

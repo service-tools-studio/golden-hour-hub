@@ -59,14 +59,14 @@ export function AddCleanerView({ jobId, from }: { jobId: string; from?: Cleaning
     [addingCleanerId, marketCleaners, taken],
   );
 
-  const duration = job?.expectedDurationMinutes ?? 240;
-  const span = useMemo(
-    () =>
-      job?.arrivalWindowStart && job.arrivalWindowEnd
-        ? cleaningTimeSpan(job.arrivalWindowStart, job.arrivalWindowEnd, duration)
-        : null,
-    [duration, job?.arrivalWindowEnd, job?.arrivalWindowStart],
-  );
+  const span = useMemo(() => {
+    if (!job?.arrivalWindowStart || !job.arrivalWindowEnd) return null;
+    const duration = job.expectedDurationMinutes;
+    if (duration === undefined || duration <= 0) {
+      return { start: job.arrivalWindowStart, end: job.arrivalWindowStart };
+    }
+    return cleaningTimeSpan(job.arrivalWindowStart, job.arrivalWindowEnd, duration);
+  }, [job?.arrivalWindowEnd, job?.arrivalWindowStart, job?.expectedDurationMinutes]);
 
   const sortedChoices = useMemo(() => {
     if (!job) return [];
@@ -192,7 +192,9 @@ function AddCleanerChoiceButton({
               {pills.map((pill) => (
                 <span
                   key={`${pill.start}-${pill.end}`}
-                  className={`rounded-full px-3 py-1 text-sm font-semibold ${pill.fits ? "bg-mint text-ink" : "bg-ink/10 text-ink/70"}`}
+                  className={`rounded-full px-3 py-1 text-sm font-semibold ${
+                    pill.fits ? "bg-mint text-ink" : pill.lateStart ? "bg-gold text-ink" : "bg-ink/10 text-ink/70"
+                  }`}
                 >
                   {hourWindowLabel(pill.start, pill.end)}
                 </span>

@@ -171,12 +171,18 @@ function cleaningStart(
   return others[0];
 }
 
+function initialDurationMinutes(minutes?: number): number | null {
+  if (minutes === undefined || minutes === 0) return null;
+  if (Number.isInteger(minutes) && minutes >= 30 && minutes <= 12 * 60) return minutes;
+  return null;
+}
+
 function assignmentCompensationOnlyDirty(baselineJson: string, currentJson: string): boolean {
   const baseline = JSON.parse(baselineJson) as {
     arrivalStartTbd: boolean;
     arrivalStart: string;
     arrivalEnd: string;
-    duration: number;
+    duration: number | null;
     crew: number;
   };
   const current = JSON.parse(currentJson) as typeof baseline;
@@ -323,8 +329,8 @@ export function EditJobView({
   const [arrivalStartTbd, setArrivalStartTbd] = useState(
     assignmentStartTbdDefault(job, assignment?.arrivalWindowStart, assignment?.arrivalWindowEnd),
   );
-  const [duration, setDuration] = useState(
-    assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
+  const [duration, setDuration] = useState<number | null>(
+    initialDurationMinutes(assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes),
   );
   const initialCrew = assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1;
   const [crew, setCrew] = useState(initialCrew);
@@ -371,7 +377,7 @@ export function EditJobView({
           confirmedAssignments: hub.assignments,
           arrivalWindowStart: arrivalStart,
           arrivalWindowEnd: arrivalEnd,
-          expectedDurationMinutes: duration,
+          expectedDurationMinutes: duration ?? undefined,
         })
       : null;
   const dateReinviteWarning =
@@ -406,7 +412,7 @@ export function EditJobView({
         assignmentNoticeFrom({
           arrivalWindowStart: arrivalStartTbd ? undefined : arrivalStart,
           arrivalWindowEnd: arrivalStartTbd ? undefined : arrivalEnd,
-          expectedDurationMinutes: duration,
+          expectedDurationMinutes: duration ?? undefined,
           proposedCrewSize: crew,
           payType,
           payPerPersonCents: payPerPersonCentsPreview,
@@ -444,7 +450,7 @@ export function EditJobView({
       cleanerId: cleaner.cleanerId,
       propertyId: job.propertyId,
       ...arrival,
-      expectedDurationMinutes: duration,
+      expectedDurationMinutes: duration ?? undefined,
       proposedCrewSize: crew,
       payType,
       payPerPersonCents,
@@ -890,8 +896,8 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
   const [arrivalStartTbd, setArrivalStartTbd] = useState(
     assignmentStartTbdDefault(job, savedDetail?.arrivalWindowStart, savedDetail?.arrivalWindowEnd),
   );
-  const [duration, setDuration] = useState(
-    savedDetail?.expectedDurationMinutes ?? job?.expectedDurationMinutes ?? 240,
+  const [duration, setDuration] = useState<number | null>(
+    initialDurationMinutes(savedDetail?.expectedDurationMinutes ?? job?.expectedDurationMinutes),
   );
   const initialDraftCrew = savedDetail?.proposedCrewSize ?? usualCrew;
   const [crew, setCrew] = useState(initialDraftCrew);
@@ -940,7 +946,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       cleanerId: cleaner.cleanerId,
       propertyId: job.propertyId,
       ...arrival,
-      expectedDurationMinutes: duration,
+      expectedDurationMinutes: duration ?? undefined,
       proposedCrewSize: crew,
       payType,
       payPerPersonCents,
@@ -1115,7 +1121,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
 function assignmentNoticeFrom(input: {
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   proposedCrewSize: number;
   payType: PayType;
   payPerPersonCents: number;
@@ -1165,8 +1171,8 @@ function AssignmentDurationField({
   onChange,
   onDirty,
 }: {
-  duration: number;
-  onChange: (minutes: number) => void;
+  duration: number | null;
+  onChange: (minutes: number | null) => void;
   onDirty: () => void;
 }) {
   return (

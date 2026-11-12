@@ -5,12 +5,14 @@ import { ActionSheet } from "@/components/action-sheet";
 import { fullAddress } from "@/components/address-link";
 import { type CalendarEvent, googleCalendarUrl, icsDownloadPath, outlookCalendarUrl } from "@/lib/calendar";
 import { isUnsetArrival } from "@/lib/domain/arrival";
+import { hasKnownDurationMinutes } from "@/lib/domain/duration";
 import { calculateBlockedRange } from "@/lib/domain/scheduling";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { cleanerServiceLabel, customerFirstNameForCleaner, formatArrival } from "@/lib/format";
 
 export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): CalendarEvent | null {
   if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return null;
+  if (!hasKnownDurationMinutes(assignment.expectedDurationMinutes)) return null;
   const range = calculateBlockedRange({
     date: assignment.serviceDate,
     arrivalWindowStart: assignment.arrivalWindowStart!,

@@ -18,6 +18,7 @@ import {
 } from "@/components/jobs/origin";
 import { AlertIcon, ButtonSpinner, Card, PageHeader, Screen } from "@/components/ui";
 import { snapshotVisit } from "@/lib/domain/customers";
+import { hasKnownDurationMinutes } from "@/lib/domain/duration";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
 import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
@@ -40,6 +41,8 @@ import {
   formatArrival,
   formatTimeLabel,
   formatDuration,
+  CLEANER_ESTIMATED_DURATION_LABEL,
+  CLEANER_ESTIMATED_DURATION_NOTE,
   ESTIMATED_ON_SITE_FIELD_LABEL,
   formatEstimatedOnSiteEnd,
   formatLongDate,
@@ -817,9 +820,14 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           <ServiceLine serviceType={job.serviceType} forCleaner />
           <p className="mt-3 text-sm text-ink/60">Start time</p>
           <p className="text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
-          <p className="mt-1 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_LABEL}</p>
-          <p className="text-sm text-ink/70">{formatDuration(assignment.expectedDurationMinutes)}</p>
-          {estimatedEnd ? <p className="mt-1.5 text-sm text-ink/70">Estimated end {estimatedEnd}</p> : null}
+          {job.seriesId && hasKnownDurationMinutes(assignment.expectedDurationMinutes) ? (
+            <>
+              <p className="mt-1 text-sm text-ink/60">{CLEANER_ESTIMATED_DURATION_LABEL}</p>
+              <p className="text-sm text-ink/70">{formatDuration(assignment.expectedDurationMinutes!)}</p>
+              {estimatedEnd ? <p className="mt-1.5 text-sm text-ink/70">Estimated end {estimatedEnd}</p> : null}
+              <p className="mt-1 text-[10px] leading-snug text-ink/50">{CLEANER_ESTIMATED_DURATION_NOTE}</p>
+            </>
+          ) : null}
           <div className="mt-4 flex items-start gap-2 text-base">
             <span aria-hidden="true">📍</span>
             <AddressLink address={fullAddress(job.snapshot)}>
@@ -904,7 +912,7 @@ function ScheduleFacts({
   date: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
 }) {
   const facts = formatScheduleFacts(input);
   if (compact) {

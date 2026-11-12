@@ -21,6 +21,24 @@ describe("assignmentSmsLogDelivery", () => {
     assert.equal(row.receivedAt, null);
   });
 
+  it("does not treat mock provider logs as received", () => {
+    const row = assignmentSmsLogDelivery({
+      smsLogId: "1",
+      assignmentId: "a",
+      jobId: "j",
+      cleanerId: "c",
+      kind: "invite",
+      toPhone: "5035550100",
+      bodyPreview: "",
+      provider: "mock",
+      status: "mock",
+      sentAt: "2026-10-29T20:00:00.000Z",
+      updatedAt: "2026-10-29T20:00:00.000Z",
+    });
+    assert.equal(row.received, "—");
+    assert.equal(row.receivedAt, null);
+  });
+
   it("treats delivered status as received with updatedAt", () => {
     const row = assignmentSmsLogDelivery({
       smsLogId: "1",

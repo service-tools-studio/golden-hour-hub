@@ -186,8 +186,11 @@ export function serviceEmoji(serviceType: ServiceType): string | null {
 }
 
 /** Admin duration controls and schedule summaries that derive on-site end times. */
-export const ESTIMATED_ON_SITE_FIELD_LABEL = "Estimated cleaning time";
+export const ESTIMATED_ON_SITE_FIELD_LABEL = "Estimated duration (optional)";
 export const ESTIMATED_ON_SITE_FIELD_HINT = "Counted from the scheduled start time.";
+export const CLEANER_ESTIMATED_DURATION_LABEL = "Estimated duration";
+export const CLEANER_ESTIMATED_DURATION_NOTE =
+  "For planning only — not a required amount of time on site. Follow the agreed cleaning scope.";
 
 /** 1 hour through 12 hours in 30-minute steps (for admin duration selects). */
 export const ESTIMATED_ON_SITE_DURATION_MINUTES = Array.from({ length: 23 }, (_, index) => 60 + index * 30);
@@ -217,8 +220,9 @@ export function formatDuration(minutes: number): string {
 export function formatEstimatedOnSiteEnd(
   arrivalWindowStart: string,
   arrivalWindowEnd: string,
-  expectedDurationMinutes: number,
+  expectedDurationMinutes?: number,
 ): string | null {
+  if (expectedDurationMinutes === undefined || expectedDurationMinutes <= 0) return null;
   const span = cleaningTimeSpan(arrivalWindowStart, arrivalWindowEnd, expectedDurationMinutes);
   if (!span) return null;
   return formatTimeLabel(span.end);
@@ -267,12 +271,23 @@ export function formatScheduleFacts(input: {
   date: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
 }): { arrive: string; length: string; ends: string } {
+  const duration =
+    input.expectedDurationMinutes !== undefined && input.expectedDurationMinutes > 0
+      ? input.expectedDurationMinutes
+      : undefined;
   if (isUnsetArrival(input.arrivalWindowStart, input.arrivalWindowEnd)) {
     return {
       arrive: VISIT_START_TIME_TBD_LABEL,
-      length: compactDuration(input.expectedDurationMinutes),
+      length: duration ? compactDuration(duration) : "—",
+      ends: "—",
+    };
+  }
+  if (duration === undefined) {
+    return {
+      arrive: formatTimeLabel(input.arrivalWindowStart!),
+      length: "—",
       ends: "—",
     };
   }
@@ -280,12 +295,12 @@ export function formatScheduleFacts(input: {
     date: input.date,
     arrivalWindowStart: input.arrivalWindowStart!,
     arrivalWindowEnd: input.arrivalWindowEnd!,
-    expectedDurationMinutes: input.expectedDurationMinutes,
+    expectedDurationMinutes: duration,
   });
   const end = zonedParts(blocked.endUtc);
   return {
     arrive: formatTimeLabel(input.arrivalWindowStart!),
-    length: compactDuration(input.expectedDurationMinutes),
+    length: compactDuration(duration),
     ends: formatTimeLabel(formatHm(end.hour, end.minute)),
   };
 }
@@ -419,14 +434,18 @@ export function cleanerArrivalChangeSms(input: {
 export function cleanerAssignmentChangeSms(input: {
   cleanerFirstName: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   details: CleanerCleaningSmsDetails;
 }): string {
+  const extraLines =
+    input.expectedDurationMinutes !== undefined && input.expectedDurationMinutes > 0
+      ? [`Approximately ${formatDuration(input.expectedDurationMinutes)} on site`]
+      : undefined;
   return cleanerCleaningSchedulingSmsBody({
     cleanerFirstName: input.cleanerFirstName,
     intro: "updated",
     details: input.details,
-    extraLines: [`Approximately ${formatDuration(input.expectedDurationMinutes)} on site`],
+    extraLines,
   });
 }
 
@@ -534,17 +553,20 @@ export function cleanerTextKelseyAboutJobBody(input: {
   serviceLabel: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   addressLine: string;
   payLine: string;
 }): string {
   const arrive = formatArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
-  const duration = formatDuration(input.expectedDurationMinutes);
+  const durationSuffix =
+    input.expectedDurationMinutes !== undefined && input.expectedDurationMinutes > 0
+      ? ` · ~${formatDuration(input.expectedDurationMinutes)}`
+      : "";
   return `Hi Kelsey — it's ${input.cleanerFirstName}. I have a question about this cleaning:
 
 ${input.customerFirstName}
 ${formatLongDate(input.date)} · ${input.serviceLabel}
-Arrive ${arrive} · ~${duration}
+Arrive ${arrive}${durationSuffix}
 ${input.addressLine}
 ${input.payLine}
 

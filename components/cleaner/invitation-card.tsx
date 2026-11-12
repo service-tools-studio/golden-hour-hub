@@ -12,11 +12,15 @@ import {
   cleanerServiceLabel,
   customerFirstNameForCleaner,
   CLEANER_INVITE_START_TIME_TBD_NOTE,
+  CLEANER_ESTIMATED_DURATION_LABEL,
+  CLEANER_ESTIMATED_DURATION_NOTE,
   formatArrival,
   formatDuration,
   formatEstimatedOnSiteEnd,
   formatLongDate,
+  propertySizeLabel,
 } from "@/lib/format";
+import { hasKnownDurationMinutes } from "@/lib/domain/duration";
 import { isUnsetArrival } from "@/lib/domain/arrival";
 import type { CleanerProfile, Job, JobAssignment } from "@/lib/domain/types";
 
@@ -82,13 +86,16 @@ function InvitationCardContent({
     confirmedCrewSize: attending,
   });
   const startTbd = isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd);
-  const estimatedEnd = startTbd
-    ? null
-    : formatEstimatedOnSiteEnd(
-        assignment.arrivalWindowStart!,
-        assignment.arrivalWindowEnd!,
-        assignment.expectedDurationMinutes,
-      );
+  const showDuration = Boolean(job.seriesId) && hasKnownDurationMinutes(assignment.expectedDurationMinutes);
+  const estimatedEnd =
+    startTbd || !showDuration
+      ? null
+      : formatEstimatedOnSiteEnd(
+          assignment.arrivalWindowStart!,
+          assignment.arrivalWindowEnd!,
+          assignment.expectedDurationMinutes,
+        );
+  const sizeLine = propertySizeLabel(job.snapshot.bedrooms, job.snapshot.bathrooms, job.snapshot.squareFeet);
   const invitePayLines = cleanerInvitationPayLines({
     bringsHelpers,
     payType: assignment.payType,
@@ -149,8 +156,11 @@ function InvitationCardContent({
           <JobAddressText place={job.snapshot} />
         </AddressLink>
       </div>
+      {sizeLine ? <p className="mt-2 text-base text-ink/70">{sizeLine}</p> : null}
       {job.seriesId ? (
-        <p className="mt-2 text-sm text-ink/60">Recurring customer. You are accepting this cleaning only.</p>
+        <p className="mt-2 text-[10px] leading-snug text-ink/50">
+          Recurring customer. You are accepting this cleaning only.
+        </p>
       ) : null}
       <dl className="mt-4 space-y-2 text-base">
         <div className="flex justify-between gap-3">
@@ -162,18 +172,21 @@ function InvitationCardContent({
             ) : null}
           </dd>
         </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-ink/60">Estimated cleaning time</dt>
-          <dd className="text-right">
-            {formatDuration(assignment.expectedDurationMinutes)}
-            {estimatedEnd ? (
-              <>
-                <br />
-                <span className="text-sm text-ink/70">Estimated end {estimatedEnd}</span>
-              </>
-            ) : null}
-          </dd>
-        </div>
+        {showDuration ? (
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink/60">{CLEANER_ESTIMATED_DURATION_LABEL}</dt>
+            <dd className="max-w-[14rem] text-right">
+              {formatDuration(assignment.expectedDurationMinutes!)}
+              {estimatedEnd ? (
+                <>
+                  <br />
+                  <span className="text-sm text-ink/70">Estimated end {estimatedEnd}</span>
+                </>
+              ) : null}
+              <p className="mt-1 text-[10px] leading-snug text-ink/50">{CLEANER_ESTIMATED_DURATION_NOTE}</p>
+            </dd>
+          </div>
+        ) : null}
       </dl>
       {bringsHelpers && !expired ? (
         <div className="mt-4">

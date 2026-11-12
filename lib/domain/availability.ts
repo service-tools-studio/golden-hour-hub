@@ -83,7 +83,13 @@ export function cleaningTimeSpan(
   return { start: timeFromMinutes(start), end: timeFromMinutes(end) };
 }
 
-export type AvailabilityFit = { start: string; end: string; fits: boolean };
+export type AvailabilityFit = {
+  start: string;
+  end: string;
+  fits: boolean;
+  /** Window begins after the job start time. */
+  lateStart?: boolean;
+};
 
 /** Sort key for staffing lists: mint (fits span) first, grey pills next, none last. */
 export function availabilityStaffingSortRank(pills: AvailabilityFit[]): number {
@@ -118,7 +124,7 @@ export function staffingAvailabilityWindows(
   }));
 }
 
-/** Split a cleaner's windows into the part inside a cleaning span and the parts outside it. */
+/** One pill per availability window: mint if open at job start, gold if the window starts later. */
 export function availabilityAgainstSpan(
   windows: { start: string; end: string }[],
   span: { start: string; end: string } | null,
@@ -138,23 +144,32 @@ export function availabilityAgainstSpan(
   }
   const spanStart = span ? minutesFromTime(span.start) : Number.NaN;
   const spanEnd = span ? minutesFromTime(span.end) : Number.NaN;
-  const hasSpan = spanEnd > spanStart;
+  const pointOnly = span !== null && span.start === span.end && Number.isFinite(spanStart);
+  const hasSpan = span !== null && (spanEnd > spanStart || pointOnly);
   const fits: AvailabilityFit[] = [];
   for (const window of merged) {
-    if (!hasSpan || window.end <= spanStart || window.start >= spanEnd) {
-      fits.push({ start: timeFromMinutes(window.start), end: timeFromMinutes(window.end), fits: false });
+    if (!hasSpan) {
+      fits.push({
+        start: timeFromMinutes(window.start),
+        end: timeFromMinutes(window.end),
+        fits: false,
+      });
       continue;
     }
-    if (window.start < spanStart) {
-      fits.push({ start: timeFromMinutes(window.start), end: timeFromMinutes(spanStart), fits: false });
-    }
-    fits.push({
-      start: timeFromMinutes(Math.max(window.start, spanStart)),
-      end: timeFromMinutes(Math.min(window.end, spanEnd)),
-      fits: true,
-    });
-    if (window.end > spanEnd) {
-      fits.push({ start: timeFromMinutes(spanEnd), end: timeFromMinutes(window.end), fits: false });
+    if (window.end <= spanStart) continue;
+    if (window.start <= spanStart && spanStart < window.end) {
+      fits.push({
+        start: timeFromMinutes(window.start),
+        end: timeFromMinutes(window.end),
+        fits: true,
+      });
+    } else if (window.start > spanStart) {
+      fits.push({
+        start: timeFromMinutes(window.start),
+        end: timeFromMinutes(window.end),
+        fits: false,
+        lateStart: true,
+      });
     }
   }
   return fits;

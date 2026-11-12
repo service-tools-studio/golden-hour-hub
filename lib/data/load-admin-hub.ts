@@ -29,7 +29,13 @@ export type LoadHubSliceOptions = FinalizeHubOptions & {
 function readJobId(item: DynamoItem): string | null {
   if (typeof item.jobId === "string" && item.jobId.length > 0) return item.jobId;
   if (typeof item.pk === "string" && item.pk.startsWith("JOB#")) return item.pk.slice("JOB#".length);
-  if (typeof item.gsi1sk === "string" && item.gsi1sk.length > 0) return item.gsi1sk;
+  if (typeof item.gsi2sk === "string") {
+    const fromCustomerJob = /^JOB#[^#]+#(.+)$/.exec(item.gsi2sk);
+    if (fromCustomerJob?.[1]) return fromCustomerJob[1];
+  }
+  if (typeof item.gsi1sk === "string" && item.gsi1sk.length > 0 && !item.gsi1sk.startsWith("JOB#")) {
+    return item.gsi1sk;
+  }
   return null;
 }
 
@@ -232,6 +238,28 @@ export async function loadAdminHubRemainderSlice(): Promise<HubData> {
   const items = dedupeItemsByKey([...customerPartitions, ...jobPartitions, ...series, ...extras]);
   if (items.length === 0) return emptyHub(today);
   return itemsToHub(items, today);
+}
+
+/** All recurring series and cleaning history for one customer (relation index + job partitions). */
+export async function loadAdminHubCustomerDetailSlice(customerId: string): Promise<HubData> {
+  const today = todayInBusinessZone();
+  const [partition, series, jobIndexRows] = await Promise.all([
+    queryItemsByPk(`CUSTOMER#${customerId}`),
+    loadCustomerSeriesItems([customerId]),
+    queryRelationIndex(`CUSTOMER#${customerId}`, "JOB#"),
+  ]);
+  const jobIds = [
+    ...new Set(jobIndexRows.map(readJobId).filter((value): value is string => Boolean(value))),
+  ];
+  const jobPartitions = jobIds.length > 0 ? await loadJobPartitions(jobIds) : [];
+  const items = dedupeItemsByKey([...partition, ...series, ...jobPartitions]);
+  if (items.length === 0) return emptyHub(today);
+  return itemsToHub(items, today);
+}
+
+/** @deprecated Use {@link loadAdminHubCustomerDetailSlice}. */
+export async function loadAdminHubCustomerSeriesSlice(customerId: string): Promise<HubData> {
+  return loadAdminHubCustomerDetailSlice(customerId);
 }
 
 /** Load specific partition roots (pk) for incremental sync. */

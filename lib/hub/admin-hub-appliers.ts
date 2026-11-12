@@ -11,6 +11,7 @@ import {
   validateCustomerInput,
   type CustomerInput,
 } from "../domain/customers.ts";
+import { hasKnownDurationMinutes, parseOptionalDurationMinutes, validateOptionalDurationMinutes } from "../domain/duration.ts";
 import { CROSS_MARKET_STAFFING_MESSAGE, DEFAULT_MARKET_ID, cleanerMatchesJobMarket } from "../domain/markets.ts";
 import { expireJobInvitesIfHeadcountMet } from "../domain/invitations.ts";
 import {
@@ -25,6 +26,7 @@ import {
 import {
   applyScheduleConflictWarning,
   availabilityCoversBlockedRange,
+  availabilityCoversJobStart,
   calculateBlockedRange,
   calculateConfirmedHeadcount,
   CLEANING_DELETE_BLOCKED_MESSAGE,
@@ -70,7 +72,7 @@ function validatePricePerVisitCents(cents?: number): AdminHubApplierResult | nul
 function assignmentNotice(input: {
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   proposedCrewSize: number;
   payType: PayType;
   payPerPersonCents: number;
@@ -326,13 +328,8 @@ export function saveCleanerDetailsOnHub(hub: HubData, input: SaveCleanerDetailsI
   if (!property) return { ok: false, message: "Choose one of this customer's properties." };
   const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
   if (!arrivalTimes.ok) return arrivalTimes;
-  if (
-    !Number.isInteger(input.expectedDurationMinutes) ||
-    input.expectedDurationMinutes < 30 ||
-    input.expectedDurationMinutes > 12 * 60
-  ) {
-    return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-  }
+  const duration = validateOptionalDurationMinutes(input.expectedDurationMinutes);
+  if (!duration.ok) return { ok: false, message: duration.message };
   if (job.headcountNeeded < 1) {
     return { ok: false, message: "Set the headcount on this cleaning first." };
   }
@@ -346,7 +343,7 @@ export function saveCleanerDetailsOnHub(hub: HubData, input: SaveCleanerDetailsI
     cleanerId: cleaner.cleanerId,
     arrivalWindowStart: arrivalTimes.arrivalWindowStart,
     arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-    expectedDurationMinutes: input.expectedDurationMinutes,
+    expectedDurationMinutes: duration.expectedDurationMinutes,
     proposedCrewSize: input.proposedCrewSize,
     payType: input.payType,
     payPerPersonCents: input.payPerPersonCents,
@@ -555,13 +552,9 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
   if (!isValidDate(input.date)) return { ok: false, message: "Choose a date." };
   const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
   if (!arrivalTimes.ok) return arrivalTimes;
-  if (
-    !Number.isInteger(input.expectedDurationMinutes) ||
-    input.expectedDurationMinutes < 30 ||
-    input.expectedDurationMinutes > 12 * 60
-  ) {
-    return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-  }
+  const duration = validateOptionalDurationMinutes(input.expectedDurationMinutes);
+  if (!duration.ok) return { ok: false, message: duration.message };
+  const visitDuration = duration.expectedDurationMinutes;
   if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
     return { ok: false, message: "Enter how many cleaners are needed." };
   }
@@ -645,7 +638,8 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
       item.notifiedServiceDate !== notifiedServiceDate;
     const onVisit =
       selected.has(item.cleanerId) && item.status !== "CANCELED" && item.status !== "EXPIRED_JOB_FILLED";
-    const durationOutOfSync = onVisit && item.expectedDurationMinutes !== input.expectedDurationMinutes;
+    const durationOutOfSync =
+      onVisit && parseOptionalDurationMinutes(item.expectedDurationMinutes) !== parseOptionalDurationMinutes(visitDuration);
     if (!dateChangedForCleaner && !arrivalChanged && !durationOutOfSync) return item;
     const nextArrivalStart = normalizedRequested?.arrivalWindowStart ?? item.arrivalWindowStart;
     const nextArrivalEnd = normalizedRequested?.arrivalWindowEnd ?? item.arrivalWindowEnd;
@@ -660,7 +654,7 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
       needsDateReinvite: needsReinvite ? true : undefined,
       arrivalWindowStart: nextArrivalStart,
       arrivalWindowEnd: nextArrivalEnd,
-      expectedDurationMinutes: onVisit ? input.expectedDurationMinutes : item.expectedDurationMinutes,
+      expectedDurationMinutes: onVisit ? visitDuration : item.expectedDurationMinutes,
       lastNotified: durationOutOfSync && !item.lastNotified ? assignmentNotice(item) : nextLastNotified,
       updatedAt: now,
     };
@@ -683,7 +677,7 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
     serviceType: input.serviceType,
     arrivalWindowStart: arrival.start,
     arrivalWindowEnd: arrival.end,
-    expectedDurationMinutes: input.expectedDurationMinutes,
+    expectedDurationMinutes: visitDuration,
     headcountNeeded,
     draftCleanerIds,
     draftCleanerDetails: (job.draftCleanerDetails ?? [])
@@ -695,7 +689,7 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
           ...detail,
           arrivalWindowStart: normalized?.arrivalWindowStart ?? detail.arrivalWindowStart,
           arrivalWindowEnd: normalized?.arrivalWindowEnd ?? detail.arrivalWindowEnd,
-          expectedDurationMinutes: input.expectedDurationMinutes,
+          expectedDurationMinutes: visitDuration,
         };
       }),
     snapshot: snapshotVisit(customer, property),
@@ -739,7 +733,7 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
       defaultHeadcountNeeded: headcountNeeded,
       defaultArrivalWindowStart: seriesArrivalStart,
       defaultArrivalWindowEnd: seriesArrivalEnd,
-      defaultExpectedDurationMinutes: input.expectedDurationMinutes,
+      defaultExpectedDurationMinutes: visitDuration,
       defaultServiceType: "RECURRING",
       defaultSpecialInstructions: input.specialInstructions.trim() || undefined,
       defaultPricePerVisitCents: input.pricePerVisitCents,
@@ -805,13 +799,9 @@ export function updateJobOnHub(hub: HubData, input: UpdateJobInput): AdminHubApp
   if (!property) return { ok: false, message: "Choose one of this customer's properties." };
   const arrivalTimes = validateArrivalWindow(input.arrivalWindowStart, input.arrivalWindowEnd);
   if (!arrivalTimes.ok) return arrivalTimes;
-  if (
-    !Number.isInteger(input.expectedDurationMinutes) ||
-    input.expectedDurationMinutes < 30 ||
-    input.expectedDurationMinutes > 12 * 60
-  ) {
-    return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-  }
+  const duration = validateOptionalDurationMinutes(input.expectedDurationMinutes);
+  if (!duration.ok) return { ok: false, message: duration.message };
+  const assignmentDuration = duration.expectedDurationMinutes;
   if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 1 || input.headcountNeeded > 12) {
     return { ok: false, message: "Enter how many cleaners are needed." };
   }
@@ -838,16 +828,22 @@ export function updateJobOnHub(hub: HubData, input: UpdateJobInput): AdminHubApp
       (submission) => submission.cleanerId === cleaner.cleanerId && submission.weekStart === weekStart,
     );
     if (!submitted) return { ok: false, message: `${cleaner.firstName} has not submitted this week.` };
-    const blocked = calculateBlockedRange({
-      date: job.date,
-      arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-      arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-      expectedDurationMinutes: input.expectedDurationMinutes,
-    });
     const windows = hub.availability
       .filter((window) => window.cleanerId === cleaner.cleanerId)
       .map((window) => ({ date: window.date, start: window.start, end: window.end }));
-    if (!availabilityCoversBlockedRange(windows, blocked)) {
+    if (assignmentDuration !== undefined) {
+      const blocked = calculateBlockedRange({
+        date: job.date,
+        arrivalWindowStart: arrivalTimes.arrivalWindowStart,
+        arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
+        expectedDurationMinutes: assignmentDuration,
+      });
+      if (!availabilityCoversBlockedRange(windows, blocked)) {
+        return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
+      }
+    } else if (
+      !availabilityCoversJobStart(windows, job.date, arrivalTimes.arrivalWindowStart)
+    ) {
       return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
     }
   }
@@ -858,12 +854,13 @@ export function updateJobOnHub(hub: HubData, input: UpdateJobInput): AdminHubApp
     confirmedCrewSize: input.proposedCrewSize,
   });
   const blocked =
-    assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION"
+    assignmentDuration !== undefined &&
+    (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION")
       ? calculateBlockedRange({
           date: job.date,
           arrivalWindowStart: arrivalTimes.arrivalWindowStart,
           arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-          expectedDurationMinutes: input.expectedDurationMinutes,
+          expectedDurationMinutes: assignmentDuration,
         })
       : null;
   const nextAssignments = hub.assignments.map((item) => {
@@ -874,14 +871,14 @@ export function updateJobOnHub(hub: HubData, input: UpdateJobInput): AdminHubApp
       confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
       arrivalWindowStart: arrivalTimes.arrivalWindowStart,
       arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-      expectedDurationMinutes: input.expectedDurationMinutes,
+      expectedDurationMinutes: assignmentDuration,
       payType: input.payType,
       payPerPersonCents: input.payPerPersonCents,
       proposedTotalPayCents: pay,
       confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
       updatedAt: now,
     };
-    if (blocked) {
+    if (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION") {
       const merged = hub.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
       nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
     }
@@ -930,7 +927,8 @@ export function moveAssignmentTimeOnHub(
   if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
   const now = new Date().toISOString();
   const blocked =
-    assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION"
+    hasKnownDurationMinutes(assignment.expectedDurationMinutes) &&
+    (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION")
       ? calculateBlockedRange({
           date: assignment.serviceDate,
           arrivalWindowStart: moved.arrivalWindowStart,

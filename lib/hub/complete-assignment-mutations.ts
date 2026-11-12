@@ -4,6 +4,7 @@ import {
 } from "../domain/arrival.ts";
 import { confirmedCompensationCents } from "../domain/compensation.ts";
 import { validateProposedCrewSize } from "../domain/cleaners.ts";
+import { validateOptionalDurationMinutes } from "../domain/duration.ts";
 import {
   clearStaleNotScheduledAttention,
   expireJobInvitesIfHeadcountMet,
@@ -31,7 +32,7 @@ export type SaveCleanerDetailsInput = {
   propertyId: string;
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   proposedCrewSize: number;
   payType: PayType;
   payPerPersonCents: number;
@@ -50,7 +51,7 @@ export type CompleteAssignmentResult =
 function assignmentNotice(input: {
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   proposedCrewSize: number;
   payType: PayType;
   payPerPersonCents: number;
@@ -135,13 +136,8 @@ function saveCleanerDetailsOnHub(hub: HubData, input: SaveCleanerDetailsInput): 
   if (!property) return { ok: false, message: "Choose one of this customer's properties." };
   const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
   if (!arrivalTimes.ok) return arrivalTimes;
-  if (
-    !Number.isInteger(input.expectedDurationMinutes) ||
-    input.expectedDurationMinutes < 30 ||
-    input.expectedDurationMinutes > 12 * 60
-  ) {
-    return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-  }
+  const duration = validateOptionalDurationMinutes(input.expectedDurationMinutes);
+  if (!duration.ok) return { ok: false, message: duration.message };
   if (job.headcountNeeded < 1) {
     return { ok: false, message: "Set the headcount on this cleaning first." };
   }
@@ -155,7 +151,7 @@ function saveCleanerDetailsOnHub(hub: HubData, input: SaveCleanerDetailsInput): 
     cleanerId: cleaner.cleanerId,
     arrivalWindowStart: arrivalTimes.arrivalWindowStart,
     arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-    expectedDurationMinutes: input.expectedDurationMinutes,
+    expectedDurationMinutes: duration.expectedDurationMinutes,
     proposedCrewSize: input.proposedCrewSize,
     payType: input.payType,
     payPerPersonCents: input.payPerPersonCents,
@@ -202,13 +198,8 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
   }
   const arrivalTimes = validateOptionalVisitArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
   if (!arrivalTimes.ok) return arrivalTimes;
-  if (
-    !Number.isInteger(input.expectedDurationMinutes) ||
-    input.expectedDurationMinutes < 30 ||
-    input.expectedDurationMinutes > 12 * 60
-  ) {
-    return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-  }
+  const duration = validateOptionalDurationMinutes(input.expectedDurationMinutes);
+  if (!duration.ok) return { ok: false, message: duration.message };
   if (job.headcountNeeded < 1) {
     return { ok: false, message: "Set the headcount on this cleaning first." };
   }
@@ -218,7 +209,8 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
     return { ok: false, message: "Enter the pay per person." };
   }
   const now = new Date().toISOString();
-  const notice = assignmentNotice(input);
+  const resolvedDuration = duration.expectedDurationMinutes;
+  const notice = assignmentNotice({ ...input, expectedDurationMinutes: resolvedDuration });
 
   if (input.mode === "DRAFT" && existing) {
     const pay = confirmedCompensationCents({
@@ -234,7 +226,7 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
         confirmedCrewSize: item.status === "CONFIRMED" ? input.proposedCrewSize : item.confirmedCrewSize,
         arrivalWindowStart: arrivalTimes.arrivalWindowStart,
         arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-        expectedDurationMinutes: input.expectedDurationMinutes,
+        expectedDurationMinutes: resolvedDuration,
         payType: input.payType,
         payPerPersonCents: input.payPerPersonCents,
         proposedTotalPayCents: pay,
@@ -243,7 +235,7 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
           const nextNotice = assignmentNotice({
             arrivalWindowStart: arrivalTimes.arrivalWindowStart,
             arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-            expectedDurationMinutes: input.expectedDurationMinutes,
+            expectedDurationMinutes: resolvedDuration,
             proposedCrewSize: input.proposedCrewSize,
             payType: input.payType,
             payPerPersonCents: input.payPerPersonCents,
@@ -324,7 +316,7 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
         proposedCrewSize: input.proposedCrewSize,
         arrivalWindowStart: arrivalTimes.arrivalWindowStart,
         arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-        expectedDurationMinutes: input.expectedDurationMinutes,
+        expectedDurationMinutes: resolvedDuration,
         payType: input.payType,
         payPerPersonCents: input.payPerPersonCents,
       },

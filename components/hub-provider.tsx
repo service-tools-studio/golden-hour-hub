@@ -52,6 +52,7 @@ import {
   loadScheduleJobsRangeAction,
   type BootstrapResult,
 } from "@/app/actions/hub-data";
+import { isDynamoBootstrapResult } from "@/lib/hub/bootstrap-result";
 import {
   addJobCleanerOnHub,
   deleteCustomerOnHub,
@@ -264,10 +265,9 @@ function assignmentIdsRemovedByVisitUpdate(hub: HubData, jobId: string, cleanerI
 }
 
 function withReconciledScheduleConflicts(state: HubState): HubState {
-  return {
-    ...state,
-    assignments: reconcileScheduleConflictWarnings(state.assignments, state.cleaners),
-  };
+  const assignments = reconcileScheduleConflictWarnings(state.assignments, state.cleaners);
+  if (assignments === state.assignments) return state;
+  return { ...state, assignments };
 }
 
 function readSession(): { role: AppRole | null; cleanerId: string | null } {
@@ -342,8 +342,8 @@ function hubEntitySnapshot(state: HubState): string {
 
 type InitialAuth = { role: AppRole; cleanerId: string | null };
 
-function dynamoBootstrap(remote: BootstrapResult | null): Extract<BootstrapResult, { source: "dynamodb" }> | null {
-  if (!remote || "ok" in remote || remote.source !== "dynamodb") return null;
+function dynamoBootstrap(remote: BootstrapResult | null) {
+  if (!remote || !isDynamoBootstrapResult(remote)) return null;
   return remote;
 }
 
@@ -378,7 +378,9 @@ export function HubProvider({
     setStateInner((prev) => {
       const resolved = typeof update === "function" ? update(prev) : update;
       if (!resolved) return resolved;
-      return withReconciledScheduleConflicts(resolved);
+      if (resolved === prev) return prev;
+      const reconciled = withReconciledScheduleConflicts(resolved);
+      return reconciled === prev ? prev : reconciled;
     });
   }, []);
   const [toast, setToast] = useState<string | null>(null);
@@ -757,6 +759,35 @@ export function HubProvider({
     });
     scheduleLookbackInflightRef.current.set(monthKey, pending);
     await pending;
+  }, [setState]);
+
+  const refreshRecurringHorizon = useCallback(() => {
+    const today = todayInBusinessZone();
+    const nowIso = new Date().toISOString();
+    setState((prev) => {
+      if (!prev || prev.series.length === 0) return prev;
+      const generated = mergeRecurringHorizon({
+        ...prev,
+        today,
+        nowIso,
+      });
+      if (
+        generated.jobs.length === prev.jobs.length &&
+        generated.assignments.length === prev.assignments.length &&
+        generated.series.every(
+          (item, index) => item.generatedThroughDate === prev.series[index]?.generatedThroughDate,
+        )
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        today,
+        series: generated.series,
+        jobs: generated.jobs,
+        assignments: generated.assignments,
+      };
+    });
   }, [setState]);
 
   if (!state) {
@@ -1354,32 +1385,6 @@ export function HubProvider({
     });
   }
 
-  function refreshRecurringHorizon(): void {
-    if (data.series.length === 0) return;
-    const today = todayInBusinessZone();
-    const generated = mergeRecurringHorizon({
-      ...data,
-      today,
-      nowIso: new Date().toISOString(),
-    });
-    if (
-      generated.jobs.length === data.jobs.length &&
-      generated.assignments.length === data.assignments.length &&
-      generated.series.every(
-        (item, index) => item.generatedThroughDate === data.series[index]?.generatedThroughDate,
-      )
-    ) {
-      return;
-    }
-    setState({
-      ...data,
-      today,
-      series: generated.series,
-      jobs: generated.jobs,
-      assignments: generated.assignments,
-    });
-  }
-
   async function deleteSeries(seriesId: string): AsyncActionResult {
     if (isDynamoAdmin()) return applyAdminActionResult(await deleteSeriesAction(seriesId));
     return applyPreviewMutation(deleteSeriesOnHub(data, seriesId));
@@ -1414,7 +1419,7 @@ export function HubProvider({
         if (previewPersistsToDynamo) {
           await syncPreviewSessionCookie("ADMIN", null);
           const remote = await bootstrapHub();
-          if (remote.source === "dynamodb") {
+          if (isDynamoBootstrapResult(remote)) {
             previewDynamoHubRef.current = remote.data;
             hubRevisionRef.current = remote.revision;
             setState({ ...withCurrentHorizon(remote.data), role: "ADMIN", cleanerId: null });
@@ -1435,7 +1440,7 @@ export function HubProvider({
         if (previewPersistsToDynamo) {
           await syncPreviewSessionCookie("CLEANER", cleanerId);
           const remote = await bootstrapHub();
-          if (remote.source === "dynamodb") {
+          if (isDynamoBootstrapResult(remote)) {
             hubRevisionRef.current = remote.revision;
             setState({ ...withCurrentHorizon(remote.data), role: "CLEANER", cleanerId });
             return;

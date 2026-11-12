@@ -354,7 +354,7 @@ function readSeries(item: DynamoItem): RecurringSeries {
     defaultHeadcountNeeded: numberField(item, "defaultHeadcountNeeded"),
     defaultArrivalWindowStart: stringField(item, "defaultArrivalWindowStart"),
     defaultArrivalWindowEnd: stringField(item, "defaultArrivalWindowEnd"),
-    defaultExpectedDurationMinutes: numberField(item, "defaultExpectedDurationMinutes"),
+    defaultExpectedDurationMinutes: optionalNumber(item, "defaultExpectedDurationMinutes"),
     defaultServiceType: item.defaultServiceType as RecurringSeries["defaultServiceType"],
     defaultSpecialInstructions: optionalString(item, "defaultSpecialInstructions"),
     defaultPricePerVisitCents: optionalNumber(item, "defaultPricePerVisitCents"),
@@ -425,7 +425,7 @@ function readAssignment(item: DynamoItem): JobAssignment {
     availabilityConflictWeekStart: optionalString(item, "availabilityConflictWeekStart"),
     arrivalWindowStart: optionalString(item, "arrivalWindowStart"),
     arrivalWindowEnd: optionalString(item, "arrivalWindowEnd"),
-    expectedDurationMinutes: numberField(item, "expectedDurationMinutes"),
+    expectedDurationMinutes: optionalNumber(item, "expectedDurationMinutes"),
     payType: item.payType === "HOURLY" ? "HOURLY" : "FLAT",
     payPerPersonCents: numberField(item, "payPerPersonCents"),
     proposedTotalPayCents: numberField(item, "proposedTotalPayCents"),
@@ -466,14 +466,16 @@ function readAssignmentNotice(value: unknown): AssignmentNotice | undefined {
   const hasStart = typeof record.arrivalWindowStart === "string";
   const hasEnd = typeof record.arrivalWindowEnd === "string";
   if (hasStart !== hasEnd) return undefined;
-  if (typeof record.expectedDurationMinutes !== "number" || typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
+  if (typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
     return undefined;
   }
   if (record.payType !== "FLAT" && record.payType !== "HOURLY") return undefined;
+  const expectedDurationMinutes =
+    typeof record.expectedDurationMinutes === "number" ? record.expectedDurationMinutes : undefined;
   return {
     arrivalWindowStart: hasStart ? (record.arrivalWindowStart as string) : undefined,
     arrivalWindowEnd: hasEnd ? (record.arrivalWindowEnd as string) : undefined,
-    expectedDurationMinutes: record.expectedDurationMinutes,
+    expectedDurationMinutes,
     proposedCrewSize: record.proposedCrewSize,
     payType: record.payType,
     payPerPersonCents: record.payPerPersonCents,
@@ -492,15 +494,17 @@ function readDraftCleanerDetails(value: unknown): DraftCleanerDetail[] | undefin
     const hasEnd = typeof record.arrivalWindowEnd === "string";
     if (hasStart !== hasEnd) return [];
     if (record.payType !== "FLAT" && record.payType !== "HOURLY") return [];
-    if (typeof record.expectedDurationMinutes !== "number" || typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
+    if (typeof record.proposedCrewSize !== "number" || typeof record.payPerPersonCents !== "number") {
       return [];
     }
+    const expectedDurationMinutes =
+      typeof record.expectedDurationMinutes === "number" ? record.expectedDurationMinutes : undefined;
     return [
       {
         cleanerId: record.cleanerId,
         arrivalWindowStart: hasStart ? (record.arrivalWindowStart as string) : undefined,
         arrivalWindowEnd: hasEnd ? (record.arrivalWindowEnd as string) : undefined,
-        expectedDurationMinutes: record.expectedDurationMinutes,
+        expectedDurationMinutes,
         proposedCrewSize: record.proposedCrewSize,
         payType: record.payType,
         payPerPersonCents: record.payPerPersonCents,

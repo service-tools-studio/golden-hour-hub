@@ -1,4 +1,5 @@
 import { validateOptionalVisitArrival } from "../domain/arrival.ts";
+import { validateOptionalDurationMinutes } from "../domain/duration.ts";
 import { snapshotVisit } from "../domain/customers.ts";
 import { CROSS_MARKET_STAFFING_MESSAGE, cleanerMatchesJobMarket } from "../domain/markets.ts";
 import { mergeRecurringHorizon, validateRecurrenceRule } from "../domain/recurrence.ts";
@@ -14,7 +15,7 @@ export type CreateJobInput = {
   arrivalWindowStart?: string;
   arrivalWindowEnd?: string;
   headcountNeeded: number;
-  expectedDurationMinutes: number;
+  expectedDurationMinutes?: number;
   cleanerIds: string[];
   specialInstructions: string;
   pricePerVisitCents?: number;
@@ -56,13 +57,8 @@ export function createJobOnHub(hub: HubData, input: CreateJobInput, actor: strin
   if (!Number.isInteger(input.headcountNeeded) || input.headcountNeeded < 0 || input.headcountNeeded > 12) {
     return { ok: false, message: "Enter how many cleaners are needed." };
   }
-  if (
-    !Number.isInteger(input.expectedDurationMinutes) ||
-    input.expectedDurationMinutes < 30 ||
-    input.expectedDurationMinutes > 12 * 60
-  ) {
-    return { ok: false, message: "Enter a duration between 30 minutes and 12 hours." };
-  }
+  const duration = validateOptionalDurationMinutes(input.expectedDurationMinutes);
+  if (!duration.ok) return { ok: false, message: duration.message };
   if (input.recurringSchedule) {
     if (input.serviceType !== "RECURRING") {
       return { ok: false, message: "Recurring schedule applies only to recurring cleans." };
@@ -85,7 +81,7 @@ export function createJobOnHub(hub: HubData, input: CreateJobInput, actor: strin
     serviceType: input.serviceType,
     date: input.date,
     headcountNeeded: input.headcountNeeded > 0 ? input.headcountNeeded : withSeries ? 1 : 0,
-    expectedDurationMinutes: input.expectedDurationMinutes,
+    expectedDurationMinutes: duration.expectedDurationMinutes,
     arrivalWindowStart: arrivalTimes.arrivalWindowStart,
     arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
     draftCleanerIds: cleanerIds,
@@ -129,7 +125,7 @@ export function createJobOnHub(hub: HubData, input: CreateJobInput, actor: strin
     defaultHeadcountNeeded: job.headcountNeeded,
     defaultArrivalWindowStart: seriesArrivalStart,
     defaultArrivalWindowEnd: seriesArrivalEnd,
-    defaultExpectedDurationMinutes: input.expectedDurationMinutes,
+    defaultExpectedDurationMinutes: duration.expectedDurationMinutes,
     defaultServiceType: "RECURRING",
     defaultSpecialInstructions: input.specialInstructions.trim() || undefined,
     defaultPricePerVisitCents: input.pricePerVisitCents,
