@@ -33,7 +33,7 @@ The app does not cancel or move the confirmed job.
 
 `headcountNeeded` is people at the property, not the number of assignment rows.
 
-Confirmed headcount is the sum of `confirmedCrewSize` on `CONFIRMED` assignments. `PENDING_AVAILABILITY` does not use a spot.
+Confirmed headcount is the sum of `confirmedCrewSize` on `CONFIRMED` assignments.
 
 Only an admin changes `typicalHelperCount` and `maxHelperCount`. Helper approval is derived: `maxHelperCount > 0`. Crew sizes are derived: typical crew is `1 + typicalHelperCount`, and the maximum crew is `1 + maxHelperCount`. `typicalHelperCount` cannot exceed `maxHelperCount`.
 
@@ -45,7 +45,7 @@ Admins use the same ceiling for direct assignment and for a recurring staffing t
 
 Helpers do not get accounts, availability, acceptance actions, or their own pay rows. The primary cleaner is paid for the crew. Changing the crew inside the allowed range recalculates that pay from the stored per-person rate.
 
-Admins may invite more people than the job needs. The first valid confirmations fill the job. When it is full, remaining `INVITED` and `PENDING_AVAILABILITY` rows become `EXPIRED_JOB_FILLED`.
+Admins may invite more people than the job needs. The first valid confirmations fill the job. When it is full, remaining `INVITED` rows become `EXPIRED_JOB_FILLED`.
 
 Two confirms of the last spot cannot both succeed. The job update is conditional: `confirmedHeadcount + requested crew <= headcountNeeded`, in the same transaction as the status change.
 
@@ -79,7 +79,7 @@ The horizon is how far ahead job occurrences exist. It is not a limit on invitat
 
 ### Future staffing
 
-**Copy cleaners and send invitations.** Each new occurrence gets a new `INVITED` assignment when the cleaner is active and the template crew fits the current maximum. The cleaner can accept a later week before submitting availability. That acceptance becomes `PENDING_AVAILABILITY`: they intend to take the cleaning, and it is not schedule-confirmed yet. Accepting one date does not confirm the next. If the week is already submitted, acceptance runs the normal availability, conflict, crew, headcount, and pay checks and becomes `CONFIRMED` only when they pass.
+**Copy cleaners and send invitations.** Each new occurrence gets a new `INVITED` assignment when the cleaner is active and the template crew fits the current maximum. The cleaner can accept a later week before submitting availability. Acceptance becomes `CONFIRMED` when crew, headcount, and conflict checks pass. Availability is revalidated when that week is submitted. Accepting one date does not confirm the next.
 
 **Copy cleaners and assign directly.** Used when the cleaner already agreed to the standing schedule. The new assignment is `CONFIRMED` only when all of these are true:
 
@@ -90,9 +90,9 @@ The horizon is how far ahead job occurrences exist. It is not a limit on invitat
 - the blocked time sits inside that availability
 - its labor time (after the arrival window through expected duration) does not overlap another confirmed job’s labor time
 
-If that week is not submitted yet, the assignment is `PENDING_AVAILABILITY` with the intended crew. The admin can see who the standing cleaner is. It is not treated as schedule-confirmed. If the week is submitted and a check fails, the assignment is `NEEDS_ATTENTION` with the reason, for example: “This recurring cleaning could not be assigned to Claudia because it conflicts with another confirmed job.” The job still exists. The app does not confirm it and does not change the cleaner’s availability.
+If that week is not submitted yet, direct assignment uses an `INVITED` row for the standing cleaner until they accept (or the week is submitted and checks pass). If the week is submitted and availability or headcount checks fail, the assignment is `NEEDS_ATTENTION` with the reason. A labor-time overlap with another confirmed job keeps the assignment `CONFIRMED` and sets an admin `attentionReason`; cleaners are not demoted for schedule conflicts.
 
-When the cleaner later submits that week, pending rows in the week are checked again. A fit becomes `CONFIRMED`. A conflict becomes `NEEDS_ATTENTION`.
+When the cleaner later submits that week, confirmed rows in the week are checked again. An availability gap becomes `NEEDS_ATTENTION`; overlaps keep `CONFIRMED` with updated conflict copy.
 
 **Leave future cleanings unassigned.** Jobs are created with no assignments and show as needing staffing.
 

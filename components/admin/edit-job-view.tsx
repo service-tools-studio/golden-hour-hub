@@ -332,7 +332,7 @@ export function EditJobView({
   const [duration, setDuration] = useState<number | null>(
     initialDurationMinutes(assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes),
   );
-  const initialCrew = assignment?.confirmedCrewSize ?? assignment?.pendingCrewSize ?? assignment?.proposedCrewSize ?? 1;
+  const initialCrew = assignment?.confirmedCrewSize ?? assignment?.proposedCrewSize ?? 1;
   const [crew, setCrew] = useState(initialCrew);
   const [payType, setPayType] = useState<PayType>(assignment?.payType ?? DEFAULT_PAY_TYPE);
   const [pay, setPay] = useState(
@@ -351,8 +351,7 @@ export function EditJobView({
     assignment &&
       (assignment.status === "INVITED" ||
         assignment.status === "DECLINED" ||
-        assignment.status === "CONFIRMED" ||
-        assignment.status === "PENDING_AVAILABILITY"),
+        assignment.status === "CONFIRMED"),
   );
   const showAssignmentActions = assignment ? assignmentDirty || !assignmentSettled : false;
   const showDirectAssignForInvite =

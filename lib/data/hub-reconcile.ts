@@ -13,12 +13,14 @@ export async function finalizeLoadedHub(
 ): Promise<HubData> {
   const { mergeRecurringHorizon } = await import("../domain/recurrence.ts");
   const { clearStaleNotScheduledAttention } = await import("../domain/invitations.ts");
+  const { normalizeLegacyAssignments } = await import("../domain/assignment-legacy.ts");
   const { reconcileScheduleConflictWarnings } = await import("../domain/scheduling.ts");
 
   const today = data.today;
   const generated = mergeRecurringHorizon({ ...data, today, nowIso: new Date().toISOString() });
   const nowIso = new Date().toISOString();
-  const reconciled = reconcileScheduleConflictWarnings(generated.assignments, data.cleaners);
+  const normalized = normalizeLegacyAssignments(generated.assignments);
+  const reconciled = reconcileScheduleConflictWarnings(normalized, data.cleaners);
   const assignments = clearStaleNotScheduledAttention(generated.jobs, reconciled, nowIso);
   const next = { ...data, today, series: generated.series, jobs: generated.jobs, assignments };
   const beforeById = new Map(generated.assignments.map((assignment) => [assignment.assignmentId, assignment]));

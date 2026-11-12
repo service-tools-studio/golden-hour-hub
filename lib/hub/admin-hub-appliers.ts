@@ -96,7 +96,10 @@ function assignmentSavedMessage(
   assignment: Pick<JobAssignment, "status" | "attentionReason">,
   mode: "INVITE" | "DIRECT",
 ): string {
-  if (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)) {
+  if (
+    assignment.status === "CONFIRMED" &&
+    isConfirmedScheduleConflictReason(assignment.attentionReason)
+  ) {
     return `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`;
   }
   if (assignment.status === "CONFIRMED") return "Cleaning assigned.";
@@ -584,7 +587,7 @@ export function updateVisitOnHub(hub: HubData, input: UpdateVisitInput): AdminHu
   const covered = new Set(activeAssignments.map((assignment) => assignment.cleanerId));
   const crews = [
     ...activeAssignments.map(
-      (assignment) => assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize,
+      (assignment) => assignment.confirmedCrewSize ?? assignment.proposedCrewSize,
     ),
     ...(job.draftCleanerDetails ?? [])
       .filter((detail) => cleanerIds.includes(detail.cleanerId) && !covered.has(detail.cleanerId))

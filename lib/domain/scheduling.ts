@@ -156,7 +156,7 @@ export function assignmentCountsAsUpcoming(
   today: string,
   nowMs: number,
 ): boolean {
-  if (assignment.status !== "CONFIRMED" && assignment.status !== "PENDING_AVAILABILITY") return false;
+  if (assignment.status !== "CONFIRMED") return false;
   if (job.status !== "SCHEDULED") return false;
   const clock = assignmentCleaningClock(job, assignment);
   if (clock.date < today) return false;
@@ -176,7 +176,7 @@ export function assignmentBelongsInCleanerJobHistory(
 ): boolean {
   if (job.status !== "SCHEDULED") return false;
   if (assignment.serviceDate > today) return false;
-  if (assignment.status === "NEEDS_ATTENTION" || assignment.status === "PENDING_AVAILABILITY") {
+  if (assignment.status === "NEEDS_ATTENTION") {
     return assignment.serviceDate < today;
   }
   if (assignment.status !== "CONFIRMED") return false;
@@ -264,25 +264,21 @@ export function calculateInvitedHeadcount(
 
 /** Headcount that counts toward staffing the job (confirmed assignments only). */
 export function staffedCrewSize(
-  assignment: Pick<JobAssignment, "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">,
+  assignment: Pick<JobAssignment, "status" | "confirmedCrewSize" | "proposedCrewSize">,
 ): number {
   if (assignment.status === "CONFIRMED") return assignment.confirmedCrewSize ?? 0;
-  // Legacy rows stored before pending-availability was removed.
-  if (assignment.status === "PENDING_AVAILABILITY") {
-    return assignment.pendingCrewSize ?? assignment.proposedCrewSize ?? 0;
-  }
   return 0;
 }
 
 export function calculateConfirmedHeadcount(
-  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">>,
+  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize" | "proposedCrewSize">>,
 ): number {
   return assignments.reduce((sum, assignment) => sum + staffedCrewSize(assignment), 0);
 }
 
 export function calculateRemainingHeadcount(
   headcountNeeded: number,
-  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">>,
+  assignments: Array<Pick<JobAssignment, "status" | "confirmedCrewSize" | "proposedCrewSize">>,
 ): number {
   return headcountNeeded - calculateConfirmedHeadcount(assignments);
 }
@@ -291,9 +287,7 @@ export function calculateRemainingHeadcount(
 export function proposedCrewCeiling(input: {
   headcountNeeded: number;
   maxHelperCount: number;
-  assignments: Array<
-    Pick<JobAssignment, "assignmentId" | "status" | "confirmedCrewSize" | "pendingCrewSize" | "proposedCrewSize">
-  >;
+  assignments: Array<Pick<JobAssignment, "assignmentId" | "status" | "confirmedCrewSize" | "proposedCrewSize">>;
   assignmentId?: string;
 }): number {
   const cleanerMax = maxCrewSize(input.maxHelperCount);
@@ -321,7 +315,7 @@ export function invitationAttendanceBounds(proposedCrewSize: number, maxHelperCo
 }
 
 export function assignmentBlocksCleaningDeletion(status: JobAssignment["status"]): boolean {
-  return status === "CONFIRMED" || status === "PENDING_AVAILABILITY" || status === "NEEDS_ATTENTION";
+  return status === "CONFIRMED" || status === "NEEDS_ATTENTION";
 }
 
 /** Confirmed roster on cleaner home (history / upcoming), excluding open invites. */
@@ -428,6 +422,11 @@ export function availabilityCoversJobStart(
 
 export function confirmedScheduleConflictReason(firstName: string): string {
   return `This conflicts with another confirmed job for ${firstName}.`;
+}
+
+/** Admin job detail when a cleaner is double-booked — not an availability-hours issue. */
+export function confirmedAssignmentConflictFollowUpReason(firstName: string): string {
+  return `${confirmedScheduleConflictReason(firstName)} Follow up with ${firstName}.`;
 }
 
 export function isConfirmedScheduleConflictReason(reason?: string): boolean {
@@ -802,11 +801,7 @@ export function applyScheduleConflictWarning(
   if (conflict) {
     return {
       ...assignment,
-      status: "NEEDS_ATTENTION",
       attentionReason: confirmedScheduleConflictReason(cleaner.firstName),
-      confirmedCrewSize: undefined,
-      confirmedTotalPayCents: undefined,
-      pendingCrewSize: undefined,
     };
   }
   const uncertain = detectUncertainSameDayAssignment({
@@ -823,38 +818,39 @@ export function applyScheduleConflictWarning(
   if (uncertain) {
     return {
       ...assignment,
-      status: "NEEDS_ATTENTION",
       attentionReason: uncertainSameDayScheduleReason(cleaner.firstName),
-      confirmedCrewSize: undefined,
-      confirmedTotalPayCents: undefined,
-      pendingCrewSize: undefined,
     };
   }
   if (
-    assignment.status === "NEEDS_ATTENTION" &&
-    (isConfirmedScheduleConflictReason(assignment.attentionReason) ||
-      isUncertainSameDayScheduleReason(assignment.attentionReason))
+    isConfirmedScheduleConflictReason(assignment.attentionReason) ||
+    isUncertainSameDayScheduleReason(assignment.attentionReason)
   ) {
-    const crewSize = assignment.proposedCrewSize;
-    const confirmedTotalPayCents = confirmedCompensationCents({
-      payType: assignment.payType,
-      payPerPersonCents: assignment.payPerPersonCents,
-      confirmedCrewSize: crewSize,
-    });
+    const crewSize = assignment.confirmedCrewSize ?? assignment.proposedCrewSize;
+    if (assignment.status === "NEEDS_ATTENTION") {
+      const confirmedTotalPayCents = confirmedCompensationCents({
+        payType: assignment.payType,
+        payPerPersonCents: assignment.payPerPersonCents,
+        confirmedCrewSize: crewSize,
+      });
+      return {
+        ...assignment,
+        status: "CONFIRMED",
+        attentionReason: undefined,
+        availabilityConflictWeekStart: undefined,
+        confirmedCrewSize: crewSize,
+        confirmedTotalPayCents,
+        respondedAt: assignment.respondedAt ?? assignment.updatedAt,
+      };
+    }
     return {
       ...assignment,
-      status: "CONFIRMED",
       attentionReason: undefined,
-      availabilityConflictWeekStart: undefined,
-      confirmedCrewSize: crewSize,
-      confirmedTotalPayCents,
-      respondedAt: assignment.respondedAt ?? assignment.updatedAt,
     };
   }
   return assignment;
 }
 
-/** Recompute schedule-conflict flags after other assignments change (clears stale NEEDS_ATTENTION). */
+/** Recompute schedule-conflict flags after other assignments change (promotes legacy conflict NEEDS_ATTENTION). */
 export function reconcileScheduleConflictWarnings(
   assignments: JobAssignment[],
   cleaners: Pick<CleanerProfile, "cleanerId" | "firstName">[],

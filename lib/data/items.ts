@@ -15,6 +15,7 @@ import type {
 } from "../domain/types.ts";
 import { buildCustomerSearchKeys } from "../domain/customers.ts";
 import { readMarketId, timeZoneForMarket } from "../domain/markets.ts";
+import { normalizeLegacyAssignment } from "../domain/assignment-legacy.ts";
 import { readQuestionnaireFromRecord, readQuestionnaireDraftFromRecord } from "../domain/contractor-questionnaire.ts";
 
 export type DynamoItem = {
@@ -412,14 +413,15 @@ function readJob(item: DynamoItem): Job {
 }
 
 function readAssignment(item: DynamoItem): JobAssignment {
-  return {
+  const pendingCrewSize = optionalNumber(item, "pendingCrewSize");
+  const row = {
     assignmentId: stringField(item, "assignmentId"),
     jobId: stringField(item, "jobId"),
     cleanerId: stringField(item, "cleanerId"),
     serviceDate: stringField(item, "serviceDate"),
-    status: item.status as JobAssignment["status"],
+    status: typeof item.status === "string" ? item.status : "INVITED",
     proposedCrewSize: numberField(item, "proposedCrewSize"),
-    pendingCrewSize: optionalNumber(item, "pendingCrewSize"),
+    pendingCrewSize,
     confirmedCrewSize: optionalNumber(item, "confirmedCrewSize"),
     attentionReason: optionalString(item, "attentionReason"),
     availabilityConflictWeekStart: optionalString(item, "availabilityConflictWeekStart"),
@@ -438,6 +440,7 @@ function readAssignment(item: DynamoItem): JobAssignment {
     createdAt: stringField(item, "createdAt"),
     updatedAt: stringField(item, "updatedAt"),
   };
+  return normalizeLegacyAssignment(row);
 }
 
 function readAvailability(item: DynamoItem): AvailabilityWindow {

@@ -335,7 +335,19 @@ export function planOccurrenceStaffing(input: {
     });
     if (conflict) {
       const reason = confirmedScheduleConflictReason(cleaner.firstName);
-      assignments.push(flaggedAssignment(input, entry, reason));
+      assignments.push({
+        ...buildAssignment(
+          {
+            jobId: input.jobId,
+            serviceDate: input.serviceDate,
+            mode: "DIRECT",
+            nowIso: input.nowIso,
+            newId: input.newId,
+          },
+          entry,
+        ),
+        attentionReason: reason,
+      });
       continue;
     }
 

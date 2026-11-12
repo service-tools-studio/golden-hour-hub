@@ -101,7 +101,10 @@ function assignmentSavedMessage(
   mode: "INVITE" | "DIRECT",
 ): string {
   void mode;
-  if (assignment.status === "NEEDS_ATTENTION" && isConfirmedScheduleConflictReason(assignment.attentionReason)) {
+  if (
+    assignment.status === "CONFIRMED" &&
+    isConfirmedScheduleConflictReason(assignment.attentionReason)
+  ) {
     return `Assigned to ${cleaner.firstName}. Resolve the schedule conflict on this cleaning.`;
   }
   if (assignment.status === "CONFIRMED") return "Cleaning assigned.";
@@ -276,7 +279,6 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
     const savedMessage =
       existing.status === "INVITED" ||
       existing.status === "CONFIRMED" ||
-      existing.status === "PENDING_AVAILABILITY" ||
       existing.status === "NEEDS_ATTENTION"
         ? "Changes saved."
         : "Draft saved.";

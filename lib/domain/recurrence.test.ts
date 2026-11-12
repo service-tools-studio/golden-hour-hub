@@ -348,7 +348,7 @@ describe("recurring edits and staffing", () => {
       newId: () => "new",
     });
     assert.equal(plan.assignments.length, 1);
-    assert.equal(plan.assignments[0].status, "NEEDS_ATTENTION");
+    assert.equal(plan.assignments[0].status, "CONFIRMED");
     assert.match(plan.assignments[0].attentionReason ?? "", /conflicts with another confirmed job/);
     assert.equal(plan.attention.length, 0);
   });
@@ -369,7 +369,6 @@ describe("recurring edits and staffing", () => {
     assert.equal(plan.assignments.length, 1);
     assert.equal(plan.assignments[0].status, "CONFIRMED");
     assert.equal(plan.assignments[0].confirmedCrewSize, 1);
-    assert.equal(plan.assignments[0].pendingCrewSize, undefined);
     assert.equal(plan.attention.length, 0);
   });
 

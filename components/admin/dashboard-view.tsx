@@ -210,7 +210,7 @@ function JobStaffingCard({
             const mark =
               assignment.availabilityConflictWeekStart
                 ? "⚠"
-                : assignment.status === "CONFIRMED" || assignment.status === "PENDING_AVAILABILITY"
+                : assignment.status === "CONFIRMED"
                   ? "✓"
                   : assignment.status === "DECLINED"
                     ? "✕"

@@ -114,6 +114,7 @@ import {
   withAssignmentConfirmed,
   withAssignmentDeclined,
 } from "@/lib/domain/invitations";
+import { normalizeLegacyAssignments } from "@/lib/domain/assignment-legacy";
 import { mergeRecurringHorizon } from "@/lib/domain/recurrence";
 import { reconcileScheduleConflictWarnings } from "@/lib/domain/scheduling";
 import {
@@ -317,7 +318,13 @@ function withCurrentHorizon(data: HubData): HubData {
     today,
     nowIso: new Date().toISOString(),
   });
-  return { ...data, today, series: generated.series, jobs: generated.jobs, assignments: generated.assignments };
+  return {
+    ...data,
+    today,
+    series: generated.series,
+    jobs: generated.jobs,
+    assignments: normalizeLegacyAssignments(generated.assignments),
+  };
 }
 
 function sortedHubSnapshot(hub: HubData): string {

@@ -327,8 +327,6 @@ export function assignmentStatusLabel(status: AssignmentStatus): string {
   switch (status) {
     case "INVITED":
       return "Awaiting response to invite";
-    case "PENDING_AVAILABILITY":
-      return "Confirmed";
     case "CONFIRMED":
       return "Confirmed";
     case "NEEDS_ATTENTION":
@@ -348,7 +346,7 @@ export function crewLine(cleaner: CleanerProfile, assignment: JobAssignment): st
   if (assignment.status === "DECLINED") return `${cleaner.firstName} — Declined`;
   if (assignment.status === "EXPIRED_JOB_FILLED") return `${cleaner.firstName} — Job filled`;
   if (assignment.status === "CANCELED") return `${cleaner.firstName} — Canceled`;
-  const crew = assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? 1;
+  const crew = assignment.confirmedCrewSize ?? 1;
   if (!helpersApproved(cleaner.maxHelperCount) || crew <= 1) {
     return `${cleaner.firstName} — ${crew} ${crew === 1 ? "person" : "people"}`;
   }
@@ -599,18 +597,17 @@ export function noticeFlagText(firstName: string, gap: "assignment" | "changes")
 export function assignmentFormStatus(status: JobAssignment["status"] | "DRAFT"): string {
   if (status === "INVITED" || status === "DECLINED") return "Invite sent";
   if (status === "CONFIRMED") return "Assignment confirmed";
-  if (status === "PENDING_AVAILABILITY") return "Assignment confirmed";
   return "Draft assignment";
 }
 
 /** Only invited or confirmed assignments track what was texted to the cleaner. */
 export function assignmentTracksCleanerNotification(status: JobAssignment["status"]): boolean {
-  return status === "INVITED" || status === "CONFIRMED" || status === "PENDING_AVAILABILITY";
+  return status === "INVITED" || status === "CONFIRMED";
 }
 
 /** Removal SMS only when the cleaner had committed (direct assign or confirmed), not invite-only. */
 export function assignmentNotifiesOnRemoval(status: JobAssignment["status"] | undefined): boolean {
-  return status === "CONFIRMED" || status === "PENDING_AVAILABILITY" || status === "NEEDS_ATTENTION";
+  return status === "CONFIRMED" || status === "NEEDS_ATTENTION";
 }
 
 export {

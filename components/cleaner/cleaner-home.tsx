@@ -8,6 +8,11 @@ import { Card, PageHeader, Screen } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import { hasKnownDurationMinutes } from "@/lib/domain/duration";
 import {
+  cleanerNeedsAttentionMessage,
+  isAssignmentAvailabilityOutsideReason,
+  isAssignmentScheduleConflictReason,
+} from "@/lib/domain/invitations";
+import {
   assignmentCountsAsUpcoming,
   calculateBlockedRange,
   calculateRemainingHeadcount,
@@ -40,9 +45,6 @@ import {
   formatArrival,
   formatLongDate,
 } from "@/lib/format";
-
-const AVAILABILITY_MISMATCH_MESSAGE =
-  "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
 
 function inProgress(assignment: JobAssignment, now: number): boolean {
   if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return false;
@@ -134,7 +136,10 @@ export function CleanerHome() {
     ({ assignment }) => !dismissedExpiredIds.has(assignment.assignmentId),
   );
   const flagged = hub.assignments.filter(
-    (assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "NEEDS_ATTENTION",
+    (assignment) =>
+      assignment.cleanerId === cleaner.cleanerId &&
+      assignment.status === "NEEDS_ATTENTION" &&
+      !isAssignmentScheduleConflictReason(assignment.attentionReason),
   );
   const committed = hub.assignments
     .filter(
@@ -197,18 +202,14 @@ export function CleanerHome() {
             {flagged.map((assignment) => {
               const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
               if (!job) return null;
-              const availabilityMismatch = Boolean(assignment.availabilityConflictWeekStart);
+              const availabilityMismatch = isAssignmentAvailabilityOutsideReason(assignment);
               return (
                 <Card key={assignment.assignmentId}>
                   <p className="text-lg font-semibold">{customerFirstNameForCleaner(job.snapshot)}</p>
                   <p className="text-sm text-ink/70">
                     {formatLongDate(job.date)} · {formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}
                   </p>
-                  <p className="mt-2 text-sm leading-5">
-                    {availabilityMismatch
-                      ? AVAILABILITY_MISMATCH_MESSAGE
-                      : (assignment.attentionReason ?? "This cleaning needs a schedule change before it can be confirmed.")}
-                  </p>
+                  <p className="mt-2 text-sm leading-5">{cleanerNeedsAttentionMessage(assignment)}</p>
                   {availabilityMismatch ? (
                     <div className="mt-4 space-y-2">
                       <Link

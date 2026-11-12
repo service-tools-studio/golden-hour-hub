@@ -6,6 +6,7 @@ import {
   calculateBlockedRange,
   calculateConfirmedHeadcount,
   calculateRemainingHeadcount,
+  confirmedAssignmentConflictFollowUpReason,
   detectConfirmedAssignmentConflict,
   isConfirmedScheduleConflictReason,
   isUncertainSameDayScheduleReason,
@@ -101,7 +102,6 @@ export function withAssignmentConfirmed(
           status: "CONFIRMED",
           confirmedCrewSize,
           confirmedTotalPayCents,
-          pendingCrewSize: undefined,
           attentionReason: undefined,
           respondedAt: assignment.respondedAt ?? nowIso,
           updatedAt: nowIso,
@@ -134,7 +134,7 @@ export function expireRemainingInvitationsWhenFilled(
   if (calculateConfirmedHeadcount(assignments) < headcountNeeded) return assignments;
   return assignments.map((assignment) =>
     assignment.status === "INVITED"
-      ? { ...assignment, status: "EXPIRED_JOB_FILLED", pendingCrewSize: undefined, updatedAt: nowIso }
+      ? { ...assignment, status: "EXPIRED_JOB_FILLED", updatedAt: nowIso }
       : assignment,
   );
 }
@@ -151,16 +151,9 @@ export function expireJobInvitesIfHeadcountMet(
   return [...assignments.filter((assignment) => assignment.jobId !== jobId), ...settled];
 }
 
-export function availabilityFollowUpReason(
-  firstName: string,
-  weekStart: string,
-  kind: "outside" | "conflict",
-): string {
+export function availabilityFollowUpReason(firstName: string, weekStart: string): string {
   const week = formatLongDate(weekStart);
-  if (kind === "outside") {
-    return `${firstName} submitted availability for the week of ${week}, but this cleaning falls outside those hours. Follow up with ${firstName}.`;
-  }
-  return `${firstName}'s submitted availability for the week of ${week} conflicts with another confirmed cleaning. Follow up with ${firstName}.`;
+  return `${firstName} submitted availability for the week of ${week}, but this cleaning falls outside those hours. Follow up with ${firstName}.`;
 }
 
 function isAvailabilityAttentionReason(
@@ -230,8 +223,8 @@ export function liveAvailabilityAttentionMessage(input: {
   if (fits && !conflict) return null;
 
   const weekStart = input.assignment.availabilityConflictWeekStart ?? mondayOf(input.serviceDate);
-  if (!fits) return availabilityFollowUpReason(input.cleaner.firstName, weekStart, "outside");
-  if (conflict) return availabilityFollowUpReason(input.cleaner.firstName, weekStart, "conflict");
+  if (!fits) return availabilityFollowUpReason(input.cleaner.firstName, weekStart);
+  if (conflict) return confirmedAssignmentConflictFollowUpReason(input.cleaner.firstName);
   return null;
 }
 
@@ -264,7 +257,7 @@ export function revalidatePendingAssignments(input: {
   for (const row of inWeek) {
     const index = next.findIndex((assignment) => assignment.assignmentId === row.assignmentId);
     const current = next[index];
-    const crewSize = current.confirmedCrewSize ?? current.pendingCrewSize ?? current.proposedCrewSize;
+    const crewSize = current.confirmedCrewSize ?? current.proposedCrewSize;
     const job = jobs.get(current.jobId);
     const failure = pendingFailureReason({
       assignment: current,
@@ -275,21 +268,35 @@ export function revalidatePendingAssignments(input: {
       assignments: next,
     });
     if (failure) {
+      if (failure.kind === "conflict") {
+        const confirmedTotalPayCents = confirmedCompensationCents({
+          payType: current.payType,
+          payPerPersonCents: current.payPerPersonCents,
+          confirmedCrewSize: crewSize,
+        });
+        next[index] = {
+          ...current,
+          status: "CONFIRMED",
+          attentionReason: confirmedAssignmentConflictFollowUpReason(input.cleaner.firstName),
+          availabilityConflictWeekStart: undefined,
+          confirmedCrewSize: crewSize,
+          confirmedTotalPayCents,
+          respondedAt: current.respondedAt ?? input.nowIso,
+          updatedAt: input.nowIso,
+        };
+        continue;
+      }
       const attentionReason =
         failure.kind === "outside"
-          ? availabilityFollowUpReason(input.cleaner.firstName, input.weekStart, "outside")
-          : failure.kind === "conflict"
-            ? availabilityFollowUpReason(input.cleaner.firstName, input.weekStart, "conflict")
-            : failure.message;
+          ? availabilityFollowUpReason(input.cleaner.firstName, input.weekStart)
+          : failure.message;
       next[index] = {
         ...current,
         status: "NEEDS_ATTENTION",
         attentionReason,
-        availabilityConflictWeekStart:
-          failure.kind === "outside" || failure.kind === "conflict" ? input.weekStart : undefined,
+        availabilityConflictWeekStart: failure.kind === "outside" ? input.weekStart : undefined,
         confirmedCrewSize: undefined,
         confirmedTotalPayCents: undefined,
-        pendingCrewSize: undefined,
         updatedAt: input.nowIso,
       };
       continue;
@@ -306,7 +313,6 @@ export function revalidatePendingAssignments(input: {
         ...next[settledIndex],
         attentionReason: undefined,
         availabilityConflictWeekStart: undefined,
-        pendingCrewSize: undefined,
       };
     }
     if (job) {
@@ -320,15 +326,70 @@ export function revalidatePendingAssignments(input: {
 
 export const ASSIGNMENT_JOB_NOT_SCHEDULED_REASON = "This cleaning is no longer scheduled." as const;
 
+export const CLEANER_AVAILABILITY_ATTENTION_MESSAGE =
+  "You are confirmed for this cleaning but the job time falls outside of the availability you submitted. Please edit your availability to make this time available, or if you are not available for this job, follow up with Kelsey as soon as possible.";
+
+export const CLEANER_SCHEDULE_CONFLICT_ATTENTION_MESSAGE =
+  "This cleaning overlaps another job you're confirmed for. Contact Kelsey as soon as possible so we can fix the schedule.";
+
+const LEGACY_AVAILABILITY_FRAMED_CONFLICT =
+  /submitted availability for the week of .+ conflicts with another confirmed cleaning/i;
+
+export function isLegacyAvailabilityFramedConflictReason(reason?: string): boolean {
+  return LEGACY_AVAILABILITY_FRAMED_CONFLICT.test(reason ?? "");
+}
+
+export function isAssignmentAvailabilityOutsideReason(
+  assignment: Pick<JobAssignment, "attentionReason" | "availabilityConflictWeekStart">,
+): boolean {
+  return (
+    Boolean(assignment.availabilityConflictWeekStart) &&
+    (assignment.attentionReason?.includes("falls outside those hours") ?? false)
+  );
+}
+
+export function isAssignmentScheduleConflictReason(reason?: string): boolean {
+  if (!reason) return false;
+  if (isLegacyAvailabilityFramedConflictReason(reason)) return true;
+  return isConfirmedScheduleConflictReason(reason) || isUncertainSameDayScheduleReason(reason);
+}
+
+export function normalizeAdminAttentionReason(
+  reason: string | undefined,
+  cleanerFirstName: string,
+): string | undefined {
+  if (!reason) return undefined;
+  if (isLegacyAvailabilityFramedConflictReason(reason)) {
+    return confirmedAssignmentConflictFollowUpReason(cleanerFirstName);
+  }
+  return reason;
+}
+
+export function cleanerNeedsAttentionMessage(
+  assignment: Pick<JobAssignment, "attentionReason" | "availabilityConflictWeekStart">,
+): string {
+  if (isAssignmentAvailabilityOutsideReason(assignment)) {
+    return CLEANER_AVAILABILITY_ATTENTION_MESSAGE;
+  }
+  if (isAssignmentScheduleConflictReason(assignment.attentionReason)) {
+    return CLEANER_SCHEDULE_CONFLICT_ATTENTION_MESSAGE;
+  }
+  return assignment.attentionReason ?? "This cleaning needs a schedule change before it can be confirmed.";
+}
+
 /** Hide a stale availability flag after the visit was booked. */
 export function assignmentAttentionReasonForAdmin(input: {
   job: Pick<Job, "status">;
   assignment: Pick<JobAssignment, "attentionReason">;
+  cleanerFirstName?: string;
 }): string | null {
-  const reason = input.assignment.attentionReason;
+  let reason = input.assignment.attentionReason;
   if (!reason) return null;
   if (reason === ASSIGNMENT_JOB_NOT_SCHEDULED_REASON && input.job.status === "SCHEDULED") {
     return null;
+  }
+  if (input.cleanerFirstName) {
+    reason = normalizeAdminAttentionReason(reason, input.cleanerFirstName) ?? reason;
   }
   return reason;
 }
@@ -345,7 +406,7 @@ export function clearStaleNotScheduledAttention(
     const job = jobById.get(assignment.jobId);
     if (!job || job.status !== "SCHEDULED") return assignment;
     if (assignment.status === "NEEDS_ATTENTION") {
-      const crewSize = assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize;
+      const crewSize = assignment.confirmedCrewSize ?? assignment.proposedCrewSize;
       const confirmedTotalPayCents = confirmedCompensationCents({
         payType: assignment.payType,
         payPerPersonCents: assignment.payPerPersonCents,
@@ -358,7 +419,6 @@ export function clearStaleNotScheduledAttention(
         availabilityConflictWeekStart: undefined,
         confirmedCrewSize: crewSize,
         confirmedTotalPayCents,
-        pendingCrewSize: undefined,
         respondedAt: assignment.respondedAt ?? nowIso,
         updatedAt: nowIso,
       };

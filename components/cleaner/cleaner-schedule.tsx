@@ -9,7 +9,7 @@ import type { Job, JobAssignment } from "@/lib/domain/types";
 import { cleanerServiceLabel, customerFirstNameForCleaner, formatArrival, formatLongDate } from "@/lib/format";
 
 function cleanerCommitted(assignment: JobAssignment): boolean {
-  return assignment.status === "CONFIRMED" || assignment.status === "PENDING_AVAILABILITY";
+  return assignment.status === "CONFIRMED";
 }
 
 function ScheduleDayCard({

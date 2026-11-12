@@ -298,7 +298,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                 : false;
               const showNotice = gap;
               const attentionMessage =
-                (assignment.arrivalWindowStart && assignment.arrivalWindowEnd
+                assignment.arrivalWindowStart && assignment.arrivalWindowEnd
                   ? liveAvailabilityAttentionMessage({
                       assignment,
                       cleaner,
@@ -309,10 +309,13 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                       arrivalWindowEnd: assignment.arrivalWindowEnd,
                       expectedDurationMinutes: assignment.expectedDurationMinutes,
                     })
-                  : null) ??
-                (isConfirmedScheduleConflictReason(assignment.attentionReason)
-                  ? null
-                  : assignmentAttentionReasonForAdmin({ job, assignment }));
+                  : isConfirmedScheduleConflictReason(assignment.attentionReason)
+                    ? null
+                    : assignmentAttentionReasonForAdmin({
+                        job,
+                        assignment,
+                        cleanerFirstName: cleaner.firstName,
+                      });
               return (
                 <div
                   key={assignment.assignmentId}
@@ -747,11 +750,10 @@ function RemoveCleaner({ jobId, cleanerId }: { jobId: string; cleanerId: string 
 }
 
 function assignmentSubtitle(assignment: JobAssignment): string {
-  const crew = assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize;
+  const crew = assignment.confirmedCrewSize ?? assignment.proposedCrewSize;
   const crewText = crew > 1 ? ` · crew of ${crew}` : "";
   switch (assignment.status) {
     case "CONFIRMED":
-    case "PENDING_AVAILABILITY":
       return `Confirmed${crewText}`;
     case "INVITED":
       return `Awaiting response to invite${crewText}`;
@@ -775,12 +777,12 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
     (item) =>
       item.jobId === jobId &&
       item.cleanerId === hub.cleanerId &&
-      (item.status === "CONFIRMED" || item.status === "PENDING_AVAILABILITY"),
+      item.status === "CONFIRMED",
   );
   if (!cleaner || !job || !assignment) {
     return <Missing label="That cleaning could not be found." href="/cleaner" />;
   }
-  const crewSize = assignment.confirmedCrewSize ?? assignment.pendingCrewSize ?? assignment.proposedCrewSize;
+  const crewSize = assignment.confirmedCrewSize ?? assignment.proposedCrewSize;
   const snapshotSizeLine = propertySizeLabel(
     job.snapshot.bedrooms,
     job.snapshot.bathrooms,

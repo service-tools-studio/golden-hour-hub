@@ -104,19 +104,6 @@ describe("jobCountsAsUpcoming", () => {
     assert.equal(jobCountsAsUpcoming(job, [], today, end + 60_000), false);
   });
 
-  it("treats pending availability like confirmed for upcoming", () => {
-    const job = { jobId: "job-1", status: "SCHEDULED" as const };
-    const assignment = {
-      status: "PENDING_AVAILABILITY" as const,
-      serviceDate: "2026-11-13",
-      arrivalWindowStart: "09:15",
-      arrivalWindowEnd: "09:15",
-      expectedDurationMinutes: undefined,
-    };
-    assert.equal(assignmentCountsAsUpcoming(assignment, job, "2026-11-12", Date.now()), true);
-    assert.equal(assignmentBelongsInCleanerJobHistory(assignment, job, "2026-11-12", Date.now()), false);
-  });
-
   it("drops a confirmed assignment after its block ends", () => {
     const today = "2026-10-26";
     const job = { jobId: "job-1", status: "SCHEDULED" };
@@ -426,14 +413,13 @@ describe("blocked time and effective availability", () => {
 describe("cleaning deletion", () => {
   it("blocks delete while a cleaner is confirmed or direct-assigned", () => {
     assert.equal(assignmentBlocksCleaningDeletion("CONFIRMED"), true);
-    assert.equal(assignmentBlocksCleaningDeletion("PENDING_AVAILABILITY"), true);
     assert.equal(assignmentBlocksCleaningDeletion("NEEDS_ATTENTION"), true);
     assert.equal(assignmentBlocksCleaningDeletion("INVITED"), false);
     assert.equal(
       jobHasCleanerBlockingDeletion(
         [
           { jobId: "job-1", status: "INVITED" },
-          { jobId: "job-1", status: "PENDING_AVAILABILITY" },
+          { jobId: "job-1", status: "NEEDS_ATTENTION" },
         ],
         "job-1",
       ),
@@ -449,12 +435,11 @@ describe("headcount and helper approval", () => {
       { status: "CONFIRMED" as const, confirmedCrewSize: 2, proposedCrewSize: 2 },
       { status: "CONFIRMED" as const, confirmedCrewSize: 1, proposedCrewSize: 1 },
       { status: "INVITED" as const, confirmedCrewSize: 4, proposedCrewSize: 4 },
-      { status: "PENDING_AVAILABILITY" as const, pendingCrewSize: 2, proposedCrewSize: 2 },
       { status: "DECLINED" as const, confirmedCrewSize: 1, proposedCrewSize: 1 },
     ];
-    assert.equal(calculateConfirmedHeadcount(assignments), 5);
+    assert.equal(calculateConfirmedHeadcount(assignments), 3);
     assert.equal(calculateInvitedHeadcount(assignments), 4);
-    assert.equal(calculateRemainingHeadcount(5, assignments), 0);
+    assert.equal(calculateRemainingHeadcount(5, assignments), 2);
   });
 
   it("derives helper approval and crew sizes from helper counts", () => {
@@ -534,14 +519,12 @@ describe("headcount and helper approval", () => {
         assignmentId: "a1",
         status: "CONFIRMED" as const,
         confirmedCrewSize: 1,
-        pendingCrewSize: undefined,
         proposedCrewSize: 1,
       },
       {
         assignmentId: "a2",
-        status: "PENDING_AVAILABILITY" as const,
-        confirmedCrewSize: undefined,
-        pendingCrewSize: 2,
+        status: "CONFIRMED" as const,
+        confirmedCrewSize: 2,
         proposedCrewSize: 2,
       },
     ];

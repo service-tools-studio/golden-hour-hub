@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  availabilityFollowUpReason,
+  cleanerNeedsAttentionMessage,
   clearStaleNotScheduledAttention,
+  normalizeAdminAttentionReason,
   ASSIGNMENT_JOB_NOT_SCHEDULED_REASON,
   expireRemainingInvitationsWhenFilled,
+  liveAvailabilityAttentionMessage,
   revalidatePendingAssignments,
   validateInvitationAcceptance,
   withAssignmentConfirmed,
@@ -340,5 +344,96 @@ describe("invitation acceptance", () => {
     assert.equal(updated[0].confirmedCrewSize, 2);
     assert.equal(updated[1].status, "INVITED");
     assert.equal(updated[1].confirmedCrewSize, undefined);
+  });
+});
+
+describe("confirmed assignment conflict copy", () => {
+  it("does not tie double-booking to a submitted availability week", () => {
+    const day = "2026-11-12";
+    const first = invite({
+      assignmentId: "a-1",
+      status: "CONFIRMED",
+      serviceDate: day,
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      expectedDurationMinutes: 240,
+      confirmedCrewSize: 1,
+      confirmedTotalPayCents: 5000,
+    });
+    const second = invite({
+      assignmentId: "a-2",
+      jobId: "job-2",
+      status: "CONFIRMED",
+      serviceDate: day,
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      expectedDurationMinutes: 240,
+      confirmedCrewSize: 1,
+      confirmedTotalPayCents: 5000,
+    });
+    const windows = [{ date: day, start: "08:00", end: "17:00" }];
+    const settled = revalidatePendingAssignments({
+      assignments: [first, second],
+      cleaner: { cleanerId: "claudia", firstName: "Claudia", status: "ACTIVE", maxHelperCount: 0 },
+      weekStart: "2026-11-09",
+      weekEnd: "2026-11-15",
+      windows,
+      jobs: [
+        { jobId: "job-1", status: "SCHEDULED", headcountNeeded: 1 },
+        { jobId: "job-2", status: "SCHEDULED", headcountNeeded: 1 },
+      ],
+      nowIso: "2026-11-10T00:00:00.000Z",
+    });
+    for (const row of settled) {
+      assert.match(row.attentionReason ?? "", /conflicts with another confirmed job/);
+      assert.doesNotMatch(row.attentionReason ?? "", /submitted availability/);
+      assert.equal(row.status, "CONFIRMED");
+      assert.equal(row.availabilityConflictWeekStart, undefined);
+    }
+  });
+});
+
+describe("attention reason display", () => {
+  it("rewrites legacy conflict copy for admin and cleaner", () => {
+    const legacy =
+      "Shalea submitted availability for the week of Monday, Nov 9 conflicts with another confirmed cleaning. Follow up with Shalea.";
+    assert.equal(
+      normalizeAdminAttentionReason(legacy, "Shalea"),
+      "This conflicts with another confirmed job for Shalea. Follow up with Shalea.",
+    );
+    assert.equal(
+      cleanerNeedsAttentionMessage({
+        attentionReason: legacy,
+        availabilityConflictWeekStart: "2026-11-09",
+      }),
+      "This cleaning overlaps another job you're confirmed for. Contact Kelsey as soon as possible so we can fix the schedule.",
+    );
+  });
+});
+
+describe("liveAvailabilityAttentionMessage", () => {
+  it("clears a stale conflict flag when availability and schedule no longer fail", () => {
+    const stored =
+      "This conflicts with another confirmed job for Shalea. Follow up with Shalea.";
+    const assignment = invite({
+      status: "CONFIRMED",
+      serviceDate: "2026-11-12",
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      expectedDurationMinutes: undefined,
+      attentionReason: stored,
+      availabilityConflictWeekStart: "2026-11-09",
+    });
+    const message = liveAvailabilityAttentionMessage({
+      assignment,
+      cleaner: { cleanerId: "claudia", firstName: "Shalea" },
+      serviceDate: assignment.serviceDate,
+      windows: [{ date: "2026-11-12", start: "08:00", end: "17:00" }],
+      confirmedAssignments: [],
+      arrivalWindowStart: assignment.arrivalWindowStart!,
+      arrivalWindowEnd: assignment.arrivalWindowEnd!,
+      expectedDurationMinutes: undefined,
+    });
+    assert.equal(message, null);
   });
 });

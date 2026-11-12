@@ -285,7 +285,6 @@ const ACCENT_CLASS: Record<SegmentTone, string> = {
 const STAFFED_STATUSES = new Set<JobAssignment["status"]>([
   "CONFIRMED",
   "INVITED",
-  "PENDING_AVAILABILITY",
   "NEEDS_ATTENTION",
 ]);
 
@@ -753,7 +752,6 @@ function buildScheduleDayList(input: {
 function pendingLabel(assignment: JobAssignment): string {
   if (assignment.status === "CONFIRMED") return "Confirmed";
   if (assignment.attentionReason) return assignment.attentionReason;
-  if (assignment.status === "PENDING_AVAILABILITY") return "Confirmed";
   if (assignment.status === "NEEDS_ATTENTION") return "Needs attention";
   if (assignment.status === "INVITED") return "Invitation pending";
   return "Assigned";
