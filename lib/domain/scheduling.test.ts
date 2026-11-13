@@ -45,6 +45,8 @@ import {
   detectUncertainSameDayAssignment,
   uncertainSameDayScheduleReason,
   confirmedScheduleConflictReason,
+  confirmedScheduleConflictBlock,
+  confirmedScheduleConflictNotice,
   availabilityCoversJobStart,
   reconcileScheduleConflictWarnings,
   findCompatibleCleaners,
@@ -333,6 +335,70 @@ describe("blocked time and effective availability", () => {
       ],
     });
     assert.equal(conflict, null);
+  });
+
+  it("includes the other customer's name and invite guidance on schedule conflict blocks", () => {
+    const block = confirmedScheduleConflictBlock({
+      cleanerId: "claudia",
+      cleanerFirstName: "Shariese",
+      candidate: {
+        serviceDate: "2026-10-06",
+        arrivalWindowStart: "09:00",
+        arrivalWindowEnd: "10:00",
+        expectedDurationMinutes: 240,
+      },
+      confirmedAssignments: [
+        {
+          assignmentId: "existing",
+          jobId: "other-job",
+          cleanerId: "claudia",
+          serviceDate: "2026-10-06",
+          status: "CONFIRMED",
+          proposedCrewSize: 1,
+          confirmedCrewSize: 1,
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "10:00",
+          expectedDurationMinutes: 240,
+          payType: "FLAT",
+          payPerPersonCents: 5000,
+          proposedTotalPayCents: 5000,
+          confirmedTotalPayCents: 5000,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        },
+      ],
+      jobs: [
+        {
+          jobId: "other-job",
+          snapshot: {
+            customerDisplayName: "Patricia Smith",
+            phone: "555-0100",
+            propertyId: "prop-1",
+            streetAddress: "1 Main St",
+            city: "Denver",
+            state: "CO",
+            zip: "80202",
+            marketId: "phoenix",
+            timeZone: "America/Denver",
+            bedrooms: 2,
+            bathrooms: 1,
+            squareFeet: 1200,
+            preferences: "",
+          },
+        },
+      ],
+      action: "invite",
+    });
+    assert.equal(
+      block?.message,
+      "This conflicts with another confirmed job for Shariese. Remove Shariese from Patricia's cleaning before sending this invite.",
+    );
+    assert.deepEqual(confirmedScheduleConflictNotice(block!), {
+      conflictJobId: "other-job",
+      cleanerFirstName: "Shariese",
+      otherCustomerName: "Patricia",
+      action: "invite",
+    });
   });
 
   it("blocks two confirmed jobs with the same start time", () => {

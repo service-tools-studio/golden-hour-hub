@@ -37,8 +37,9 @@ const fileEnv = {
   ...loadEnvFile(path.join(root, "e2e", ".env")),
 };
 
-/** Next 16 single-instance lock; e2e uses its own port but shares `.next`, so drop stale lock before start. */
-const devCommand = `sh -c 'rm -f .next/dev/lock 2>/dev/null; exec npx next dev -p ${e2ePort}'`;
+/** Separate dist dir so e2e `next dev` can run alongside `npm run dev` (default port 3000). */
+const e2eDistDir = process.env.E2E_NEXT_DIST_DIR ?? ".next-e2e";
+const devCommand = `sh -c 'rm -f ${e2eDistDir}/dev/lock 2>/dev/null; exec npx next dev -p ${e2ePort}'`;
 
 export default defineConfig({
   testDir: "e2e",
@@ -66,6 +67,7 @@ export default defineConfig({
       DYNAMODB_TABLE_NAME: e2eTable,
       SMS_PROVIDER: "mock",
       E2E_DYNAMODB_TABLE_NAME: e2eTable,
+      NEXT_DIST_DIR: e2eDistDir,
     },
   },
 });

@@ -9,6 +9,7 @@ import {
   completeAssignmentOnHub,
   type CompleteAssignmentInput,
 } from "@/lib/hub/complete-assignment-mutations";
+import type { HubMutationFailure } from "@/lib/hub/admin-hub-types";
 import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 import type { HubData } from "@/lib/mock/seed";
 
@@ -22,7 +23,7 @@ export type CompleteAssignmentActionResult =
       message: string;
       assignmentId?: string;
     }
-  | { ok: false; message: string };
+  | HubMutationFailure;
 
 export async function completeAssignmentAction(
   input: CompleteAssignmentInput,

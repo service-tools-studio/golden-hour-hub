@@ -4,8 +4,9 @@ import { snapshotVisit } from "./customers.ts";
 import {
   availabilityCoversBlockedRange,
   calculateBlockedRange,
-  confirmedScheduleConflictReason,
-  detectConfirmedAssignmentConflict,
+  confirmedScheduleConflictBlock,
+  confirmedScheduleConflictNotice,
+  type ConfirmedScheduleConflictNotice,
   type ScheduleWindow,
 } from "./scheduling.ts";
 import type {
@@ -16,6 +17,7 @@ import type {
   EditScope,
   Job,
   JobAssignment,
+  JobCustomerSnapshot,
   Property,
   RecurrenceRule,
   RecurringSeries,
@@ -254,13 +256,21 @@ export function planOccurrenceStaffing(input: {
   }>;
   availabilityByCleaner: Record<string, { submitted: boolean; windows: ScheduleWindow[] }>;
   confirmedAssignments: JobAssignment[];
+  jobs?: Array<{ jobId: string; snapshot: JobCustomerSnapshot }>;
   nowIso: string;
   newId: () => string;
-}): { assignments: JobAssignment[]; attention: { cleanerId: string; reason: string }[] } {
+}): {
+  assignments: JobAssignment[];
+  attention: { cleanerId: string; reason: string; scheduleConflict?: ConfirmedScheduleConflictNotice }[];
+} {
   if (input.mode === "BLANK") return { assignments: [], attention: [] };
 
   const assignments: JobAssignment[] = [];
-  const attention: { cleanerId: string; reason: string }[] = [];
+  const attention: {
+    cleanerId: string;
+    reason: string;
+    scheduleConflict?: ConfirmedScheduleConflictNotice;
+  }[] = [];
 
   for (const entry of input.template) {
     const cleaner = input.cleaners.find((candidate) => candidate.cleanerId === entry.cleanerId);
@@ -278,6 +288,28 @@ export function planOccurrenceStaffing(input: {
           : `${cleaner.firstName}'s crew is larger than the current maximum of ${ceiling}.`;
       attention.push({ cleanerId: cleaner.cleanerId, reason });
       assignments.push(flaggedAssignment(input, entry, reason));
+      continue;
+    }
+
+    const scheduleBlock = confirmedScheduleConflictBlock({
+      cleanerId: cleaner.cleanerId,
+      cleanerFirstName: cleaner.firstName,
+      candidate: {
+        serviceDate: input.serviceDate,
+        arrivalWindowStart: entry.arrivalWindowStart,
+        arrivalWindowEnd: entry.arrivalWindowEnd,
+        expectedDurationMinutes: entry.expectedDurationMinutes,
+      },
+      confirmedAssignments: input.confirmedAssignments,
+      jobs: input.jobs,
+      action: input.mode === "INVITE" ? "invite" : "assign",
+    });
+    if (scheduleBlock) {
+      attention.push({
+        cleanerId: cleaner.cleanerId,
+        reason: scheduleBlock.message,
+        scheduleConflict: confirmedScheduleConflictNotice(scheduleBlock),
+      });
       continue;
     }
 
@@ -310,45 +342,6 @@ export function planOccurrenceStaffing(input: {
           entry,
         ),
       );
-      continue;
-    }
-
-    const conflict = detectConfirmedAssignmentConflict({
-      cleanerId: cleaner.cleanerId,
-      candidate: {
-        serviceDate: input.serviceDate,
-        arrivalWindowStart: entry.arrivalWindowStart,
-        arrivalWindowEnd: entry.arrivalWindowEnd,
-        expectedDurationMinutes: entry.expectedDurationMinutes,
-      },
-      confirmedAssignments: input.confirmedAssignments
-        .filter((assignment) => assignment.cleanerId === cleaner.cleanerId && assignment.status === "CONFIRMED")
-        .map((assignment) => ({
-          assignmentId: assignment.assignmentId,
-          cleanerId: assignment.cleanerId,
-          jobId: assignment.jobId,
-          status: assignment.status,
-          serviceDate: assignment.serviceDate,
-          arrivalWindowStart: assignment.arrivalWindowStart,
-          arrivalWindowEnd: assignment.arrivalWindowEnd,
-          expectedDurationMinutes: assignment.expectedDurationMinutes,
-        })),
-    });
-    if (conflict) {
-      const reason = confirmedScheduleConflictReason(cleaner.firstName);
-      assignments.push({
-        ...buildAssignment(
-          {
-            jobId: input.jobId,
-            serviceDate: input.serviceDate,
-            mode: "DIRECT",
-            nowIso: input.nowIso,
-            newId: input.newId,
-          },
-          entry,
-        ),
-        attentionReason: reason,
-      });
       continue;
     }
 

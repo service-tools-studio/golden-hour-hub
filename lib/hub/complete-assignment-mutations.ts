@@ -11,9 +11,11 @@ import {
   revalidatePendingAssignments,
 } from "../domain/invitations.ts";
 import {
-  applyScheduleConflictWarning,
+  confirmedScheduleConflictBlock,
+  confirmedScheduleConflictNotice,
   isConfirmedScheduleConflictReason,
 } from "../domain/scheduling.ts";
+import type { HubMutationFailure } from "./admin-hub-types.ts";
 import { CROSS_MARKET_STAFFING_MESSAGE, cleanerMatchesJobMarket } from "../domain/markets.ts";
 import { planOccurrenceStaffing } from "../domain/recurrence.ts";
 import { addDays, mondayOf } from "../domain/time.ts";
@@ -46,7 +48,15 @@ export type CompleteAssignmentInput = SaveCleanerDetailsInput & {
 
 export type CompleteAssignmentResult =
   | { ok: true; hub: HubData; jobId: string; message: string; assignmentId?: string }
-  | { ok: false; message: string };
+  | HubMutationFailure;
+
+function scheduleConflictFailure(block: NonNullable<ReturnType<typeof confirmedScheduleConflictBlock>>): HubMutationFailure {
+  return {
+    ok: false,
+    message: block.message,
+    scheduleConflict: confirmedScheduleConflictNotice(block),
+  };
+}
 
 function assignmentNotice(input: {
   arrivalWindowStart?: string;
@@ -216,6 +226,23 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
   const notice = assignmentNotice({ ...input, expectedDurationMinutes: resolvedDuration });
 
   if (input.mode === "DRAFT" && existing) {
+    if (existing.status === "CONFIRMED" || existing.status === "NEEDS_ATTENTION") {
+      const block = confirmedScheduleConflictBlock({
+        cleanerId: cleaner.cleanerId,
+        cleanerFirstName: cleaner.firstName,
+        candidate: {
+          serviceDate: existing.serviceDate,
+          arrivalWindowStart: arrivalTimes.arrivalWindowStart,
+          arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
+          expectedDurationMinutes: resolvedDuration,
+        },
+        confirmedAssignments: hub.assignments,
+        ignoreAssignmentId: existing.assignmentId,
+        jobs: hub.jobs,
+        action: "save",
+      });
+      if (block) return scheduleConflictFailure(block);
+    }
     const pay = confirmedCompensationCents({
       payType: input.payType,
       payPerPersonCents: input.payPerPersonCents,
@@ -256,10 +283,6 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
         })(),
         updatedAt: now,
       };
-      if (item.status === "CONFIRMED" || item.status === "NEEDS_ATTENTION") {
-        const merged = hub.assignments.map((row) => (row.assignmentId === existing.assignmentId ? nextItem : row));
-        nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
-      }
       return nextItem;
     });
     if (arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined) {
@@ -328,10 +351,18 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
     confirmedAssignments: hub.assignments.filter(
       (item) => item.status === "CONFIRMED" && item.assignmentId !== existing?.assignmentId,
     ),
+    jobs: hub.jobs,
     nowIso: now,
     newId: () => existing?.assignmentId ?? `as-${Date.now()}`,
   });
-  if (plan.attention.length > 0) return { ok: false, message: plan.attention[0].reason };
+  if (plan.attention.length > 0) {
+    const item = plan.attention[0];
+    return {
+      ok: false,
+      message: item.reason,
+      scheduleConflict: item.scheduleConflict,
+    };
+  }
   const planned = plan.assignments[0];
   if (!planned) return { ok: false, message: "The cleaning could not be assigned." };
   const savedAssignment: JobAssignment = {

@@ -2,10 +2,11 @@ import "server-only";
 
 import { buildHubDiffPersistPlan } from "../hub/hub-diff-persist-plan.ts";
 import { hubMutationPatch, type HubPatchRemove } from "../hub/merge-hub-patch.ts";
+import type { HubMutationFailure } from "../hub/admin-hub-types.ts";
 import type { HubData } from "../mock/seed.ts";
 import { readHubRevision, writeHubItemChanges } from "./repository.ts";
 
-type MutationOutcome = { ok: true; hub: HubData } | { ok: false; message: string };
+type MutationOutcome = { ok: true; hub: HubData } | HubMutationFailure;
 
 /**
  * Apply a hub mutation against a scoped load, persist only Dynamo diff (no saveHub scan).
@@ -18,13 +19,13 @@ export async function persistHubDiffMutation<T extends MutationOutcome>(
   apply: (hub: HubData) => T,
   notFoundMessage = "That record could not be found.",
   maxAttempts = 3,
-): Promise<PersistSuccess<T> | { ok: false; message: string }> {
+): Promise<PersistSuccess<T> | HubMutationFailure> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const before = await loadBefore();
     if (!before) return { ok: false, message: notFoundMessage };
     const expectedRevision = await readHubRevision();
     const outcome = apply(before);
-    if (!outcome.ok) return outcome as { ok: false; message: string };
+    if (!outcome.ok) return outcome as HubMutationFailure;
 
     const plan = buildHubDiffPersistPlan(before, outcome.hub);
     if (plan.puts.length === 0 && plan.deletes.length === 0) {

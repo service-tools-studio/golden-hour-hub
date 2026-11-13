@@ -7,6 +7,7 @@ import type {
   AvailabilityWindow,
   CleanerProfile,
   JobAssignment,
+  JobCustomerSnapshot,
   Result,
 } from "./types.ts";
 import {
@@ -420,8 +421,101 @@ export function availabilityCoversJobStart(
     });
 }
 
-export function confirmedScheduleConflictReason(firstName: string): string {
-  return `This conflicts with another confirmed job for ${firstName}.`;
+export type ConfirmedScheduleConflictAction = "invite" | "assign" | "save";
+
+/** Serializable conflict detail for admin UI (e.g. link to the other cleaning). */
+export type ConfirmedScheduleConflictNotice = {
+  conflictJobId: string;
+  cleanerFirstName: string;
+  otherCustomerName: string;
+  action: ConfirmedScheduleConflictAction;
+};
+
+export type ConfirmedScheduleConflictBlock = ConfirmedScheduleConflictNotice & {
+  message: string;
+};
+
+function customerFirstNameFromSnapshot(snapshot: JobCustomerSnapshot): string {
+  const stored = snapshot.customerFirstName?.trim();
+  if (stored) return stored;
+  const first = snapshot.customerDisplayName.trim().split(/\s+/)[0];
+  return first || snapshot.customerDisplayName;
+}
+
+export function confirmedScheduleConflictReason(
+  firstName: string,
+  options?: { otherCustomerName?: string; action?: ConfirmedScheduleConflictAction },
+): string {
+  const base = `This conflicts with another confirmed job for ${firstName}.`;
+  const otherCustomerName = options?.otherCustomerName?.trim();
+  if (!otherCustomerName) return base;
+  const suffix =
+    options?.action === "invite"
+      ? ` Remove ${firstName} from ${otherCustomerName}'s cleaning before sending this invite.`
+      : options?.action === "assign"
+        ? ` Remove ${firstName} from ${otherCustomerName}'s cleaning before assigning them here.`
+        : ` Remove ${firstName} from ${otherCustomerName}'s cleaning first.`;
+  return `${base}${suffix}`;
+}
+
+type ConfirmedScheduleConflictBlockInput = {
+  cleanerId: string;
+  cleanerFirstName: string;
+  candidate: AssignmentTiming;
+  confirmedAssignments: JobAssignment[];
+  ignoreAssignmentId?: string;
+  jobs?: Array<{ jobId: string; snapshot: JobCustomerSnapshot }>;
+  action?: ConfirmedScheduleConflictAction;
+};
+
+function buildConfirmedScheduleConflictBlock(
+  input: ConfirmedScheduleConflictBlockInput,
+): ConfirmedScheduleConflictBlock | null {
+  const conflict = detectConfirmedAssignmentConflict({
+    cleanerId: input.cleanerId,
+    candidate: input.candidate,
+    confirmedAssignments: input.confirmedAssignments
+      .filter((item) => item.status === "CONFIRMED")
+      .map(toAssignmentSchedule),
+    ignoreAssignmentId: input.ignoreAssignmentId,
+  });
+  if (!conflict) return null;
+  const otherJob = input.jobs?.find((job) => job.jobId === conflict.jobId);
+  const otherCustomerName = otherJob ? customerFirstNameFromSnapshot(otherJob.snapshot) : undefined;
+  const action = input.action ?? "save";
+  const message = confirmedScheduleConflictReason(input.cleanerFirstName, {
+    otherCustomerName,
+    action,
+  });
+  return {
+    conflictJobId: conflict.jobId,
+    cleanerFirstName: input.cleanerFirstName,
+    otherCustomerName: otherCustomerName ?? "",
+    action,
+    message,
+  };
+}
+
+export function confirmedScheduleConflictNotice(
+  block: ConfirmedScheduleConflictBlock,
+): ConfirmedScheduleConflictNotice | undefined {
+  if (!block.otherCustomerName.trim()) return undefined;
+  const { message: _message, ...notice } = block;
+  return notice;
+}
+
+/** Blocks admin invite/assign/edit when labor time overlaps another confirmed assignment. */
+export function confirmedScheduleConflictBlock(
+  input: ConfirmedScheduleConflictBlockInput,
+): ConfirmedScheduleConflictBlock | null {
+  return buildConfirmedScheduleConflictBlock(input);
+}
+
+/** Blocks admin invite/assign/edit when labor time overlaps another confirmed assignment. */
+export function confirmedScheduleConflictBlockMessage(
+  input: ConfirmedScheduleConflictBlockInput,
+): string | null {
+  return buildConfirmedScheduleConflictBlock(input)?.message ?? null;
 }
 
 /** Admin job detail when a cleaner is double-booked — not an availability-hours issue. */

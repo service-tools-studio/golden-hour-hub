@@ -24,11 +24,12 @@ import {
   validateRecurrenceRule,
 } from "../domain/recurrence.ts";
 import {
-  applyScheduleConflictWarning,
   availabilityCoversBlockedRange,
   availabilityCoversJobStart,
   calculateBlockedRange,
   calculateConfirmedHeadcount,
+  confirmedScheduleConflictBlock,
+  confirmedScheduleConflictNotice,
   CLEANING_DELETE_BLOCKED_MESSAGE,
   isConfirmedScheduleConflictReason,
   jobHasCleanerBlockingDeletion,
@@ -423,10 +424,14 @@ export function staffCleanerOnHub(hub: HubData, input: StaffCleanerInput): Admin
     cleaners: hub.cleaners,
     availabilityByCleaner,
     confirmedAssignments: hub.assignments.filter((assignment) => assignment.status === "CONFIRMED"),
+    jobs: hub.jobs,
     nowIso: now,
     newId: () => `as-${Date.now()}`,
   });
-  if (plan.attention.length > 0) return { ok: false, message: plan.attention[0].reason };
+  if (plan.attention.length > 0) {
+    const item = plan.attention[0];
+    return { ok: false, message: item.reason, scheduleConflict: item.scheduleConflict };
+  }
   const planned = plan.assignments[0];
   if (!planned) return { ok: false, message: "The cleaning could not be assigned." };
   const assignment: JobAssignment = {
@@ -849,6 +854,27 @@ export function updateJobOnHub(hub: HubData, input: UpdateJobInput): AdminHubApp
     ) {
       return { ok: false, message: `This schedule is outside ${cleaner.firstName}'s submitted availability.` };
     }
+    const scheduleBlock = confirmedScheduleConflictBlock({
+      cleanerId: cleaner.cleanerId,
+      cleanerFirstName: cleaner.firstName,
+      candidate: {
+        serviceDate: job.date,
+        arrivalWindowStart: arrivalTimes.arrivalWindowStart,
+        arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
+        expectedDurationMinutes: assignmentDuration,
+      },
+      confirmedAssignments: hub.assignments,
+      ignoreAssignmentId: assignment.assignmentId,
+      jobs: hub.jobs,
+      action: "save",
+    });
+    if (scheduleBlock) {
+      return {
+        ok: false,
+        message: scheduleBlock.message,
+        scheduleConflict: confirmedScheduleConflictNotice(scheduleBlock),
+      };
+    }
   }
   const now = new Date().toISOString();
   const pay = confirmedCompensationCents({
@@ -856,16 +882,6 @@ export function updateJobOnHub(hub: HubData, input: UpdateJobInput): AdminHubApp
     payPerPersonCents: input.payPerPersonCents,
     confirmedCrewSize: input.proposedCrewSize,
   });
-  const blocked =
-    assignmentDuration !== undefined &&
-    (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION")
-      ? calculateBlockedRange({
-          date: job.date,
-          arrivalWindowStart: arrivalTimes.arrivalWindowStart,
-          arrivalWindowEnd: arrivalTimes.arrivalWindowEnd,
-          expectedDurationMinutes: assignmentDuration,
-        })
-      : null;
   const nextAssignments = hub.assignments.map((item) => {
     if (item.assignmentId !== assignment.assignmentId) return item;
     let nextItem: JobAssignment = {
@@ -881,10 +897,6 @@ export function updateJobOnHub(hub: HubData, input: UpdateJobInput): AdminHubApp
       confirmedTotalPayCents: item.status === "CONFIRMED" ? pay : item.confirmedTotalPayCents,
       updatedAt: now,
     };
-    if (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION") {
-      const merged = hub.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
-      nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
-    }
     return nextItem;
   });
   const next = withEarliestArrival(
@@ -928,17 +940,30 @@ export function moveAssignmentTimeOnHub(
   if (!job || job.status === "CANCELED") return { ok: false, message: "That cleaning could not be moved." };
   const cleaner = hub.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
   if (!cleaner) return { ok: false, message: "That cleaner could not be found." };
+  if (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION") {
+    const scheduleBlock = confirmedScheduleConflictBlock({
+      cleanerId: cleaner.cleanerId,
+      cleanerFirstName: cleaner.firstName,
+      candidate: {
+        serviceDate: assignment.serviceDate,
+        arrivalWindowStart: moved.arrivalWindowStart,
+        arrivalWindowEnd: moved.arrivalWindowEnd,
+        expectedDurationMinutes: assignment.expectedDurationMinutes,
+      },
+      confirmedAssignments: hub.assignments,
+      ignoreAssignmentId: assignment.assignmentId,
+      jobs: hub.jobs,
+      action: "save",
+    });
+    if (scheduleBlock) {
+      return {
+        ok: false,
+        message: scheduleBlock.message,
+        scheduleConflict: confirmedScheduleConflictNotice(scheduleBlock),
+      };
+    }
+  }
   const now = new Date().toISOString();
-  const blocked =
-    hasKnownDurationMinutes(assignment.expectedDurationMinutes) &&
-    (assignment.status === "CONFIRMED" || assignment.status === "NEEDS_ATTENTION")
-      ? calculateBlockedRange({
-          date: assignment.serviceDate,
-          arrivalWindowStart: moved.arrivalWindowStart,
-          arrivalWindowEnd: moved.arrivalWindowEnd,
-          expectedDurationMinutes: assignment.expectedDurationMinutes,
-        })
-      : null;
   return {
     ok: true,
     hub: {
@@ -951,10 +976,6 @@ export function moveAssignmentTimeOnHub(
           arrivalWindowEnd: moved.arrivalWindowEnd,
           updatedAt: now,
         };
-        if (blocked) {
-          const merged = hub.assignments.map((row) => (row.assignmentId === assignment.assignmentId ? nextItem : row));
-          nextItem = applyScheduleConflictWarning(nextItem, cleaner, merged);
-        }
         return nextItem;
       }),
     },

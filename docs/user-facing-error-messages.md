@@ -174,7 +174,7 @@ Typical path: **New cleaning** or **Edit cleaning** → **Save cleaning**.
 | **Set the headcount on this cleaning first.** | Job headcount 0. |
 | **Enter the pay per person.** | Missing pay on invite/direct. |
 | **The crew is larger than the headcount for this cleaning.** | Crew > job headcount. |
-| **`plan.attention[0].reason`** from `planOccurrenceStaffing` | Invite/direct blocked, e.g. **This cleaner is not active, so the cleaning was left unassigned.** / **{Name} is not approved to bring helpers…** / **`This conflicts with another confirmed job for {Name}.`** |
+| **`plan.attention[0].reason`** from `planOccurrenceStaffing` | Invite/direct blocked, e.g. **This cleaner is not active…** / **{Name} is not approved to bring helpers…** / **`This conflicts with another confirmed job for {Name}. Remove {Name} from {Customer}'s cleaning before sending this invite.`** (assign/save variants) |
 | **The cleaning could not be assigned.** | Planner produced no assignment. |
 | **{Name} has not submitted this week.** / **This schedule is outside {Name}'s submitted availability.** | Direct assign when availability rules fail. |
 
@@ -244,7 +244,7 @@ Typical path: **New cleaning** or **Edit cleaning** → **Save cleaning**.
 
 Set by domain logic, shown on **job detail**, **edit assignment**, **schedule**, **cleaner home**:
 
-- **`This conflicts with another confirmed job for {Name}.`** — overlapping confirmed jobs (`applyScheduleConflictWarning`, staffing planner).
+- **`This conflicts with another confirmed job for {Name}. Remove {Name} from {Customer}'s cleaning before sending this invite.`** (assign/save variants) — overlapping confirmed jobs blocked on invite, assign, and save; reconcile may still set shorter **`attentionReason`** without the removal line.
 - **`{Name} submitted availability for the week of {date}, but this cleaning falls outside those hours. Follow up with {Name}.`** — availability revalidation (`availabilityFollowUpReason`).
 - **`{Name}'s submitted availability for the week of {date} conflicts with another confirmed cleaning. Follow up with {Name}.`** — same flow, conflict kind.
 - Staffing template failures (invite flow): inactive cleaner, helper/crew size, headcount fit (see `planOccurrenceStaffing` in `lib/domain/recurrence.ts`).

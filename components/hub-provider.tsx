@@ -128,6 +128,7 @@ import {
   todayInBusinessZone,
 } from "@/lib/domain/time";
 import { emptyHub, type HubData } from "@/lib/mock/seed";
+import type { ConfirmedScheduleConflictNotice } from "@/lib/domain/scheduling";
 import type { AppRole, AvailabilityWindow } from "@/lib/domain/types";
 
 export type {
@@ -151,7 +152,7 @@ type HubState = HubData & {
 
 type ActionResult =
   | { ok: true; message?: string; customerId?: string; jobId?: string; assignmentId?: string }
-  | { ok: false; message: string; stale?: boolean };
+  | { ok: false; message: string; stale?: boolean; scheduleConflict?: ConfirmedScheduleConflictNotice };
 type AsyncActionResult = Promise<ActionResult>;
 
 type HubContextValue = HubState & {
@@ -422,7 +423,7 @@ export function HubProvider({
   const hubRevisionRef = useRef<number | null>(serverHub?.revision ?? null);
   const scheduleLookbackMonthsRef = useRef(new Set<string>());
   const scheduleLookbackInflightRef = useRef(new Map<string, Promise<void>>());
-  const hubJobHydrateInflightRef = useRef(new Map<string, Promise<void>>());
+  const hubJobHydrateInflightRef = useRef(new Map<string, Promise<boolean>>());
   const skipPersistForRemoteSyncRef = useRef(false);
   const staffingSaveInFlightRef = useRef(false);
   const actionLoadingRef = useRef(0);
@@ -802,7 +803,7 @@ export function HubProvider({
     }
     const pending = (async (): Promise<boolean> => {
       const remote = await loadJobPartitionAction(trimmed);
-      if (!remote.ok) return false;
+      if (!("ok" in remote) || !remote.ok) return false;
       setState((prev) => {
         if (!prev) return prev;
         if (prev.jobs.some((job) => job.jobId === trimmed)) return prev;

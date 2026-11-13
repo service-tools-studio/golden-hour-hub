@@ -90,9 +90,9 @@ The horizon is how far ahead job occurrences exist. It is not a limit on invitat
 - the blocked time sits inside that availability
 - its labor time (after the arrival window through expected duration) does not overlap another confirmed job’s labor time
 
-If that week is not submitted yet, direct assignment uses an `INVITED` row for the standing cleaner until they accept (or the week is submitted and checks pass). If the week is submitted and availability or headcount checks fail, the assignment is `NEEDS_ATTENTION` with the reason. A labor-time overlap with another confirmed job keeps the assignment `CONFIRMED` and sets an admin `attentionReason`; cleaners are not demoted for schedule conflicts.
+If that week is not submitted yet, direct assignment uses an `INVITED` row for the standing cleaner until they accept (or the week is submitted and checks pass). If the week is submitted and availability or headcount checks fail, the assignment is `NEEDS_ATTENTION` with the reason. A labor-time overlap with another confirmed job **blocks** the admin invite or direct assign (and blocks saving a conflicting time on an existing confirmed assignment); the save returns **This conflicts with another confirmed job for {Name}.** plus guidance to remove them from the other customer’s cleaning before inviting or assigning.
 
-When the cleaner later submits that week, confirmed rows in the week are checked again. An availability gap becomes `NEEDS_ATTENTION`; overlaps keep `CONFIRMED` with updated conflict copy.
+When the cleaner later submits that week, confirmed rows in the week are checked again. An availability gap becomes `NEEDS_ATTENTION`. If two confirmed jobs already on the calendar overlap, the app still surfaces conflict copy via `attentionReason` so admins can resolve it — new overlapping assignments are not allowed through the staffing form.
 
 **Leave future cleanings unassigned.** Jobs are created with no assignments and show as needing staffing.
 

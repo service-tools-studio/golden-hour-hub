@@ -39,7 +39,7 @@ Uses a **dedicated** DynamoDB table (default `GoldenHourHub-e2e`). `globalSetup`
 
 1. AWS credentials in `.env.local` are enough, or copy [e2e/env.example](e2e/env.example) to `e2e/.env` to override the table name. Prepare/tests always target **`GoldenHourHub-e2e`** (override with `E2E_DYNAMODB_TABLE_NAME`).
 2. `npm install` then **`npm run playwright:install`** (downloads Chromium; required once per machine after `@playwright/test` updates)
-3. `npm run test:e2e` (starts Next on port **3099** with `E2E_PREVIEW_AUTH=true` so Cognito is not required; stop an existing `npm run dev` if the e2e server cannot acquire the Next dev lock)
+3. `npm run test:e2e` (starts Next on port **3099** with `E2E_PREVIEW_AUTH=true` and build output in `.next-e2e`, so it can run at the same time as `npm run dev` on port 3000)
 
 ```bash
 npm run e2e:prepare   # clear + seed only

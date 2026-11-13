@@ -1,3 +1,4 @@
+import type { ConfirmedScheduleConflictNotice } from "../domain/scheduling.ts";
 import type {
   Customer,
   Job,
@@ -8,6 +9,14 @@ import type {
   SeriesStatus,
   ServiceType,
 } from "../domain/types.ts";
+
+export type { ConfirmedScheduleConflictNotice };
+
+export type HubMutationFailure = {
+  ok: false;
+  message: string;
+  scheduleConflict?: ConfirmedScheduleConflictNotice;
+};
 
 export type CreateJobInput = {
   date: string;
@@ -107,4 +116,4 @@ export type AdminHubApplierSuccess = {
   assignmentId?: string;
 };
 
-export type AdminHubApplierResult = AdminHubApplierSuccess | { ok: false; message: string };
+export type AdminHubApplierResult = AdminHubApplierSuccess | HubMutationFailure;

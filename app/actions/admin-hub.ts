@@ -28,6 +28,7 @@ import {
 import type {
   DeletedCustomerSnapshot,
   DeletedJobSnapshot,
+  HubMutationFailure,
   SaveCleanerDetailsInput,
   SaveSeriesInput,
   StaffCleanerInput,
@@ -49,7 +50,7 @@ export type AdminHubActionResult =
       jobId?: string;
       assignmentId?: string;
     }
-  | { ok: false; message: string };
+  | HubMutationFailure;
 
 async function persistAdminHubApplier(
   apply: (hub: HubData) => ReturnType<typeof saveCustomerOnHub>,

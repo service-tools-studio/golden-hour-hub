@@ -344,13 +344,35 @@ describe("recurring edits and staffing", () => {
         },
       },
       confirmedAssignments: [conflict],
+      jobs: [
+        {
+          jobId: "other-job",
+          snapshot: {
+            customerDisplayName: "Patricia Smith",
+            phone: "555-0100",
+            propertyId: "prop-1",
+            streetAddress: "1 Main St",
+            city: "Denver",
+            state: "CO",
+            zip: "80202",
+            marketId: "phoenix",
+            timeZone: "America/Denver",
+            bedrooms: 2,
+            bathrooms: 1,
+            squareFeet: 1200,
+            preferences: "",
+          },
+        },
+      ],
       nowIso: "2026-09-26T00:00:00.000Z",
       newId: () => "new",
     });
-    assert.equal(plan.assignments.length, 1);
-    assert.equal(plan.assignments[0].status, "CONFIRMED");
-    assert.match(plan.assignments[0].attentionReason ?? "", /conflicts with another confirmed job/);
-    assert.equal(plan.attention.length, 0);
+    assert.equal(plan.assignments.length, 0);
+    assert.equal(plan.attention.length, 1);
+    assert.match(
+      plan.attention[0].reason,
+      /Remove Claudia from Patricia's cleaning before assigning them here/,
+    );
   });
 
   it("direct-assigns as confirmed before that week is submitted", () => {

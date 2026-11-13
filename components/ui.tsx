@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { ConfirmedScheduleConflictNotice } from "@/components/admin/confirmed-schedule-conflict-notice";
 import { HeaderAuthAction } from "@/components/header-auth-action";
 import { PageHeaderBrand } from "@/components/page-header-brand";
+import type { ConfirmedScheduleConflictNotice as ScheduleConflictNoticeFields } from "@/lib/domain/scheduling";
 
 const DEFAULT_PAGE_HEADER_EYEBROW = "Golden Hour Hub";
 
@@ -191,10 +193,22 @@ export function Notice({ children, tone = "error" }: { children: React.ReactNode
 export function FormSubmitNotice({
   message,
   tone = "error",
+  scheduleConflict,
+  scheduleConflictJobHref,
 }: {
   message: string | null;
   tone?: "error" | "ok";
+  scheduleConflict?: ScheduleConflictNoticeFields;
+  scheduleConflictJobHref?: string;
 }) {
+  if (scheduleConflict && scheduleConflictJobHref) {
+    return (
+      <ConfirmedScheduleConflictNotice
+        conflict={scheduleConflict}
+        otherCleaningHref={scheduleConflictJobHref}
+      />
+    );
+  }
   if (!message) return null;
   return <Notice tone={tone}>{message}</Notice>;
 }

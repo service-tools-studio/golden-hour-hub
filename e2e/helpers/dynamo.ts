@@ -250,6 +250,7 @@ export async function expectJobDraftCleanerInDynamo(jobId: string, cleanerId: st
 
 export type JobAssignmentRow = {
   assignmentId?: string;
+  jobId?: string;
   cleanerId?: string;
   status?: string;
   entity?: string;

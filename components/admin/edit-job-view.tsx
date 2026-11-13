@@ -31,7 +31,7 @@ import {
 import { calculateFlatPayPerPerson } from "@/lib/domain/compensation";
 import { helpersApproved, personName, typicalCrewSize } from "@/lib/domain/cleaners";
 import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
-import { isConfirmedScheduleConflictReason } from "@/lib/domain/scheduling";
+import { isConfirmedScheduleConflictReason, type ConfirmedScheduleConflictNotice } from "@/lib/domain/scheduling";
 import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
 import { CLEANING_DELETE_BLOCKED_MESSAGE, jobHasCleanerBlockingDeletion, windowsForCleaner } from "@/lib/domain/scheduling";
@@ -341,8 +341,13 @@ export function EditJobView({
       : crewPayInputFromPerPersonCents(defaultPerPersonCentsForCleaner(cleaner), initialCrew),
   );
   const [message, setMessage] = useState<string | null>(null);
+  const [scheduleConflict, setScheduleConflict] = useState<ConfirmedScheduleConflictNotice | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<AssigningMode | null>(null);
+  function dismissSubmitNotice() {
+    setMessage(null);
+    setScheduleConflict(null);
+  }
   const assignmentSnapshot = JSON.stringify({ arrivalStartTbd, arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const assignmentBaseline = useRef<string | null>(null);
   if (assignment && assignmentBaseline.current === null) assignmentBaseline.current = assignmentSnapshot;
@@ -459,8 +464,10 @@ export function EditJobView({
     if (!result.ok) {
       setAssigning(null);
       setMessage(result.message);
+      setScheduleConflict(result.scheduleConflict ?? null);
       return false;
     }
+    setScheduleConflict(null);
     if (mode === "DIRECT") {
       const logId = result.assignmentId ?? assignmentId;
       hub.queueSchedulingSms(
@@ -561,15 +568,15 @@ export function EditJobView({
             onChange={(nextStart, nextEnd) => {
               setArrivalStart(nextStart);
               setArrivalEnd(nextEnd);
-              setMessage(null);
+              dismissSubmitNotice();
             }}
             onStartTbdChange={(tbd) => {
               setArrivalStartTbd(tbd);
-              setMessage(null);
+              dismissSubmitNotice();
             }}
           />
         </Field>
-        <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
+        <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={dismissSubmitNotice} />
         {cleaner && job ? (
           <CleanerAvailabilityPreview
             cleanerId={cleaner.cleanerId}
@@ -594,7 +601,7 @@ export function EditJobView({
               const nextPay = preservePerPersonCrewPay(pay, crew, next);
               setCrew(next);
               if (nextPay !== null) setPay(nextPay);
-              setMessage(null);
+              dismissSubmitNotice();
             }}
           />
         ) : null}
@@ -606,16 +613,23 @@ export function EditJobView({
           onPayTypeChange={setPayType}
           onPayChange={(value) => {
             setPay(value);
-            setMessage(null);
+            dismissSubmitNotice();
           }}
         />
         {message ||
+        scheduleConflict ||
         showInviteFollowUpButton ||
         showAssignmentActions ||
         showDirectAssignForInvite ||
         showSettledNotificationActions ? (
           <div className="space-y-2">
-            <FormSubmitNotice message={message} />
+            <FormSubmitNotice
+              message={scheduleConflict ? null : message}
+              scheduleConflict={scheduleConflict ?? undefined}
+              scheduleConflictJobHref={
+                scheduleConflict ? cleaningHref(scheduleConflict.conflictJobId, from) : undefined
+              }
+            />
             {showInviteFollowUpButton ? (
               <div className="space-y-2">
                 <PrimaryButton
@@ -903,9 +917,14 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       : crewPayInputFromPerPersonCents(defaultPerPersonCentsForCleaner(cleaner), initialDraftCrew),
   );
   const [message, setMessage] = useState<string | null>(null);
+  const [scheduleConflict, setScheduleConflict] = useState<ConfirmedScheduleConflictNotice | null>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [navigatingAway, setNavigatingAway] = useState(false);
   const [assigning, setAssigning] = useState<AssigningMode | null>(null);
+  function dismissSubmitNotice() {
+    setMessage(null);
+    setScheduleConflict(null);
+  }
   const draftSnapshot = JSON.stringify({ arrivalStartTbd, arrivalStart, arrivalEnd, duration, crew, payType, pay });
   const draftBaseline = useRef<string | null>(null);
   if (job && cleaner && draftBaseline.current === null) draftBaseline.current = draftSnapshot;
@@ -951,8 +970,10 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
     if (!result.ok) {
       setAssigning(null);
       setMessage(result.message);
+      setScheduleConflict(result.scheduleConflict ?? null);
       return false;
     }
+    setScheduleConflict(null);
     if (mode === "DRAFT") {
       setAssigning(null);
       setNavigatingAway(true);
@@ -1038,15 +1059,15 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
             onChange={(nextStart, nextEnd) => {
               setArrivalStart(nextStart);
               setArrivalEnd(nextEnd);
-              setMessage(null);
+              dismissSubmitNotice();
             }}
             onStartTbdChange={(tbd) => {
               setArrivalStartTbd(tbd);
-              setMessage(null);
+              dismissSubmitNotice();
             }}
           />
         </Field>
-        <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={() => setMessage(null)} />
+        <AssignmentDurationField duration={duration} onChange={setDuration} onDirty={dismissSubmitNotice} />
         <CleanerAvailabilityPreview
           cleanerId={cleanerId}
           cleanerName={cleaner.firstName}
@@ -1068,7 +1089,7 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
               const nextPay = preservePerPersonCrewPay(pay, crew, next);
               setCrew(next);
               if (nextPay !== null) setPay(nextPay);
-              setMessage(null);
+              dismissSubmitNotice();
             }}
           />
         ) : null}
@@ -1080,11 +1101,17 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
           onPayTypeChange={setPayType}
           onPayChange={(value) => {
             setPay(value);
-            setMessage(null);
+            dismissSubmitNotice();
           }}
         />
         <div className="space-y-2">
-          <FormSubmitNotice message={message} />
+          <FormSubmitNotice
+            message={scheduleConflict ? null : message}
+            scheduleConflict={scheduleConflict ?? undefined}
+            scheduleConflictJobHref={
+              scheduleConflict ? cleaningHref(scheduleConflict.conflictJobId, from) : undefined
+            }
+          />
           <AssignmentSaveChoices
             assigning={assigning}
             directAssignNote={
