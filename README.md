@@ -31,7 +31,15 @@ Open [http://localhost:3000](http://localhost:3000). With `AUTH_SESSION_SECRET` 
 
 ```bash
 npm test
+npm run typecheck   # same TS pass as production build (also runs on git commit)
 ```
+
+After `npm install`, **Husky** wires Git hooks:
+
+- **pre-commit** — `npm run typecheck` (blocks the commit on TypeScript errors)
+- **pre-push** — `npm run build` (full production build; skip with `git push --no-verify`)
+
+Manual check before deploy: `npm run check:prod` (typecheck + build).
 
 ### End-to-end tests (Playwright)
 

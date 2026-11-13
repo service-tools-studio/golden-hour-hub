@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Same TypeScript pass as `next build` (faster than a full production build).
+npm run typecheck

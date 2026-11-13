@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Full production build before push (matches Vercel). Skip with: git push --no-verify
+npm run build
