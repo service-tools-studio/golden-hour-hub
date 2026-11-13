@@ -47,8 +47,8 @@ export function HomeChooser() {
       <div className="mt-8 space-y-3">
         <button
           type="button"
-          onClick={() => {
-            hub.enterAdmin();
+          onClick={async () => {
+            await hub.enterAdmin();
             router.push("/admin");
           }}
           className="min-h-16 w-full rounded-3xl bg-ink px-4 text-left text-cream"
@@ -60,8 +60,8 @@ export function HomeChooser() {
           <button
             key={cleaner.cleanerId}
             type="button"
-            onClick={() => {
-              hub.enterCleaner(cleaner.cleanerId);
+            onClick={async () => {
+              await hub.enterCleaner(cleaner.cleanerId);
               router.push("/cleaner");
             }}
             className="min-h-16 w-full rounded-3xl bg-white px-4 text-left ring-1 ring-ink/10"

@@ -127,7 +127,7 @@ export function saveCustomerOnHub(
     };
   }
   const now = new Date().toISOString();
-  const id = customerId ?? `cust-${Date.now()}`;
+  const id = customerId && customerId !== "new" ? customerId : `cust-${Date.now()}`;
   const existing = hub.properties.filter((item) => item.customerId === id);
   const kept = new Set(decision.value.properties.flatMap((item) => (item.propertyId ? [item.propertyId] : [])));
   const removed = existing.filter((item) => !kept.has(item.propertyId));

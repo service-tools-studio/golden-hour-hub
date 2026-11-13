@@ -1,7 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { E2E } from "./fixtures/ids";
 import { e2eJobDate } from "./fixtures/job-date";
 import { enterPreviewAdmin, switchCustomerOnNewJob, waitForNewJobProperty } from "./helpers/admin";
+import { expectSeedJobSnapshotInDynamo } from "./helpers/dynamo";
 
 test.describe("book cleaning roster", () => {
   test("available cleaners follow property market", async ({ page }) => {
@@ -16,6 +17,8 @@ test.describe("book cleaning roster", () => {
     await switchCustomerOnNewJob(page, "E2E Portland", /E2E Portland/);
     await expect(page.getByRole("button", { name: /^Ada\b/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Rio\b/ })).toHaveCount(0);
+    await expectSeedJobSnapshotInDynamo(E2E.jobPhoenix, { customerDisplaySubstring: "Phoenix", marketId: "phoenix" });
+    await expectSeedJobSnapshotInDynamo(E2E.jobPortland, { customerDisplaySubstring: "Portland", marketId: "portland" });
   });
 
   test("switching property market clears other-market draft selection", async ({ page }) => {
@@ -27,5 +30,6 @@ test.describe("book cleaning roster", () => {
     await expect(page.getByText("Selected cleaners")).toBeVisible();
     await switchCustomerOnNewJob(page, "E2E Portland", /E2E Portland/);
     await expect(page.getByText("Selected cleaners")).toHaveCount(0);
+    await expectSeedJobSnapshotInDynamo(E2E.jobPhoenix, { customerDisplaySubstring: "Phoenix", marketId: "phoenix" });
   });
 });

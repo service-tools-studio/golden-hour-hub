@@ -31,6 +31,20 @@ export async function saveCustomerForm(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Save customer" }).click();
 }
 
+/** After a successful save the app navigates off `/admin/customers/new`. */
+export async function saveCustomerFormAndOpenDetail(page: Page): Promise<void> {
+  await Promise.all([
+    page.waitForURL(
+      (url) => {
+        const match = /^\/admin\/customers\/([^/]+)$/.exec(url.pathname);
+        return Boolean(match && match[1] !== "new");
+      },
+      { timeout: 60_000 },
+    ),
+    page.getByRole("button", { name: "Save customer" }).click(),
+  ]);
+}
+
 export async function expectMarketValidation(page: Page): Promise<void> {
   await expect(page.getByText("Choose Portland or Phoenix.")).toBeVisible();
 }

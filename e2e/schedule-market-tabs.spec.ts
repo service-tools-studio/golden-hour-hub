@@ -1,6 +1,7 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { E2E } from "./fixtures/ids";
 import { chooseMarketTab, enterPreviewAdmin } from "./helpers/admin";
+import { expectSeedJobSnapshotInDynamo } from "./helpers/dynamo";
 
 test.describe("schedule market filter", () => {
   test.beforeEach(async ({ page }) => {
@@ -22,5 +23,8 @@ test.describe("schedule market filter", () => {
     await chooseMarketTab(page, "Phoenix");
     await expect(phoenixJob).toBeVisible();
     await expect(portlandJob).toHaveCount(0);
+
+    await expectSeedJobSnapshotInDynamo(E2E.jobPhoenix, { customerDisplaySubstring: "Phoenix", marketId: "phoenix" });
+    await expectSeedJobSnapshotInDynamo(E2E.jobPortland, { customerDisplaySubstring: "Portland", marketId: "portland" });
   });
 });

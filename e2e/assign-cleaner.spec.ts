@@ -1,6 +1,7 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { E2E } from "./fixtures/ids";
 import { enterPreviewAdmin } from "./helpers/admin";
+import { expectJobDraftCleanerInDynamo } from "./helpers/dynamo";
 
 test.describe("assign cleaner persists", () => {
   test("adding Rio on a Phoenix draft saves to Dynamo", async ({ page }) => {
@@ -12,5 +13,6 @@ test.describe("assign cleaner persists", () => {
 
     await page.goto(`/admin/jobs/${E2E.jobPhoenixAssign}`);
     await expect(page.getByText(E2E.labels.phoenixCleaner)).toBeVisible();
+    await expectJobDraftCleanerInDynamo(E2E.jobPhoenixAssign, E2E.cleanerPhoenix);
   });
 });

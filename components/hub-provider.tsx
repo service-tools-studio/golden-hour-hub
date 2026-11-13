@@ -170,8 +170,8 @@ type HubContextValue = HubState & {
   ) => void;
   showManualCleanerText: (prompt: ManualCleanerTextOffer) => void;
   dismissManualCleanerText: () => void;
-  enterAdmin: () => void;
-  enterCleaner: (cleanerId: string) => void;
+  enterAdmin: () => Promise<void>;
+  enterCleaner: (cleanerId: string) => Promise<void>;
   signOut: () => Promise<void>;
   acceptInvitation: (assignmentId: string, crewSize: number) => AsyncActionResult;
   declineInvitation: (assignmentId: string) => AsyncActionResult;
@@ -1474,50 +1474,46 @@ export function HubProvider({
     },
     showManualCleanerText: (prompt) => setManualCleanerText(prompt),
     dismissManualCleanerText: () => setManualCleanerText(null),
-    enterAdmin: () => {
+    enterAdmin: async () => {
       if (!previewAuth || !previewAuthAllowed()) return;
-      void (async () => {
-        if (previewPersistsToDynamo) {
-          await syncPreviewSessionCookie("ADMIN", null);
-          const remote = await bootstrapHub();
-          if (isDynamoBootstrapResult(remote)) {
-            previewDynamoHubRef.current = remote.data;
-            hubRevisionRef.current = remote.revision;
-            setState({ ...withCurrentHorizon(remote.data), role: "ADMIN", cleanerId: null });
-            return;
-          }
-        }
-        const full = previewDynamoHubRef.current;
-        if (full) {
-          setState({ ...withCurrentHorizon(full), role: "ADMIN", cleanerId: null });
+      if (previewPersistsToDynamo) {
+        await syncPreviewSessionCookie("ADMIN", null);
+        const remote = await bootstrapHub();
+        if (isDynamoBootstrapResult(remote)) {
+          previewDynamoHubRef.current = remote.data;
+          hubRevisionRef.current = remote.revision;
+          setState({ ...withCurrentHorizon(remote.data), role: "ADMIN", cleanerId: null });
           return;
         }
-        setState({ ...data, role: "ADMIN", cleanerId: null });
-      })();
+      }
+      const full = previewDynamoHubRef.current;
+      if (full) {
+        setState({ ...withCurrentHorizon(full), role: "ADMIN", cleanerId: null });
+        return;
+      }
+      setState({ ...data, role: "ADMIN", cleanerId: null });
     },
-    enterCleaner: (cleanerId) => {
+    enterCleaner: async (cleanerId) => {
       if (!previewAuth || !previewAuthAllowed()) return;
-      void (async () => {
-        if (previewPersistsToDynamo) {
-          await syncPreviewSessionCookie("CLEANER", cleanerId);
-          const remote = await bootstrapHub();
-          if (isDynamoBootstrapResult(remote)) {
-            hubRevisionRef.current = remote.revision;
-            setState({ ...withCurrentHorizon(remote.data), role: "CLEANER", cleanerId });
-            return;
-          }
-        }
-        const full = previewDynamoHubRef.current;
-        if (full) {
-          setState({
-            ...withCurrentHorizon(hubDataForCleaner(full, cleanerId)),
-            role: "CLEANER",
-            cleanerId,
-          });
+      if (previewPersistsToDynamo) {
+        await syncPreviewSessionCookie("CLEANER", cleanerId);
+        const remote = await bootstrapHub();
+        if (isDynamoBootstrapResult(remote)) {
+          hubRevisionRef.current = remote.revision;
+          setState({ ...withCurrentHorizon(remote.data), role: "CLEANER", cleanerId });
           return;
         }
-        setState({ ...data, role: "CLEANER", cleanerId });
-      })();
+      }
+      const full = previewDynamoHubRef.current;
+      if (full) {
+        setState({
+          ...withCurrentHorizon(hubDataForCleaner(full, cleanerId)),
+          role: "CLEANER",
+          cleanerId,
+        });
+        return;
+      }
+      setState({ ...data, role: "CLEANER", cleanerId });
     },
     signOut: async () => {
       if (!previewAuth) {

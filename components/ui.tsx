@@ -102,11 +102,13 @@ export function Card({
   className = "",
   muted = false,
   onClick,
+  "data-job-id": dataJobId,
 }: {
   children: React.ReactNode;
   className?: string;
   muted?: boolean;
   onClick?: () => void;
+  "data-job-id"?: string;
 }) {
   const classes = `rounded-3xl p-4 ${muted
       ? "bg-[#e6e4de] text-ink/45 shadow-none [&_p]:text-ink/45"
@@ -119,7 +121,11 @@ export function Card({
       </button>
     );
   }
-  return <section className={classes}>{children}</section>;
+  return (
+    <section className={classes} data-job-id={dataJobId}>
+      {children}
+    </section>
+  );
 }
 
 export function PlusIcon() {

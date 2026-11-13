@@ -212,7 +212,8 @@ export async function seedE2eHub(): Promise<void> {
   assertE2eTable();
   const today = todayInBusinessZone();
   const jobDate = addDays(today, 1);
-  const availabilityDates = [today, jobDate];
+  const staffingDates = [7, 8, 9, 10].map((offset) => addDays(today, offset));
+  const availabilityDates = [...new Set([today, jobDate, ...staffingDates])];
 
   const pdxCustomer = customer(E2E.customerPortland, "E2E", "Portland", "5035550101");
   const phxCustomer = customer(E2E.customerPhoenix, "E2E", "Phoenix", "6025550102");

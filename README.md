@@ -35,7 +35,7 @@ npm test
 
 ### End-to-end tests (Playwright)
 
-Uses a **dedicated** DynamoDB table (default `GoldenHourHub-e2e`). `globalSetup` clears and reseeds that table before the suite.
+Uses a **dedicated** DynamoDB table (default `GoldenHourHub-e2e`). `globalSetup` clears and reseeds that table before the suite. Specs import `test` from [`e2e/fixtures/test.ts`](e2e/fixtures/test.ts), which asserts the e2e table is reachable and seeded before each test; write flows add row-level checks in [`e2e/helpers/dynamo.ts`](e2e/helpers/dynamo.ts).
 
 1. AWS credentials in `.env.local` are enough, or copy [e2e/env.example](e2e/env.example) to `e2e/.env` to override the table name. Prepare/tests always target **`GoldenHourHub-e2e`** (override with `E2E_DYNAMODB_TABLE_NAME`).
 2. `npm install` then **`npm run playwright:install`** (downloads Chromium; required once per machine after `@playwright/test` updates)

@@ -1,10 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import {
   expectMarketValidation,
   fillNewCustomerProperty,
   saveCustomerForm,
+  saveCustomerFormAndOpenDetail,
 } from "./helpers/customer";
 import { enterPreviewAdmin } from "./helpers/admin";
+import { expectCustomerPersistedInDynamo, waitForSavedCustomerId } from "./helpers/dynamo";
 
 test.describe("customer property market", () => {
   test("requires Portland or Phoenix before save", async ({ page }) => {
@@ -33,8 +35,9 @@ test.describe("customer property market", () => {
       zip: "97201",
       market: "Portland",
     });
-    await saveCustomerForm(page);
-    await expect(page).toHaveURL(/\/admin\/customers\/.+/);
+    await saveCustomerFormAndOpenDetail(page);
+    const customerId = await waitForSavedCustomerId(page);
+    await expectCustomerPersistedInDynamo(customerId, { lastName, marketId: "portland" });
     await page.getByText("Tap to edit").click();
     await expect(page.getByRole("radio", { name: "Portland" })).toHaveAttribute("aria-checked", "true");
   });
@@ -51,8 +54,9 @@ test.describe("customer property market", () => {
       zip: "97201",
       market: "Phoenix",
     });
-    await saveCustomerForm(page);
-    await expect(page).toHaveURL(/\/admin\/customers\/.+/);
+    await saveCustomerFormAndOpenDetail(page);
+    const searchCustomerId = await waitForSavedCustomerId(page);
+    await expectCustomerPersistedInDynamo(searchCustomerId, { lastName, marketId: "phoenix" });
     await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Customers" }).click();
     await expect(page.getByRole("heading", { name: "Customers" })).toBeVisible();
     await page.getByLabel("Search customers").fill(`E2E ${lastName}`);

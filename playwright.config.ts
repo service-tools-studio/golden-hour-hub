@@ -7,6 +7,10 @@ const e2ePort = process.env.E2E_PORT ?? "3099";
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${e2ePort}`;
 const e2eTable = process.env.E2E_DYNAMODB_TABLE_NAME ?? "GoldenHourHub-e2e";
 
+/** Test workers and Dynamo helpers must not read prod table name from `.env.local`. */
+process.env.E2E_DYNAMODB_TABLE_NAME = e2eTable;
+process.env.DYNAMODB_TABLE_NAME = e2eTable;
+
 function loadEnvFile(file: string): Record<string, string> {
   if (!fs.existsSync(file)) return {};
   const out: Record<string, string> = {};
@@ -53,7 +57,7 @@ export default defineConfig({
   webServer: {
     command: devCommand,
     url: baseURL,
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       ...fileEnv,

@@ -131,7 +131,7 @@ function InvitationCardContent({
   const expired = Boolean(expiredReason);
 
   return (
-    <Card className={expired ? "text-ink/75" : undefined}>
+    <Card className={expired ? "text-ink/75" : undefined} data-job-id={job.jobId}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-ink/50">
           {expired ? "Expired invitation" : "New job available"}
