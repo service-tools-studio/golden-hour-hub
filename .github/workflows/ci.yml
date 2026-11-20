@@ -13,10 +13,10 @@ concurrency:
 jobs:
   unit:
     name: Unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: npm
@@ -25,15 +25,15 @@ jobs:
 
   build:
     name: Production build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # Satisfy instrumentation assertProductionAuthConfig; not used at runtime in this job.
       AUTH_SESSION_SECRET: ci-build-auth-secret-32-characters-min
       COGNITO_USER_POOL_ID: us-west-2_CiBuildOnly
       COGNITO_CLIENT_ID: ci-build-cognito-client-id
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: npm
@@ -42,7 +42,7 @@ jobs:
 
   e2e:
     name: Playwright E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [unit]
     permissions:
       id-token: write
@@ -55,20 +55,20 @@ jobs:
       SMS_PROVIDER: mock
       AUTH_SESSION_SECRET: ${{ secrets.E2E_AUTH_SESSION_SECRET || 'e2e-ci-auth-secret-32-characters-min' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v5
+      - uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-west-2
           audience: sts.amazonaws.com
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-report
