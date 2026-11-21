@@ -219,6 +219,7 @@ export async function applyCalendarEventsToHub(
           syncedFields.serviceType,
           suggestedCustomerId,
           workingHub.customers,
+          workingHub.jobs,
         ),
         specialInstructions: syncedCalendarImportSpecialInstructions(
           existing,
@@ -246,6 +247,7 @@ export async function applyCalendarEventsToHub(
         parsed.fields.serviceType,
         suggestions.customerId,
         workingHub.customers,
+        workingHub.jobs,
       ),
       status: "PENDING_REVIEW",
       suggestedCustomerId: suggestions.customerId,

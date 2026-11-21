@@ -20,14 +20,41 @@ import {
   mergeCalendarImportCustomerHints,
   normalizeCalendarEventTitle,
   resolveCalendarImportMatchedJobId,
+  suggestCustomerForCalendarImport,
 } from "@/lib/domain/calendar-import";
 import { appleCalendarDayUrl } from "@/lib/calendar";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { searchCustomers } from "@/lib/domain/customers";
 import type { Property, ServiceType } from "@/lib/domain/types";
-import { formatLongDate, serviceLabel } from "@/lib/format";
+import { formatLongDate, propertySizeLabel, serviceLabel } from "@/lib/format";
+import {
+  calculateQuoteEstimate,
+  type CleanType,
+  type QuoteEstimate,
+} from "@/lib/portableQuoteEstimate";
 
 const SERVICES: ServiceType[] = ["DEEP_CLEAN", "RECURRING", "MOVE_OUT", "POST_CONSTRUCTION", "OTHER"];
+
+function cleanTypeFor(service: ServiceType): CleanType | null {
+  if (service === "DEEP_CLEAN") return "deep";
+  if (service === "RECURRING") return "standard";
+  if (service === "MOVE_OUT") return "move_out";
+  return null;
+}
+
+function trimHours(hours: number): string {
+  return String(Number(hours.toFixed(2)));
+}
+
+function onSiteHours(quote: QuoteEstimate, headcount: number): { text: string } {
+  const spread = (hours: number) => Math.round(((hours * quote.time.cleaners) / headcount) * 4) / 4;
+  const low = spread(quote.time.hoursLow);
+  const high = spread(quote.time.hoursHigh);
+  const unit = high === 1 ? "hour" : "hours";
+  return {
+    text: low === high ? `~${trimHours(high)} ${unit}` : `${trimHours(low)}–${trimHours(high)} ${unit}`,
+  };
+}
 
 function propertyLine(home: Property): string {
   return home.label ? `${home.label} · ${home.streetAddress}` : `${home.streetAddress}, ${home.city}`;
@@ -82,7 +109,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   const [duration, setDuration] = useState<number | null>(() => row?.expectedDurationMinutes ?? null);
   const [serviceType, setServiceType] = useState<ServiceType>(() =>
     row
-      ? calendarImportDefaultServiceType(row.serviceType, row.suggestedCustomerId, hub.customers)
+      ? calendarImportDefaultServiceType(row.serviceType, row.suggestedCustomerId, hub.customers, hub.jobs)
       : "DEEP_CLEAN",
   );
   const [headcount, setHeadcount] = useState(row && row.headcountNeeded > 0 ? row.headcountNeeded : 1);
@@ -97,6 +124,20 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     if (!row) return;
     setInstructions(resolvedCalendarImportSpecialInstructions(row));
   }, [row?.importId]);
+
+  useEffect(() => {
+    const current = hub.calendarImports.find((item) => item.importId === importId);
+    if (!current) return;
+    const merged = mergeCalendarImportCustomerHints(current.parsed, calendarImportDetailText(current.raw, ""));
+    const suggestion = suggestCustomerForCalendarImport(hub.customers, merged, hub.properties);
+    const nextCustomerId = current.suggestedCustomerId ?? suggestion.customerId ?? "";
+    const nextPropertyId = current.suggestedPropertyId ?? suggestion.propertyId ?? "";
+    setCustomerId(nextCustomerId);
+    setPropertyId(nextPropertyId);
+    if (nextCustomerId) {
+      setServiceType((c) => calendarImportDefaultServiceType(c, nextCustomerId, hub.customers, hub.jobs));
+    }
+  }, [importId]);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<"approve" | "draft" | "dismiss" | null>(null);
   const [refreshingDetails, setRefreshingDetails] = useState(false);
@@ -125,7 +166,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     );
     setPropertyId(firstProperty?.propertyId ?? "");
     setQuery("");
-    setServiceType((current) => calendarImportDefaultServiceType(current, match.customerId, hub.customers));
+    setServiceType((current) => calendarImportDefaultServiceType(current, match.customerId, hub.customers, hub.jobs));
     router.replace(`/admin/calendar-imports/${importId}`, { scroll: false });
   }, [searchParams, hub.customers, hub.properties, importId, router]);
 
@@ -165,6 +206,28 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     formatCalendarImportAddress(mergedHints) ||
     (active.raw.location?.trim() ? active.raw.location.trim() : undefined);
   const rawEventDetails = calendarImportRawEventDetailsText(active.raw);
+  const cleanTypeForEstimate = cleanTypeFor(serviceType);
+  const estimateSizeSource = property
+    ? {
+        bedrooms: property.bedrooms,
+        bathrooms: property.bathrooms,
+        sqft: property.squareFeet,
+      }
+    : mergedHints.bedrooms !== undefined && mergedHints.bathrooms !== undefined
+      ? {
+          bedrooms: mergedHints.bedrooms,
+          bathrooms: mergedHints.bathrooms,
+          sqft: mergedHints.squareFeet,
+        }
+      : null;
+  const cleaningQuote =
+    estimateSizeSource && cleanTypeForEstimate
+      ? { quote: calculateQuoteEstimate({ ...estimateSizeSource, cleanType: cleanTypeForEstimate }), size: estimateSizeSource }
+      : null;
+  const headcountEstimate = cleaningQuote ? onSiteHours(cleaningQuote.quote, headcount) : null;
+  const estimateSizeLine = cleaningQuote
+    ? propertySizeLabel(cleaningQuote.size.bedrooms, cleaningQuote.size.bathrooms, cleaningQuote.size.sqft ?? 0)
+    : null;
   const iphoneCalendarDayHref = appleCalendarDayUrl({
     date: serviceDate,
     time: arrivalStartTbd ? undefined : arrivalStart || undefined,
@@ -175,7 +238,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     setCustomerId(nextId);
     setPropertyId(nextHomes[0]?.propertyId ?? "");
     setQuery("");
-    setServiceType((current) => calendarImportDefaultServiceType(current, nextId, hub.customers));
+    setServiceType((current) => calendarImportDefaultServiceType(current, nextId, hub.customers, hub.jobs));
     setMessage(null);
   }
 
@@ -379,6 +442,11 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
               newCustomerHref={calendarImportNewCustomerHref(active)}
               onChoose={chooseCustomer}
             />
+            <p className="text-sm text-ink/60">
+              <Link href={calendarImportNewCustomerHref(active)} className="font-semibold underline">
+                Create a new customer
+              </Link>
+            </p>
             {mergedHints.suggestedPhone || mergedHints.suggestedEmail ? (
               <p className="-mt-2 text-sm text-ink/50">
                 {mergedHints.suggestedPhone ? (
@@ -459,6 +527,15 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
             ariaLabel="Headcount needed"
             onChange={setHeadcount}
           />
+          {cleaningQuote && headcountEstimate ? (
+            <>
+              {estimateSizeLine ? <p className="mt-2 text-sm text-ink/70">{estimateSizeLine}</p> : null}
+              <p className={`text-sm text-ink/70 ${estimateSizeLine ? "" : "mt-2"}`}>
+                Estimated time on site is {headcountEstimate.text} with {headcount}{" "}
+                {headcount === 1 ? "cleaner" : "cleaners"}.
+              </p>
+            </>
+          ) : null}
         </Field>
 
         <Field label="Price per visit (optional)" hint="Admin only. Cleaners never see this.">

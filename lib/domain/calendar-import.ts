@@ -1,4 +1,4 @@
-import { buildCustomerSearchKeys, findCustomerByExactName } from "./customers.ts";
+import { buildCustomerSearchKeys, findCustomerByCalendarEventName } from "./customers.ts";
 import { DEFAULT_MARKET_ID, isMarketId, type MarketId } from "./markets.ts";
 import type { CalendarImport, CalendarImportParsedHints, Customer, Job, ServiceType } from "./types.ts";
 import type { HubData } from "../mock/seed.ts";
@@ -512,19 +512,28 @@ export function parseServiceTypeFromEventText(text: string): ServiceType {
   return "DEEP_CLEAN";
 }
 
-/** When Gmail import matches an existing customer, default to recurring unless the event implies another type. */
+export function customerHasPriorCleanings(
+  customerId: string,
+  jobs: Array<Pick<Job, "customerId" | "status">>,
+): boolean {
+  return jobs.some((job) => job.customerId === customerId && job.status !== "CANCELED");
+}
+
+/** Existing customer with prior visits → recurring; first visit on hub → deep clean (unless the event says move-out, etc.). */
 export function calendarImportDefaultServiceType(
   serviceType: ServiceType,
   suggestedCustomerId: string | undefined,
   customers: Array<Pick<Customer, "customerId" | "status">>,
+  jobs: Array<Pick<Job, "customerId" | "status">> = [],
 ): ServiceType {
   if (!suggestedCustomerId) return serviceType;
   const known = customers.some(
     (customer) => customer.customerId === suggestedCustomerId && customer.status === "ACTIVE",
   );
   if (!known) return serviceType;
-  if (serviceType === "DEEP_CLEAN") return "RECURRING";
-  return serviceType;
+  if (serviceType !== "DEEP_CLEAN") return serviceType;
+  if (!customerHasPriorCleanings(suggestedCustomerId, jobs)) return "DEEP_CLEAN";
+  return "RECURRING";
 }
 
 export function parsePropertySizeFromEventText(text: string): Pick<
@@ -878,7 +887,7 @@ export function suggestCustomerForCalendarImport(
   const first = parsed.suggestedFirstName?.trim() ?? "";
   const last = parsed.suggestedLastName?.trim() ?? "";
   if (first && last) {
-    const byName = findCustomerByExactName(customers, first, last);
+    const byName = findCustomerByCalendarEventName(customers, first, last);
     if (byName) {
       const property = matchPropertyForHints(byName.customerId, properties, parsed);
       return { customerId: byName.customerId, propertyId: property?.propertyId };

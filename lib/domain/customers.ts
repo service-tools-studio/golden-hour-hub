@@ -104,6 +104,39 @@ export function findCustomerByExactName(
   );
 }
 
+/** True when a calendar title first name matches a stored name that includes a nickname (e.g. Nicolette vs Nicolette "Nicky"). */
+export function calendarImportFirstNameMatches(storedFirstName: string, eventFirstName: string): boolean {
+  const stored = normalizeSearchText(storedFirstName);
+  const eventFirst = normalizeSearchText(eventFirstName);
+  if (!stored || !eventFirst) return false;
+  if (stored === eventFirst) return true;
+  const storedLead = stored.split(" ")[0] ?? "";
+  if (storedLead === eventFirst) return true;
+  return stored.startsWith(`${eventFirst} `);
+}
+
+/**
+ * Match calendar parse names to a customer — exact first+last, or legal first name with nicknames in the profile.
+ */
+export function findCustomerByCalendarEventName(
+  customers: Customer[],
+  firstName: string,
+  lastName: string,
+  excludeCustomerId?: string,
+): Customer | undefined {
+  const exact = findCustomerByExactName(customers, firstName, lastName, excludeCustomerId);
+  if (exact) return exact;
+  const last = normalizeSearchText(lastName);
+  if (!normalizeSearchText(firstName) || !last) return undefined;
+  return customers.find(
+    (customer) =>
+      customer.status === "ACTIVE" &&
+      customer.customerId !== excludeCustomerId &&
+      normalizeSearchText(customer.lastName) === last &&
+      calendarImportFirstNameMatches(customer.firstName, firstName),
+  );
+}
+
 export function buildCustomerSearchKeys(input: {
   firstName: string;
   lastName: string;

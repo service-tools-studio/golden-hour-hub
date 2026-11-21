@@ -113,10 +113,12 @@ describe("calendar import parser", () => {
     );
   });
 
-  it("defaults to recurring when import matches an existing customer", () => {
+  it("picks service type from customer history on import", () => {
     const customers = [{ customerId: "c-1", status: "ACTIVE" as const }];
-    assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", "c-1", customers), "RECURRING");
-    assert.equal(calendarImportDefaultServiceType("MOVE_OUT", "c-1", customers), "MOVE_OUT");
+    const priorJob = [{ customerId: "c-1", status: "SCHEDULED" as const }];
+    assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", "c-1", customers, priorJob), "RECURRING");
+    assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", "c-1", customers, []), "DEEP_CLEAN");
+    assert.equal(calendarImportDefaultServiceType("MOVE_OUT", "c-1", customers, priorJob), "MOVE_OUT");
     assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", undefined, customers), "DEEP_CLEAN");
     assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", "c-unknown", customers), "DEEP_CLEAN");
   });
@@ -593,5 +595,27 @@ describe("calendar import parser", () => {
     suggestedLastName: "Smith",
   }, []);
     assert.equal(match.customerId, "cust-rebecca");
+  });
+
+  it("suggests a customer when the profile includes a quoted nickname", () => {
+    const customers: Customer[] = [
+      {
+        customerId: "cust-nicky",
+        firstName: 'Nicolette "Nicky"',
+        lastName: "Ulrich",
+        phone: "5035551212",
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        updatedBy: "test",
+      },
+    ];
+    const match = suggestCustomerForCalendarImport(
+      customers,
+      { suggestedFirstName: "Nicolette", suggestedLastName: "Ulrich" },
+      [],
+    );
+    assert.equal(match.customerId, "cust-nicky");
   });
 });
