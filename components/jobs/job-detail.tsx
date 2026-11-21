@@ -22,6 +22,7 @@ import { hasKnownDurationMinutes } from "@/lib/domain/duration";
 import { helpersApproved } from "@/lib/domain/cleaners";
 import { formatMoney } from "@/lib/domain/compensation";
 import { useKelseyPhoneDigits } from "@/components/cleaner/kelsey-phone-context";
+import { appleCalendarDayUrl } from "@/lib/calendar";
 import { kelseyContactLinks } from "@/lib/contact";
 import type { Job, JobAssignment } from "@/lib/domain/types";
 import { liveAvailabilityAttentionMessage, assignmentAttentionReasonForAdmin } from "@/lib/domain/invitations";
@@ -173,10 +174,22 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const property = hub.properties.find((item) => item.propertyId === job.propertyId && item.customerId === job.customerId);
   const visit = customer && property ? snapshotVisit(customer, property) : job.snapshot;
   const sizeLine = propertySizeLabel(visit.bedrooms, visit.bathrooms, visit.squareFeet);
+  const iphoneCalendarDayHref = appleCalendarDayUrl({
+    date: job.date,
+    time: job.arrivalWindowStart || undefined,
+  });
   if (navigatingAway) return null;
 
   return (
     <div className="space-y-3">
+        {iphoneCalendarDayHref ? (
+          <a
+            href={iphoneCalendarDayHref}
+            className="flex min-h-10 w-full items-center justify-center rounded-2xl border border-ink/15 bg-white text-sm font-semibold text-ink shadow-[0_4px_12px_rgba(51,51,51,0.06)]"
+          >
+            Open in iPhone Calendar
+          </a>
+        ) : null}
         <Card>
           <NavigatingLink href={editPath(job.jobId, from)} className="block" disabled={removalBusy}>
             <ServiceLine serviceType={job.serviceType} prominent />
