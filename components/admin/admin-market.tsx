@@ -15,7 +15,9 @@ import {
   readStoredAdminViewingMarket,
   writeStoredAdminMarket,
 } from "@/lib/admin/viewing-market";
+import { useHub } from "@/components/hub-provider";
 import { useNow } from "@/components/use-now";
+import { visibleDashboardCalendarImports } from "@/lib/domain/calendar-import";
 
 type AdminMarketContextValue = {
   marketFilter: AdminMarketFilter;
@@ -69,12 +71,28 @@ export function useAdminMarket(): AdminMarketContextValue {
   return value;
 }
 
+function MarketTabImportBadge({ count }: { count: number }) {
+  if (count < 1) return null;
+  const label = count > 99 ? "99+" : String(count);
+  return (
+    <span
+      className="inline-flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-gold px-1.5 text-[10px] font-bold leading-none text-ink"
+      aria-hidden="true"
+    >
+      {label}
+    </span>
+  );
+}
+
 export function AdminMarketTabs() {
-  const { marketFilter, setMarketFilter } = useAdminMarket();
+  const { marketFilter, setMarketFilter, viewingToday } = useAdminMarket();
+  const { calendarImports } = useHub();
   return (
     <div className="flex border-b border-ink/12" role="tablist" aria-label="Market">
       {ADMIN_MARKET_FILTERS.map((filter) => {
         const selected = marketFilter === filter;
+        const pendingImports = visibleDashboardCalendarImports(calendarImports, viewingToday, filter).length;
+        const tabLabel = ADMIN_MARKET_FILTER_LABELS[filter];
         return (
           <button
             key={filter}
@@ -82,11 +100,17 @@ export function AdminMarketTabs() {
             role="tab"
             aria-selected={selected}
             onClick={() => setMarketFilter(filter)}
-            className={`-mb-px flex-1 border-b-2 pb-3 pt-1 text-sm font-semibold transition-colors ${
+            className={`-mb-px flex flex-1 items-center justify-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-semibold transition-colors ${
               selected ? "border-gold text-ink" : "border-transparent text-ink/45"
             }`}
+            aria-label={
+              pendingImports > 0
+                ? `${tabLabel}, ${pendingImports} pending Gmail import${pendingImports === 1 ? "" : "s"}`
+                : tabLabel
+            }
           >
-            {ADMIN_MARKET_FILTER_LABELS[filter]}
+            <span>{tabLabel}</span>
+            <MarketTabImportBadge count={pendingImports} />
           </button>
         );
       })}

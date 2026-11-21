@@ -140,6 +140,7 @@ type PropertyDraft = {
 
 export type CustomerFormPropertyHint = {
   streetAddress?: string;
+  unit?: string;
   city?: string;
   state?: string;
   zip?: string;
@@ -154,6 +155,7 @@ function applyPropertyHint(draft: PropertyDraft, hint?: CustomerFormPropertyHint
   return {
     ...draft,
     streetAddress: hint.streetAddress?.trim() || draft.streetAddress,
+    unit: hint.unit?.trim() || draft.unit,
     city: hint.city?.trim() || draft.city,
     state: hint.state?.trim() || draft.state,
     zip: hint.zip?.trim() || draft.zip,
@@ -172,7 +174,7 @@ function blankProperty(hint?: CustomerFormPropertyHint): PropertyDraft {
     key: `new-${Math.random().toString(36).slice(2, 8)}`,
     label: "",
     streetAddress: hint?.streetAddress?.trim() ?? "",
-    unit: "",
+    unit: hint?.unit?.trim() ?? "",
     city: hint?.city?.trim() || "Portland",
     state: hint?.state?.trim() || "OR",
     zip: hint?.zip?.trim() ?? "",
@@ -265,7 +267,8 @@ export function CustomerForm({
       typeof initialProperty.bathrooms === "number" ||
       typeof initialProperty.squareFeet === "number";
     const hasAddress = Boolean(initialProperty.streetAddress?.trim());
-    if (!hasSize && !hasAddress) return;
+    const hasUnit = Boolean(initialProperty.unit?.trim());
+    if (!hasSize && !hasAddress && !hasUnit) return;
     setProperties((rows) => {
       if (rows.length === 0) return [blankProperty(initialProperty)];
       const nextFirst = applyPropertyHint(rows[0]!, initialProperty);
@@ -273,7 +276,8 @@ export function CustomerForm({
         nextFirst.bedrooms === rows[0]!.bedrooms &&
         nextFirst.bathrooms === rows[0]!.bathrooms &&
         nextFirst.squareFeet === rows[0]!.squareFeet &&
-        nextFirst.streetAddress === rows[0]!.streetAddress
+        nextFirst.streetAddress === rows[0]!.streetAddress &&
+        nextFirst.unit === rows[0]!.unit
       ) {
         return rows;
       }
@@ -285,6 +289,7 @@ export function CustomerForm({
     initialProperty?.bathrooms,
     initialProperty?.squareFeet,
     initialProperty?.streetAddress,
+    initialProperty?.unit,
     initialProperty?.city,
     initialProperty?.state,
     initialProperty?.zip,

@@ -162,6 +162,7 @@ export function NewCustomerView({
   bedrooms,
   bathrooms,
   squareFeet,
+  unit,
 }: {
   calendarImportId?: string;
   returnTo?: string;
@@ -177,6 +178,7 @@ export function NewCustomerView({
   bedrooms?: number;
   bathrooms?: number;
   squareFeet?: number;
+  unit?: string;
 }) {
   const hub = useHub();
   const router = useRouter();
@@ -221,6 +223,7 @@ export function NewCustomerView({
     bedrooms: bedrooms ?? importHints?.bedrooms,
     bathrooms: bathrooms ?? importHints?.bathrooms,
     squareFeet: squareFeet ?? importHints?.squareFeet,
+    unit: unit ?? importHints?.unit,
   };
   useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
   useHubSyncBlocker(() => Boolean(formRef.current?.isDirty()));
@@ -252,6 +255,7 @@ export function NewCustomerView({
           initialEmail={prefill.email}
           initialProperty={{
             streetAddress: prefill.streetAddress,
+            unit: prefill.unit,
             city: prefill.city,
             state: prefill.state,
             zip: prefill.zip,

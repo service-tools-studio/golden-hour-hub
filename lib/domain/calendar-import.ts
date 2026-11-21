@@ -643,16 +643,26 @@ export function syncedCalendarImportSpecialInstructions(
 export function mergeCalendarImportCustomerHints(
   parsed: CalendarImportParsedHints,
   detailText: string,
+  extraUnitSources: Array<string | undefined> = [],
 ): CalendarImportParsedHints {
   const addressLine = parseAddressOfServiceFromEventText(detailText);
   const fromDetails = addressLine ? parseLocationHint(addressLine) : {};
   const location = mergeCalendarImportLocationHints(parsed, fromDetails);
   const email = extractFirstEmailFromEventText(detailText);
+  const unit =
+    parsed.unit?.trim() ||
+    calendarImportApartmentOrUnitFromSources(
+      addressLine,
+      parsed.streetAddress,
+      detailText,
+      ...extraUnitSources,
+    );
   return {
     ...parsed,
     ...location,
     ...parsePropertySizeFromEventText(detailText),
     suggestedEmail: email || parsed.suggestedEmail,
+    unit: unit || undefined,
   };
 }
 
@@ -756,6 +766,7 @@ export function parseGoogleCalendarEvent(event: GoogleCalendarEventShape): {
     suggestedEmail: email,
     ...locationHints,
     ...sizeHints,
+    unit: unitLabel,
   };
 
   return {
@@ -945,6 +956,19 @@ export function isCalendarImportInReviewWindow(item: CalendarImport, today: stri
   return item.serviceDate >= today && item.serviceDate <= end;
 }
 
+/** Pending Gmail imports shown on the admin dashboard (by market tab). */
+export function visibleDashboardCalendarImports(
+  imports: CalendarImport[],
+  today: string,
+  filter: import("./markets.ts").AdminMarketFilter,
+): CalendarImport[] {
+  return imports
+    .filter((item) => item.status === "PENDING_REVIEW" || item.status === "CALENDAR_CANCELED")
+    .filter((item) => isCalendarImportInReviewWindow(item, today))
+    .filter((item) => calendarImportMatchesAdminMarket(item, filter))
+    .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate));
+}
+
 export function calendarImportIdFromReturnTo(returnTo: string | undefined): string | undefined {
   if (!returnTo) return undefined;
   const match = returnTo.match(/\/admin\/calendar-imports\/([^/?#]+)/);
@@ -964,7 +988,13 @@ export function buildCalendarImportNewCustomerHref(importId: string, parsed: Cal
 export function calendarImportCustomerPrefillFromRow(
   row: Pick<CalendarImport, "parsed" | "raw" | "specialInstructions">,
 ): CalendarImportParsedHints {
-  return mergeCalendarImportCustomerHints(row.parsed, calendarImportDetailText(row.raw, ""));
+  const detailText = calendarImportDetailText(row.raw, "");
+  return mergeCalendarImportCustomerHints(row.parsed, detailText, [
+    row.raw.description,
+    row.raw.title,
+    row.raw.location,
+    row.specialInstructions,
+  ]);
 }
 
 export function calendarImportNewCustomerHref(

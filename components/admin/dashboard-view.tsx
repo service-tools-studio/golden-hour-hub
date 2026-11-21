@@ -19,10 +19,9 @@ import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sm
 import type { CalendarImport } from "@/lib/domain/types";
 import {
   calendarImportCanceledJobId,
-  calendarImportMatchesAdminMarket,
-  isCalendarImportInReviewWindow,
   normalizeCalendarEventTitle,
   resolveCalendarImportMatchedJobId,
+  visibleDashboardCalendarImports,
 } from "@/lib/domain/calendar-import";
 import {
   cleanerRemovedFromJobSms,
@@ -112,11 +111,7 @@ export function DashboardView() {
   const staffed = upcoming
     .filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon)
     .filter((job) => !dismissedJobIds.has(job.jobId));
-  const calendarImports = hub.calendarImports
-    .filter((item) => item.status === "PENDING_REVIEW" || item.status === "CALENDAR_CANCELED")
-    .filter((item) => isCalendarImportInReviewWindow(item, viewingToday))
-    .filter((item) => calendarImportMatchesAdminMarket(item, marketFilter))
-    .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate));
+  const calendarImports = visibleDashboardCalendarImports(hub.calendarImports, viewingToday, marketFilter);
 
   async function notifyCalendarCanceledCleaners(item: CalendarImport) {
     const jobId = calendarImportCanceledJobId(hub, item);

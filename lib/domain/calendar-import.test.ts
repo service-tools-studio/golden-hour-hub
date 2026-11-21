@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildCalendarImportNewCustomerHref,
+  calendarImportCustomerPrefillFromRow,
   findExistingJobForCalendarImport,
   extractFirstEmailFromEventText,
   extractInviteeEmailFromGoogleAttendees,
@@ -516,6 +517,19 @@ describe("calendar import parser", () => {
     if (!parsed.ok) return;
     assert.equal(parsed.fields.parsed.suggestedEmail, "jane.guest@gmail.com");
     assert.equal(parsed.fields.raw.inviteeEmail, "jane.guest@gmail.com");
+  });
+
+  it("prefills property unit from calendar import details", () => {
+    const prefill = calendarImportCustomerPrefillFromRow({
+      parsed: { suggestedFirstName: "E2E", suggestedLastName: "Fresh", marketId: "portland" },
+      specialInstructions: "Apt 2",
+      raw: {
+        title: "E2E Fresh",
+        description: "2 bed\n1 bath\nApt 2",
+        location: "100 E2E St, Portland, OR 97205, United States",
+      },
+    });
+    assert.equal(prefill.unit, "Apt 2");
   });
 
   it("builds new customer href with parsed hints", () => {

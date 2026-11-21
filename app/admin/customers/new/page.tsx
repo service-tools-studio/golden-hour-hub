@@ -42,6 +42,7 @@ export default async function NewCustomerPage({
     bedrooms: undefined as number | undefined,
     bathrooms: undefined as number | undefined,
     squareFeet: undefined as number | undefined,
+    unit: undefined as string | undefined,
   };
 
   if (calendarImportId && dynamoConfigured()) {
@@ -62,6 +63,7 @@ export default async function NewCustomerPage({
         bedrooms: hints.bedrooms,
         bathrooms: hints.bathrooms,
         squareFeet: hints.squareFeet,
+        unit: hints.unit,
       };
     }
   }

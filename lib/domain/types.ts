@@ -202,6 +202,8 @@ export type CalendarImportParsedHints = {
   bedrooms?: number;
   bathrooms?: number;
   squareFeet?: number;
+  /** Apt / unit / suite label from event location or details (e.g. "Apt 2"). */
+  unit?: string;
 };
 
 export type CalendarImport = {
