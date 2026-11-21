@@ -96,16 +96,32 @@ export async function expectE2eSeedPresentInDynamo(): Promise<void> {
   }
 }
 
+function resolveSeedEnvFile(): string | null {
+  if (process.env.E2E_ENV_FILE?.trim()) return process.env.E2E_ENV_FILE.trim();
+  const e2eEnv = path.join(e2eRoot, ".env");
+  if (fs.existsSync(e2eEnv)) return e2eEnv;
+  const local = path.join(repoRoot, ".env.local");
+  if (fs.existsSync(local)) return local;
+  if (process.env.AWS_ACCESS_KEY_ID?.trim() && process.env.AWS_SECRET_ACCESS_KEY?.trim()) {
+    return null;
+  }
+  return null;
+}
+
 /** Full clear + seed (same as `npm run e2e:prepare`). Calendar-import specs call this between tests. */
 export function reseedE2eTable(): void {
-  const e2eEnv = path.join(e2eRoot, ".env");
-  const local = path.join(repoRoot, ".env.local");
-  const envFile = process.env.E2E_ENV_FILE?.trim() || (fs.existsSync(e2eEnv) ? e2eEnv : local);
-  if (!fs.existsSync(envFile)) {
+  const envFile = resolveSeedEnvFile();
+  if (
+    !envFile &&
+    !(process.env.AWS_ACCESS_KEY_ID?.trim() && process.env.AWS_SECRET_ACCESS_KEY?.trim())
+  ) {
     throw new Error("Missing e2e/.env or .env.local for reseedE2eTable.");
   }
   const table = e2eTableName();
-  execSync(`node --env-file="${envFile}" --experimental-strip-types scripts/seed-e2e.ts`, {
+  const seedCmd = envFile
+    ? `node --env-file="${envFile}" --experimental-strip-types scripts/seed-e2e.ts`
+    : "node --experimental-strip-types scripts/seed-e2e.ts";
+  execSync(seedCmd, {
     cwd: repoRoot,
     stdio: "pipe",
     env: { ...process.env, DYNAMODB_TABLE_NAME: table },
