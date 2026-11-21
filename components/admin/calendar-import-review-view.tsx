@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrivalWindowPicker } from "@/components/admin/arrival-window-picker";
+import { CustomerCombobox } from "@/components/admin/customer-combobox";
 import { EstimatedDurationPicker } from "@/components/admin/estimated-duration-picker";
 import { HeadcountStepper } from "@/components/admin/headcount-stepper";
 import { useHub } from "@/components/hub-provider";
@@ -21,10 +22,46 @@ import {
   resolveCalendarImportMatchedJobId,
 } from "@/lib/domain/calendar-import";
 import { appleCalendarDayUrl } from "@/lib/calendar";
-import type { ServiceType } from "@/lib/domain/types";
+import { searchCustomers } from "@/lib/domain/customers";
+import type { Property, ServiceType } from "@/lib/domain/types";
 import { formatLongDate, serviceLabel } from "@/lib/format";
 
 const SERVICES: ServiceType[] = ["DEEP_CLEAN", "RECURRING", "MOVE_OUT", "POST_CONSTRUCTION", "OTHER"];
+
+function propertyLine(home: Property): string {
+  return home.label ? `${home.label} · ${home.streetAddress}` : `${home.streetAddress}, ${home.city}`;
+}
+
+function customerEditHref(customerId: string, returnTo: string): string {
+  const params = new URLSearchParams({ edit: "1", returnTo });
+  return `/admin/customers/${customerId}?${params}`;
+}
+
+function CustomerEditIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="size-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function ChangeCustomerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M7 7l10 10M17 7L7 17" />
+    </svg>
+  );
+}
 
 export function CalendarImportReviewView({ importId }: { importId: string }) {
   const hub = useHub();
@@ -50,7 +87,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   const [headcount, setHeadcount] = useState(row && row.headcountNeeded > 0 ? row.headcountNeeded : 1);
   const resolvedInstructions = row ? resolvedCalendarImportSpecialInstructions(row) : "";
   const [instructions, setInstructions] = useState("");
-  const [customerQuery, setCustomerQuery] = useState("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (!row) return;
@@ -66,6 +103,12 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     () => hub.properties.filter((item) => item.customerId === customerId && item.status === "ACTIVE"),
     [hub.properties, customerId],
   );
+  const property = properties.find((item) => item.propertyId === propertyId);
+  const customerMatches = useMemo(
+    () => searchCustomers(hub.customers, hub.properties, query),
+    [hub.customers, hub.properties, query],
+  );
+  const customerEditReturnTo = `/admin/calendar-imports/${importId}`;
 
   useEffect(() => {
     const returnedCustomerId = searchParams.get("customerId")?.trim();
@@ -77,7 +120,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       (property) => property.customerId === match.customerId && property.status === "ACTIVE",
     );
     setPropertyId(firstProperty?.propertyId ?? "");
-    setCustomerQuery(`${match.firstName} ${match.lastName}`);
+    setQuery("");
     setServiceType((current) => calendarImportDefaultServiceType(current, match.customerId, hub.customers));
     router.replace(`/admin/calendar-imports/${importId}`, { scroll: false });
   }, [searchParams, hub.customers, hub.properties, importId, router]);
@@ -122,6 +165,22 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     date: serviceDate,
     time: arrivalStartTbd ? undefined : arrivalStart || undefined,
   });
+
+  function chooseCustomer(nextId: string) {
+    const nextHomes = hub.properties.filter((item) => item.customerId === nextId && item.status === "ACTIVE");
+    setCustomerId(nextId);
+    setPropertyId(nextHomes[0]?.propertyId ?? "");
+    setQuery("");
+    setServiceType((current) => calendarImportDefaultServiceType(current, nextId, hub.customers));
+    setMessage(null);
+  }
+
+  function clearCustomer() {
+    setCustomerId("");
+    setPropertyId("");
+    setQuery("");
+    setMessage(null);
+  }
 
   function draftInput() {
     const arrival = arrivalStartTbd
@@ -260,73 +319,56 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
           ) : null}
         </div>
 
-        <Field label="Customer">
-          <input
-            className={fieldClass}
-            aria-label="Customer search"
-            value={customerQuery}
-            onChange={(event) => {
-              setCustomerQuery(event.target.value);
-              if (customerId) {
-                setCustomerId("");
-                setPropertyId("");
-              }
-            }}
-            placeholder="Search customers"
-          />
-          {customerQuery.trim().length >= 2 && !customerId ? (
-            <ul className="mt-2 space-y-1">
-              {hub.customers
-                .filter((item) => item.status === "ACTIVE")
-                .filter((item) =>
-                  `${item.firstName} ${item.lastName}`.toLowerCase().includes(customerQuery.trim().toLowerCase()),
-                )
-                .slice(0, 8)
-                .map((item) => (
-                  <li key={item.customerId}>
-                    <button
-                      type="button"
-                      className="w-full rounded-xl px-3 py-2 text-left text-base font-medium ring-1 ring-ink/10"
-                      onClick={() => {
-                        setCustomerId(item.customerId);
-                        const firstProperty = hub.properties.find(
-                          (property) => property.customerId === item.customerId && property.status === "ACTIVE",
-                        );
-                        setPropertyId(firstProperty?.propertyId ?? "");
-                        setCustomerQuery("");
-                        setServiceType((current) =>
-                          calendarImportDefaultServiceType(current, item.customerId, hub.customers),
-                        );
-                        setMessage(null);
-                      }}
-                    >
-                      {item.firstName} {item.lastName}
-                    </button>
-                  </li>
-                ))}
-            </ul>
-          ) : null}
-          {customer ? (
-            <p className="mt-2 text-sm font-semibold text-ink">
-              Selected: {customer.firstName} {customer.lastName}
-            </p>
-          ) : (
-            <p className="mt-2 text-sm text-ink/60">
-              <Link
-                href={calendarImportNewCustomerHref(active)}
-                className="underline"
-              >
-                Create a new customer
-              </Link>
-              {mergedHints.suggestedPhone ? (
-                <span className="block text-ink/50">Phone from event: {mergedHints.suggestedPhone}</span>
-              ) : null}
-              {mergedHints.suggestedEmail ? (
-                <span className="block text-ink/50">Email from event: {mergedHints.suggestedEmail}</span>
-              ) : null}
-            </p>
-          )}
-        </Field>
+        {customer ? (
+          <Field label="Customer">
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 ring-1 ring-ink/15">
+              <span>
+                <span className="block font-semibold">
+                  {customer.firstName} {customer.lastName}
+                </span>
+                {property ? <span className="block text-sm text-ink/70">{propertyLine(property)}</span> : null}
+              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                <Link
+                  href={customerEditHref(customer.customerId, customerEditReturnTo)}
+                  className="flex size-11 items-center justify-center rounded-full text-ink/70 hover:bg-cream"
+                  aria-label={`Edit ${customer.firstName} ${customer.lastName}`}
+                >
+                  <CustomerEditIcon />
+                </Link>
+                <button
+                  type="button"
+                  className="flex size-11 items-center justify-center rounded-full text-ink/70 hover:bg-cream"
+                  aria-label="Choose a different customer"
+                  onClick={clearCustomer}
+                >
+                  <ChangeCustomerIcon />
+                </button>
+              </div>
+            </div>
+          </Field>
+        ) : (
+          <>
+            <CustomerCombobox
+              query={query}
+              onQueryChange={setQuery}
+              matches={customerMatches}
+              propertyLine={propertyLine}
+              newCustomerHref={calendarImportNewCustomerHref(active)}
+              onChoose={chooseCustomer}
+            />
+            {mergedHints.suggestedPhone || mergedHints.suggestedEmail ? (
+              <p className="-mt-2 text-sm text-ink/50">
+                {mergedHints.suggestedPhone ? (
+                  <span className="block">Phone from event: {mergedHints.suggestedPhone}</span>
+                ) : null}
+                {mergedHints.suggestedEmail ? (
+                  <span className="block">Email from event: {mergedHints.suggestedEmail}</span>
+                ) : null}
+              </p>
+            ) : null}
+          </>
+        )}
 
         {customerId ? (
           <Field label="Property">

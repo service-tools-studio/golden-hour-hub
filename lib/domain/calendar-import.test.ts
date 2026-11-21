@@ -7,12 +7,14 @@ import {
   extractInviteeEmailFromGoogleAttendees,
   formatCalendarImportAddress,
   parseAddressOfServiceFromEventText,
+  parseApartmentOrUnitLabel,
+  calendarImportApartmentOrUnitFromSources,
+  resolvedCalendarImportSpecialInstructions,
   calendarImportAdminInstructions,
   calendarEventIsCalendlyBooking,
   calendarEventIndicatesHubCancel,
   calendarEventIsExcludedFromImport,
   parseCalendlySpecialRequestsFromEventText,
-  resolvedCalendarImportSpecialInstructions,
   syncedCalendarImportSpecialInstructions,
   calendarEventTitleHasTbd,
   calendarImportPreservedDurationMinutes,
@@ -34,6 +36,62 @@ describe("calendar import parser", () => {
       true,
     );
     assert.equal(calendarEventIndicatesHubCancel({ status: "confirmed", summary: "Rebecca Smith" }), false);
+  });
+
+  it("parses apartment and unit labels from event locations", () => {
+    assert.equal(parseApartmentOrUnitLabel("7646 SW Millerglen Dr, Unit 1, Portland, OR"), "Unit 1");
+    assert.equal(parseApartmentOrUnitLabel("1948 SE 52nd Ave Apt B"), "Apt B");
+    assert.equal(parseApartmentOrUnitLabel("628 NE Roselawn St, Apt 129, Portland"), "Apt 129");
+    assert.equal(parseApartmentOrUnitLabel("555 Oak Ave #236"), "#236");
+    assert.equal(parseApartmentOrUnitLabel("1948 SE 52nd Ave Portland, OR, United States"), undefined);
+    assert.equal(
+      calendarImportApartmentOrUnitFromSources("", "Address of Service: 10 Main St #12", ""),
+      "#12",
+    );
+    assert.equal(
+      calendarImportApartmentOrUnitFromSources(
+        undefined,
+        "4 bed 2 bath\nApt 2",
+        undefined,
+        "628 NE Roselawn St, Portland, OR, United States",
+      ),
+      "Apt 2",
+    );
+  });
+
+  it("drops the bogus Unit ed label from United States addresses", () => {
+    assert.equal(
+      resolvedCalendarImportSpecialInstructions({
+        specialInstructions: "Unit ed",
+        raw: {
+          title: "Alex",
+          description: "Apt 2",
+          location: "628 NE Roselawn St, Portland, OR, United States",
+        },
+      }),
+      "Apt 2",
+    );
+  });
+
+  it("fills special instructions with unit when present on the event", () => {
+    assert.equal(
+      resolvedCalendarImportSpecialInstructions({
+        specialInstructions: "",
+        raw: {
+          title: "Meredith Wendell",
+          description: "",
+          location: "7646 SW Millerglen Dr, Unit 1, Portland, OR",
+        },
+      }),
+      "Unit 1",
+    );
+    assert.equal(
+      resolvedCalendarImportSpecialInstructions({
+        specialInstructions: "Use side gate",
+        raw: { title: "Job", description: "", location: "10 Main St, Apt 129" },
+      }),
+      "Use side gate\nApt 129",
+    );
   });
 
   it("formats raw event details for review", () => {

@@ -293,14 +293,23 @@ export function parseCalendlySpecialRequestsFromEventText(text: string): string 
 export function resolvedCalendarImportSpecialInstructions(
   row: Pick<CalendarImport, "specialInstructions" | "raw">,
 ): string {
+  const unitLabel = calendarImportApartmentOrUnitFromSources(
+    parseAddressOfServiceFromEventText(row.raw.description),
+    row.raw.description,
+    row.raw.title,
+    row.raw.location,
+  );
   const saved = calendarImportAdminInstructions(row);
-  if (saved) return saved;
-  if (!calendarImportRowLooksCalendly(row)) return "";
+  if (saved) return appendApartmentOrUnitToSpecialInstructions(saved, unitLabel);
+  if (!calendarImportRowLooksCalendly(row)) {
+    return appendApartmentOrUnitToSpecialInstructions("", unitLabel);
+  }
   const source = calendlySpecialRequestsSource(row);
-  return (
-    parseCalendlySpecialRequestsFromEventText(source) ??
-    (row.specialInstructions.trim() || undefined)
-  ) ?? "";
+  const calendly =
+    (parseCalendlySpecialRequestsFromEventText(source) ??
+      (row.specialInstructions.trim() || undefined)) ??
+    "";
+  return appendApartmentOrUnitToSpecialInstructions(calendly, unitLabel);
 }
 
 export function calendarEventTitleHasTbd(title: string): boolean {
@@ -410,6 +419,60 @@ export function parseAddressOfServiceFromEventText(text: string): string | undef
     .replace(/\s+/g, " ")
     .trim();
   return value || undefined;
+}
+
+/** Requires a space before the label so "United States" does not become Unit + ed. */
+const APARTMENT_KEYWORD =
+  /\b(unit|apt|apartment|ste|suite)\.?\s+(?:#\s*)?([A-Za-z0-9-]+)\b/i;
+const APARTMENT_HASH = /(?:^|[\s,])(#\s*[A-Za-z0-9-]+)\b/;
+
+function formatApartmentOrUnitLabel(keyword: string, value: string): string {
+  const kind = keyword.toLowerCase().replace(/\./g, "");
+  if (kind === "unit") return `Unit ${value}`;
+  if (kind.startsWith("apt")) return `Apt ${value}`;
+  if (kind === "apartment") return `Apt ${value}`;
+  if (kind.startsWith("ste") || kind === "suite") return `Suite ${value}`;
+  return `${keyword} ${value}`.trim();
+}
+
+/** Apt / unit / suite / # labels from calendar location or event text (e.g. "Unit 1", "Apt B", "#236"). */
+export function parseApartmentOrUnitLabel(text: string): string | undefined {
+  const normalized = stripEventDetailText(text.replace(/\r\n/g, "\n")).replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
+
+  const keywordMatch = APARTMENT_KEYWORD.exec(normalized);
+  if (keywordMatch) {
+    return formatApartmentOrUnitLabel(keywordMatch[1]!, keywordMatch[2]!);
+  }
+
+  const hashMatch = APARTMENT_HASH.exec(normalized);
+  if (hashMatch) return hashMatch[1]!.replace(/\s+/g, "");
+
+  return undefined;
+}
+
+export function calendarImportApartmentOrUnitFromSources(...sources: Array<string | undefined>): string | undefined {
+  for (const source of sources) {
+    const trimmed = source?.trim();
+    if (!trimmed) continue;
+    const label = parseApartmentOrUnitLabel(trimmed);
+    if (label) return label;
+  }
+  return undefined;
+}
+
+/** Legacy parser matched "United" + "ed" in addresses. */
+function calendarImportSpecialInstructionsWithoutBogusUnit(base: string): string {
+  const trimmed = base.trim();
+  if (/^unit\s+ed$/i.test(trimmed)) return "";
+  return trimmed;
+}
+
+function appendApartmentOrUnitToSpecialInstructions(base: string, unitLabel: string | undefined): string {
+  const trimmed = calendarImportSpecialInstructionsWithoutBogusUnit(base);
+  if (!unitLabel) return trimmed;
+  if (trimmed.toLowerCase().includes(unitLabel.toLowerCase())) return trimmed;
+  return trimmed ? `${trimmed}\n${unitLabel}` : unitLabel;
 }
 
 function mergeCalendarImportLocationHints(
@@ -671,9 +734,11 @@ export function parseGoogleCalendarEvent(event: GoogleCalendarEventShape): {
     description: event.description,
     htmlLink: event.htmlLink,
   });
-  const specialInstructions = isCalendly
+  const unitLabel = calendarImportApartmentOrUnitFromSources(addressOfService, description, title, location);
+  let specialInstructions = isCalendly
     ? parseCalendlySpecialRequestsFromEventText(event.description?.trim() ?? description) ?? ""
     : "";
+  specialInstructions = appendApartmentOrUnitToSpecialInstructions(specialInstructions, unitLabel);
 
   const parsed: CalendarImportParsedHints = {
     suggestedFirstName: name?.firstName,
