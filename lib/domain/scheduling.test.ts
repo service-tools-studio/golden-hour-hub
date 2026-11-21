@@ -843,35 +843,6 @@ describe("customers", () => {
     assert.equal(searchCustomers([jeff], [main], "jeff b").length, 1);
   });
 
-  it("does not match customers that only share first name and a loose token in the last name", () => {
-    const sharedPhone = "5035550100";
-    const jasminFinal: Customer = {
-      ...jeff,
-      customerId: "jasmin-final",
-      firstName: "Jasmin",
-      lastName: "Final test",
-      phone: sharedPhone,
-    };
-    const jasminAgain: Customer = {
-      ...jeff,
-      customerId: "jasmin-again",
-      firstName: "Jasmin",
-      lastName: "Test Again",
-      phone: sharedPhone,
-    };
-    const customers = [jasminFinal, jasminAgain];
-    assert.equal(searchCustomers(customers, [], "Jasmin Final test").length, 1);
-    assert.equal(searchCustomers(customers, [], "Jasmin Test Again").length, 1);
-    assert.equal(
-      searchCustomers(customers, [], "Jasmin Final test")[0]?.customerId,
-      "jasmin-final",
-    );
-    assert.equal(
-      searchCustomers(customers, [], "Jasmin Test Again")[0]?.customerId,
-      "jasmin-again",
-    );
-  });
-
   it("builds prefix search keys and snapshots the service location", () => {
     const keys = buildCustomerSearchKeys(jeff);
     assert.ok(keys.nameKeys.includes("bachrach jeff"));

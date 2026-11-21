@@ -1,8 +1,4 @@
-import {
-  buildCustomerSearchKeys,
-  calendarImportFirstNameMatches,
-  findCustomerByCalendarEventName,
-} from "./customers.ts";
+import { buildCustomerSearchKeys, findCustomerByCalendarEventName } from "./customers.ts";
 import { DEFAULT_MARKET_ID, isMarketId, type MarketId } from "./markets.ts";
 import type { CalendarImport, CalendarImportParsedHints, Customer, Job, ServiceType } from "./types.ts";
 import type { HubData } from "../mock/seed.ts";
@@ -979,20 +975,16 @@ export function resolveCalendarImportMatchedJobId(
   customers: Customer[],
   properties: Array<{ propertyId: string; customerId: string; streetAddress: string; marketId?: unknown }>,
   row: CalendarImport,
-  customerLink?: { customerId?: string; propertyId?: string },
 ): string | undefined {
-  const link = customerLink ?? resolveCalendarImportCustomerLink(customers, properties, row);
   if (row.matchedJobId) {
     const linked = jobs.find((job) => job.jobId === row.matchedJobId && job.status !== "CANCELED");
-    if (linked && (!link.customerId || linked.customerId === link.customerId)) {
-      return linked.jobId;
-    }
+    if (linked) return linked.jobId;
   }
   return findExistingJobForCalendarImport(jobs, customers, properties, {
     googleCalendarEventId: row.googleCalendarEventId,
     serviceDate: row.serviceDate,
-    suggestedCustomerId: link.customerId,
-    suggestedPropertyId: link.propertyId,
+    suggestedCustomerId: row.suggestedCustomerId,
+    suggestedPropertyId: row.suggestedPropertyId,
     parsed: row.parsed,
   })?.jobId;
 }
@@ -1008,27 +1000,20 @@ export function suggestCustomerForCalendarImport(
     const byName = findCustomerByCalendarEventName(customers, first, last);
     if (byName) {
       const property = matchPropertyForHints(byName.customerId, properties, parsed);
-      if (parsed.streetAddress?.trim() && !property) {
-        return {};
-      }
       return { customerId: byName.customerId, propertyId: property?.propertyId };
     }
-    return {};
   }
   const phone = parsed.suggestedPhone?.replace(/\D/g, "") ?? "";
   if (phone.length >= 10) {
     const last7 = phone.slice(-7);
-    const matches = customers.filter((customer) => {
-      if (customer.status !== "ACTIVE") return false;
-      if (first && !calendarImportFirstNameMatches(customer.firstName, first)) return false;
+    for (const customer of customers) {
+      if (customer.status !== "ACTIVE") continue;
       const keys = buildCustomerSearchKeys(customer);
-      return keys.phoneKey.endsWith(last7) || keys.phoneLast7 === last7;
-    });
-    if (matches.length !== 1) return {};
-    const customer = matches[0]!;
-    const property = matchPropertyForHints(customer.customerId, properties, parsed);
-    if (parsed.streetAddress?.trim() && !property) return {};
-    return { customerId: customer.customerId, propertyId: property?.propertyId };
+      if (keys.phoneKey.endsWith(last7) || keys.phoneLast7 === last7) {
+        const property = matchPropertyForHints(customer.customerId, properties, parsed);
+        return { customerId: customer.customerId, propertyId: property?.propertyId };
+      }
+    }
   }
   return {};
 }
@@ -1043,29 +1028,14 @@ function matchPropertyForHints(
   const street = parsed.streetAddress?.trim().toLowerCase();
   if (street) {
     const match = mine.find((property) => property.streetAddress.trim().toLowerCase() === street);
-    return match;
+    if (match) return match;
   }
   const market = parsed.marketId && isMarketId(parsed.marketId) ? parsed.marketId : undefined;
   if (market) {
     const match = mine.find((property) => String(property.marketId) === market);
     if (match) return match;
   }
-  return mine.length === 1 ? mine[0] : undefined;
-}
-
-/** Customer/property link from merged event hints only (stored import ids are not trusted). */
-export function resolveCalendarImportCustomerLink(
-  customers: Customer[],
-  properties: Array<{ propertyId: string; customerId: string; streetAddress: string; marketId?: unknown }>,
-  row: Pick<CalendarImport, "parsed" | "raw" | "specialInstructions">,
-): { customerId?: string; propertyId?: string } {
-  const merged = mergeCalendarImportCustomerHints(row.parsed, calendarImportDetailText(row.raw, ""), [
-    row.raw.description,
-    row.raw.title,
-    row.raw.location,
-    row.specialInstructions,
-  ]);
-  return suggestCustomerForCalendarImport(customers, merged, properties);
+  return mine[0];
 }
 
 export function calendarImportMatchesAdminMarket(

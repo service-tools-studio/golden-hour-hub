@@ -20,7 +20,7 @@ import {
   mergeCalendarImportCustomerHints,
   normalizeCalendarEventTitle,
   resolveCalendarImportMatchedJobId,
-  resolveCalendarImportCustomerLink,
+  suggestCustomerForCalendarImport,
 } from "@/lib/domain/calendar-import";
 import { appleCalendarDayUrl } from "@/lib/calendar";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
@@ -102,9 +102,8 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const row = hub.calendarImports.find((item) => item.importId === importId);
-  const [customerId, setCustomerId] = useState("");
-  const [propertyId, setPropertyId] = useState("");
-  const [customerManual, setCustomerManual] = useState(false);
+  const [customerId, setCustomerId] = useState(row?.suggestedCustomerId ?? "");
+  const [propertyId, setPropertyId] = useState(row?.suggestedPropertyId ?? "");
   const [serviceDate, setServiceDate] = useState(row?.serviceDate ?? hub.today);
   const [arrivalStart, setArrivalStart] = useState(row?.arrivalWindowStart ?? "");
   const [arrivalEnd, setArrivalEnd] = useState(row?.arrivalWindowEnd ?? "");
@@ -147,33 +146,38 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
 
   useEffect(() => {
     setCustomerCleared(false);
-    setCustomerManual(false);
   }, [importId]);
 
   useEffect(() => {
     const current = hub.calendarImports.find((item) => item.importId === importId);
     if (!current) return;
-    if (customerCleared || customerManual) return;
-    const link = resolveCalendarImportCustomerLink(hub.customers, hub.properties, current);
-    const nextCustomerId = link.customerId ?? "";
+    const suggestedId = current.suggestedCustomerId?.trim() ?? "";
+    if (customerCleared) return;
+    if (customerId.trim() && customerId.trim() !== suggestedId) return;
+    let nextCustomerId = suggestedId;
+    let nextPropertyId = current.suggestedPropertyId?.trim() ?? "";
+    if (!nextCustomerId || !nextPropertyId) {
+      const merged = mergeCalendarImportCustomerHints(current.parsed, calendarImportDetailText(current.raw, ""));
+      const suggestion = suggestCustomerForCalendarImport(hub.customers, merged, hub.properties);
+      if (!nextCustomerId) nextCustomerId = suggestion.customerId ?? "";
+      if (!nextPropertyId) nextPropertyId = suggestion.propertyId ?? "";
+    }
     setCustomerId(nextCustomerId);
-    setPropertyId(link.propertyId ?? "");
+    setPropertyId(nextPropertyId);
     setServiceType(
       calendarImportDefaultServiceType(current.serviceType, nextCustomerId || undefined, hub.customers, hub.jobs),
     );
   }, [
     importId,
     row?.importId,
-    row?.parsed,
-    row?.raw,
-    row?.specialInstructions,
+    row?.suggestedCustomerId,
+    row?.suggestedPropertyId,
     row?.serviceType,
     row?.updatedAt,
     hub.customers,
-    hub.properties,
     hub.jobs,
     customerCleared,
-    customerManual,
+    customerId,
   ]);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<"approve" | "dismiss" | null>(null);
@@ -197,7 +201,6 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     if (!returnedCustomerId) return;
     const match = hub.customers.find((item) => item.customerId === returnedCustomerId && item.status === "ACTIVE");
     if (!match) return;
-    setCustomerManual(true);
     setCustomerId(match.customerId);
     const firstProperty = hub.properties.find(
       (property) => property.customerId === match.customerId && property.status === "ACTIVE",
@@ -248,11 +251,12 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   }
 
   const active = row;
-  const linkedCustomerId = customerCleared ? "" : customerId.trim();
-  const linkedCustomer = linkedCustomerId
-    ? hub.customers.find((item) => item.customerId === linkedCustomerId)
-    : undefined;
-  const linkedPropertyId = propertyId.trim();
+  const suggestedCustomerId = active.suggestedCustomerId?.trim() ?? "";
+  const linkedCustomerId = customerCleared ? customerId.trim() : customerId.trim() || suggestedCustomerId;
+  const linkedCustomer = hub.customers.find((item) => item.customerId === linkedCustomerId);
+  const linkedPropertyId =
+    propertyId ||
+    (linkedCustomerId === suggestedCustomerId ? active.suggestedPropertyId?.trim() || "" : "");
   const linkedProperties = hub.properties.filter(
     (item) => item.customerId === linkedCustomerId && item.status === "ACTIVE",
   );
@@ -264,10 +268,9 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     hub.customers,
     hub.jobs,
   );
-  const autoLink = resolveCalendarImportCustomerLink(hub.customers, hub.properties, active);
-  const customerChanged = Boolean(customerId.trim()) && customerId.trim() !== (autoLink.customerId ?? "");
+  const customerChanged = Boolean(customerId.trim()) && customerId.trim() !== suggestedCustomerId;
   const shownServiceType = customerChanged ? serviceType : displayServiceType;
-  const matchedJobId = resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, active, autoLink);
+  const matchedJobId = resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, active);
   const matchedJob = matchedJobId ? hub.jobs.find((job) => job.jobId === matchedJobId) : undefined;
   const suggestedName = [active.parsed.suggestedFirstName, active.parsed.suggestedLastName].filter(Boolean).join(" ");
   const mergedHints = mergeCalendarImportCustomerHints(
@@ -316,7 +319,6 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   function chooseCustomer(nextId: string) {
     const nextHomes = hub.properties.filter((item) => item.customerId === nextId && item.status === "ACTIVE");
     setCustomerCleared(false);
-    setCustomerManual(true);
     setCustomerId(nextId);
     setPropertyId(nextHomes[0]?.propertyId ?? "");
     setQuery("");
