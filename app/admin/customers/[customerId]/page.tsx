@@ -6,21 +6,31 @@ export default async function CustomerPage({
   searchParams,
 }: {
   params: Promise<{ customerId: string }>;
-  searchParams: Promise<{ series?: string | string[]; returnTo?: string | string[]; edit?: string | string[] }>;
+  searchParams: Promise<{
+    series?: string | string[];
+    returnTo?: string | string[];
+    edit?: string | string[];
+    calendarImportId?: string | string[];
+    addPropertyFromImport?: string | string[];
+  }>;
 }) {
   const { customerId } = await params;
   const query = await searchParams;
   const seriesId = typeof query.series === "string" ? query.series : "";
   const returnTo = typeof query.returnTo === "string" ? query.returnTo : "";
   const initialEdit = query.edit === "1";
+  const calendarImportId = typeof query.calendarImportId === "string" ? query.calendarImportId : "";
+  const addPropertyFromImport = query.addPropertyFromImport === "1";
   return (
     <Suspense fallback={<div className="min-h-dvh bg-cream" />}>
       <CustomerDetail
-        key={`${customerId}:${returnTo}:${initialEdit ? "1" : "0"}`}
+        key={`${customerId}:${returnTo}:${initialEdit ? "1" : "0"}:${calendarImportId}:${addPropertyFromImport ? "1" : "0"}`}
         customerId={customerId}
         initialSeriesId={seriesId}
         returnTo={returnTo}
         initialEdit={initialEdit}
+        calendarImportId={calendarImportId || undefined}
+        appendPropertyFromImport={addPropertyFromImport}
       />
     </Suspense>
   );

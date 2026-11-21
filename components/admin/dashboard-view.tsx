@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AdminMarketTabs, useAdminMarket } from "@/components/admin/admin-market";
 import { useHub } from "@/components/hub-provider";
 import { Card, PageHeader, PlusIcon, Screen, SecondaryButton } from "@/components/ui";
@@ -22,6 +22,8 @@ import {
   normalizeCalendarEventTitle,
   resolveCalendarImportMatchedJobId,
   visibleDashboardCalendarImports,
+  visibleRecentlyDismissedCalendarImports,
+  visibleRecentlySyncRemovedCalendarImports,
 } from "@/lib/domain/calendar-import";
 import {
   cleanerRemovedFromJobSms,
@@ -41,6 +43,7 @@ export function DashboardView() {
   const {
     syncCalendarImports,
     rejectCalendarImport,
+    reopenCalendarImport,
     dismissCalendarCanceledImport,
     markCalendarCanceledNotified,
     queueSchedulingSms,
@@ -54,7 +57,10 @@ export function DashboardView() {
   const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(() => new Set());
   const [checkingGmail, setCheckingGmail] = useState(false);
   const [dismissingImportId, setDismissingImportId] = useState<string | null>(null);
+  const [reopeningImportId, setReopeningImportId] = useState<string | null>(null);
   const [notifyingImportId, setNotifyingImportId] = useState<string | null>(null);
+  const [showRecentlyDismissed, setShowRecentlyDismissed] = useState(false);
+  const recentlyDismissedRef = useRef<HTMLDivElement>(null);
 
   async function dismissCalendarImport(importId: string) {
     setDismissingImportId(importId);
@@ -128,6 +134,45 @@ export function DashboardView() {
     marketFilter,
     hub,
   );
+  const recentlyDismissed = visibleRecentlyDismissedCalendarImports(
+    hub.calendarImports,
+    viewingToday,
+    marketFilter,
+  );
+  const syncRemoved = visibleRecentlySyncRemovedCalendarImports(
+    hub.calendarImports,
+    viewingToday,
+    marketFilter,
+  );
+
+  function reviewSyncRemovedImports() {
+    setShowRecentlyDismissed(true);
+    requestAnimationFrame(() => {
+      recentlyDismissedRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
+  async function reopenDismissedImport(importId: string, options?: { refreshFromGmail?: boolean }) {
+    setReopeningImportId(importId);
+    const wasSyncRemoved = hub.calendarImports.find((item) => item.importId === importId)?.status === "WITHDRAWN";
+    try {
+      const result = await reopenCalendarImport(importId);
+      if (!result.ok) {
+        if (result.message) flash(result.message);
+        return;
+      }
+      if (options?.refreshFromGmail || wasSyncRemoved) {
+        flashLoading("Checking Gmail…");
+        const sync = await syncCalendarImports();
+        clearActionLoading();
+        flash(sync.message ?? result.message ?? "Import returned to the review queue.");
+        return;
+      }
+      if (result.message) flash(result.message);
+    } finally {
+      setReopeningImportId(null);
+    }
+  }
 
   async function notifyCalendarCanceledCleaners(item: CalendarImport) {
     const jobId = calendarImportCanceledJobId(hub, item);
@@ -248,16 +293,27 @@ export function DashboardView() {
               <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-ink/45">
                 Jobs imported from Gmail
               </h3>
-              <div className="shrink-0 [&_button]:min-h-10 [&_button]:w-auto [&_button]:px-4 [&_button]:text-sm">
-                <SecondaryButton
-                  type="button"
-                  disabled={checkingGmail}
-                  loading={checkingGmail}
-                  loadingLabel="Checking…"
-                  onClick={() => void checkGmailForJobs()}
-                >
-                  Check Gmail
-                </SecondaryButton>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {syncRemoved.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={reviewSyncRemovedImports}
+                    className="min-h-10 rounded-xl bg-amber-50 px-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/90"
+                  >
+                    {syncRemoved.length} import{syncRemoved.length === 1 ? "" : "s"} removed by sync — review
+                  </button>
+                ) : null}
+                <div className="[&_button]:min-h-10 [&_button]:w-auto [&_button]:px-4 [&_button]:text-sm">
+                  <SecondaryButton
+                    type="button"
+                    disabled={checkingGmail}
+                    loading={checkingGmail}
+                    loadingLabel="Checking…"
+                    onClick={() => void checkGmailForJobs()}
+                  >
+                    Check Gmail
+                  </SecondaryButton>
+                </div>
               </div>
             </div>
             {calendarImports.length > 0 ? (
@@ -372,6 +428,55 @@ export function DashboardView() {
                 <p className="text-base text-ink/70">No pending Gmail imports. Use Check Gmail to refresh from the calendar.</p>
               </Card>
             )}
+            {recentlyDismissed.length > 0 ? (
+              <div ref={recentlyDismissedRef} className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRecentlyDismissed((open) => !open)}
+                  className="flex w-full items-center justify-between gap-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-ink/45"
+                  aria-expanded={showRecentlyDismissed}
+                >
+                  <span>Recently dismissed / removed ({recentlyDismissed.length})</span>
+                  <span className="text-ink/35 normal-case tracking-normal">{showRecentlyDismissed ? "Hide" : "Show"}</span>
+                </button>
+                {showRecentlyDismissed
+                  ? recentlyDismissed.map((item) => {
+                      const reopening = reopeningImportId === item.importId;
+                      return (
+                        <Card key={item.importId} className="bg-cream/60">
+                          <Link href={`/admin/calendar-imports/${item.importId}`} className="block">
+                            <p className="text-base font-semibold">
+                              {normalizeCalendarEventTitle(item.raw.title) ||
+                                [item.parsed.suggestedFirstName, item.parsed.suggestedLastName]
+                                  .filter(Boolean)
+                                  .join(" ") ||
+                                "Calendar event"}
+                            </p>
+                            <p className="text-sm text-ink/70">
+                              {formatLongDate(item.serviceDate)}
+                              {item.arrivalWindowStart ? ` · ${formatTimeLabel(item.arrivalWindowStart)}` : null}
+                            </p>
+                            <p className="mt-1 text-xs text-ink/50">
+                              {item.status === "WITHDRAWN" ? "Removed by sync" : "Dismissed"}{" "}
+                              {relativeDay(item.updatedAt.slice(0, 10), viewingToday)}
+                            </p>
+                          </Link>
+                          <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-ink/8 pt-3">
+                            <button
+                              type="button"
+                              disabled={reopening || reopeningImportId !== null}
+                              onClick={() => void reopenDismissedImport(item.importId)}
+                              className="min-h-10 rounded-xl bg-ink px-3 text-sm font-semibold text-cream disabled:opacity-50"
+                            >
+                              {reopening ? "Reopening…" : "Reopen for review"}
+                            </button>
+                          </div>
+                        </Card>
+                      );
+                    })
+                  : null}
+              </div>
+            ) : null}
           </div>
         </section>
 

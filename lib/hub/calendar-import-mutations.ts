@@ -118,6 +118,51 @@ export function markCalendarCanceledNotifiedOnHub(hub: HubData, importId: string
   };
 }
 
+export function reopenCalendarImportOnHub(hub: HubData, importId: string): MutationResult {
+  const row = findImport(hub, importId);
+  if (!row) return { ok: false, message: "That import could not be found." };
+  if (row.status !== "REJECTED" && row.status !== "WITHDRAWN") {
+    return { ok: false, message: "Only dismissed or sync-removed imports can be reopened." };
+  }
+  const eventId = row.googleCalendarEventId?.trim();
+  if (eventId) {
+    const clash = hub.calendarImports.find(
+      (item) =>
+        item.importId !== row.importId &&
+        item.googleCalendarEventId === eventId &&
+        (item.status === "PENDING_REVIEW" || item.status === "APPROVED"),
+    );
+    if (clash) {
+      return {
+        ok: false,
+        message:
+          clash.status === "PENDING_REVIEW"
+            ? "This calendar event is already waiting for review."
+            : "This calendar event was already approved.",
+      };
+    }
+  }
+  const removedBySync = row.status === "WITHDRAWN";
+  const now = new Date().toISOString();
+  const next: CalendarImport = {
+    ...row,
+    status: "PENDING_REVIEW",
+    rejectedReason: undefined,
+    updatedAt: now,
+    lastSyncedAt: now,
+  };
+  return {
+    ok: true,
+    hub: {
+      ...hub,
+      calendarImports: hub.calendarImports.map((item) => (item.importId === row.importId ? next : item)),
+    },
+    message: removedBySync
+      ? "Back in the review queue. Tap Check Gmail to refresh event details."
+      : "Import returned to the review queue.",
+  };
+}
+
 export function rejectCalendarImportOnHub(
   hub: HubData,
   importId: string,

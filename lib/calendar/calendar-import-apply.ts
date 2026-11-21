@@ -282,6 +282,7 @@ export async function applyCalendarEventsToHub(
 
   for (const row of nextImports) {
     if (row.status === "WITHDRAWN") continue;
+    if (row.status === "PENDING_REVIEW") continue;
     if (!calendarImportMissingFromGoogleSync(row, seenGoogleEventIds, today, horizonEnd)) continue;
     const activeJobId = calendarImportLinkedJobId(workingHub, row);
     if (calendarImportShouldWithdrawFromGoogleSync(row, activeJobId)) {

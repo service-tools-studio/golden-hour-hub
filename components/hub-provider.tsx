@@ -52,6 +52,7 @@ import {
   dismissCalendarCanceledImportAction,
   markCalendarCanceledNotifiedAction,
   rejectCalendarImportAction,
+  reopenCalendarImportAction,
   loadCalendarImportAction,
   syncCalendarImportsAction,
   type CalendarImportActionResult,
@@ -163,7 +164,7 @@ type HubState = HubData & {
 };
 
 type ActionResult =
-  | { ok: true; message?: string; customerId?: string; jobId?: string; assignmentId?: string }
+  | { ok: true; message?: string; customerId?: string; propertyId?: string; jobId?: string; assignmentId?: string }
   | { ok: false; message: string; stale?: boolean; scheduleConflict?: ConfirmedScheduleConflictNotice };
 type AsyncActionResult = Promise<ActionResult>;
 
@@ -229,6 +230,7 @@ type HubContextValue = HubState & {
   deleteJob: (jobId: string) => AsyncActionResult;
   deleteSeries: (seriesId: string) => AsyncActionResult;
   rejectCalendarImport: (importId: string, reason?: string) => AsyncActionResult;
+  reopenCalendarImport: (importId: string) => AsyncActionResult;
   dismissCalendarCanceledImport: (importId: string) => AsyncActionResult;
   markCalendarCanceledNotified: (importId: string) => AsyncActionResult;
   approveCalendarImport: (
@@ -1221,6 +1223,7 @@ export function HubProvider({
       ok: true,
       message: outcome.message,
       customerId: outcome.customerId,
+      propertyId: outcome.propertyId,
       jobId: outcome.jobId,
       assignmentId: outcome.assignmentId,
     };
@@ -1239,6 +1242,7 @@ export function HubProvider({
       ok: true,
       message: remote.message,
       customerId: remote.customerId,
+      propertyId: remote.propertyId,
       jobId: remote.jobId,
       assignmentId: remote.assignmentId,
     };
@@ -1530,6 +1534,14 @@ export function HubProvider({
     return applyPreviewMutation(rejectCalendarImportOnHub(data, importId, reason));
   }
 
+  async function reopenCalendarImport(importId: string): AsyncActionResult {
+    if (isDynamoAdmin()) {
+      return applyCalendarImportActionResult(await reopenCalendarImportAction(importId));
+    }
+    const { reopenCalendarImportOnHub } = await import("@/lib/hub/calendar-import-mutations");
+    return applyPreviewMutation(reopenCalendarImportOnHub(data, importId));
+  }
+
   async function dismissCalendarCanceledImport(importId: string): AsyncActionResult {
     if (isDynamoAdmin()) {
       return applyCalendarImportActionResult(await dismissCalendarCanceledImportAction(importId));
@@ -1681,6 +1693,7 @@ export function HubProvider({
     deleteJob,
     deleteSeries,
     rejectCalendarImport,
+    reopenCalendarImport,
     dismissCalendarCanceledImport,
     markCalendarCanceledNotified,
     approveCalendarImport,

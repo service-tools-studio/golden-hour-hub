@@ -48,6 +48,7 @@ export type AdminHubActionResult =
       revision: number;
       message?: string;
       customerId?: string;
+      propertyId?: string;
       jobId?: string;
       assignmentId?: string;
     }

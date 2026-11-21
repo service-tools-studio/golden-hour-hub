@@ -4,7 +4,7 @@
 
 When `GOOGLE_CALENDAR_ENABLED=true` and OAuth env vars are set, Hub imports events from `GOOGLE_CALENDAR_ID` for **today through +60 days**, upserts `calendar_import` rows in Dynamo, and surfaces **Pending** imports on the admin dashboard under **Jobs imported from Gmail**.
 
-Admins review at `/admin/calendar-imports/[importId]`, match or create a customer, edit visit details, then **Approve** (creates a draft Hub job with `googleCalendarEventId`) or **Dismiss**.
+Admins review at `/admin/calendar-imports/[importId]`, match or create a customer, edit visit details, then **Approve** (creates a draft Hub job with `googleCalendarEventId`) or **Dismiss**. Dismissed or sync-withdrawn imports appear under **Recently dismissed / removed** for 14 days. **Reopen for review** returns them to the pending queue; sync-removed rows also run **Check Gmail** to refresh parsed details. When any imports were withdrawn by sync, the dashboard shows a badge next to **Check Gmail** (e.g. “2 imports removed by sync — review”).
 
 **Check Gmail** (and the import cron/webhook) re-fetches Google Calendar for the same 60-day window. Hub then:
 

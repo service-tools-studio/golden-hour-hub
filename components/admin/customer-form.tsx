@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Field, PrimaryButton, ButtonLoadingLabel, fieldClass } from "@/components/ui";
-import { findCustomerByExactName, validateCustomerInput } from "@/lib/domain/customers";
+import { findCustomerByExactName, normalizeSearchText, validateCustomerInput } from "@/lib/domain/customers";
 import { ADMIN_MARKET_FILTER_LABELS, MARKET_IDS, isMarketId, type MarketId } from "@/lib/domain/markets";
 import type { Customer, Property } from "@/lib/domain/types";
 import { formatPhoneInput } from "@/lib/format";
@@ -226,6 +226,7 @@ export function CustomerForm({
   initialEmail,
   initialNotes,
   initialProperty,
+  appendPropertyHint,
   scrollToPropertyId,
   onCancel,
   onSaved,
@@ -239,6 +240,8 @@ export function CustomerForm({
   initialEmail?: string;
   initialNotes?: string;
   initialProperty?: CustomerFormPropertyHint;
+  /** When editing, append a new property row prefilled from a calendar import. */
+  appendPropertyHint?: CustomerFormPropertyHint;
   scrollToPropertyId?: string | null;
   onCancel?: () => void;
   onSaved?: (customerId: string) => void;
@@ -301,6 +304,35 @@ export function CustomerForm({
     initialProperty?.state,
     initialProperty?.zip,
     initialProperty?.marketId,
+    newPropertyKeyBase,
+  ]);
+
+  const [scrollPropertyKey, setScrollPropertyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!customer || !appendPropertyHint) return;
+    const street = appendPropertyHint.streetAddress?.trim();
+    if (!street) return;
+    const streetKey = normalizeSearchText(street);
+    setProperties((rows) => {
+      const exists = rows.some((item) => normalizeSearchText(item.streetAddress) === streetKey);
+      if (exists) return rows;
+      const key = `property-import-${newPropertyKeyBase}`;
+      setScrollPropertyKey(key);
+      return [...rows, blankProperty(appendPropertyHint, key)];
+    });
+  }, [
+    customer,
+    appendPropertyHint,
+    appendPropertyHint?.streetAddress,
+    appendPropertyHint?.city,
+    appendPropertyHint?.state,
+    appendPropertyHint?.zip,
+    appendPropertyHint?.unit,
+    appendPropertyHint?.marketId,
+    appendPropertyHint?.bedrooms,
+    appendPropertyHint?.bathrooms,
+    appendPropertyHint?.squareFeet,
     newPropertyKeyBase,
   ]);
 
@@ -414,9 +446,10 @@ export function CustomerForm({
   }
 
   useEffect(() => {
-    if (!scrollToPropertyId) return;
-    document.getElementById(`property-${scrollToPropertyId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [scrollToPropertyId]);
+    const target = scrollToPropertyId ?? scrollPropertyKey;
+    if (!target) return;
+    document.getElementById(`property-${target}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [scrollToPropertyId, scrollPropertyKey]);
 
   function scrollFieldIntoView(field: string) {
     const match = /^properties\.(\d+)\.(.+)$/.exec(field);

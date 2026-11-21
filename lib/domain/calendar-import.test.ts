@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildCalendarImportAddPropertyHref,
   buildCalendarImportNewCustomerHref,
+  calendarImportPropertyInputFromHints,
+  customerHasCalendarImportProperty,
+  propertyMatchesCalendarImportAddress,
   calendarImportCustomerPrefillFromRow,
   calendarImportCanceledCardRelevant,
   calendarImportRescheduleStaleImportRow,
@@ -32,6 +36,8 @@ import {
   calendarImportLinkedJobId,
   calendarImportRawEventDetailsText,
   suggestCustomerForCalendarImport,
+  visibleRecentlyDismissedCalendarImports,
+  visibleRecentlySyncRemovedCalendarImports,
 } from "./calendar-import.ts";
 import type { CalendarImport, Customer, Job } from "./types.ts";
 
@@ -136,6 +142,8 @@ describe("calendar import parser", () => {
   it("detects move-out service type from event text", () => {
     assert.equal(parseServiceTypeFromEventText("Move out clean at 628 NE Roselawn"), "MOVE_OUT");
     assert.equal(parseServiceTypeFromEventText("MOVE-OUT / deep dusting"), "MOVE_OUT");
+    assert.equal(parseServiceTypeFromEventText("Event Type: Move-in/out"), "MOVE_OUT");
+    assert.equal(parseServiceTypeFromEventText("move in / out clean"), "MOVE_OUT");
     assert.equal(parseServiceTypeFromEventText("Deep clean only"), "DEEP_CLEAN");
     const parsed = parseGoogleCalendarEvent({
       id: "evt-move",
@@ -483,6 +491,16 @@ describe("calendar import parser", () => {
     assert.equal(hints.streetAddress, "123 Main St");
     assert.equal(hints.city, "Portland");
     assert.equal(hints.state, "OR");
+    assert.equal(hints.zip, "97201");
+  });
+
+  it("does not treat a five-digit house number as the ZIP", () => {
+    const hints = parseLocationHint("12505 NW Bayonne Ln, Portland, OR 97229");
+    assert.equal(hints.streetAddress, "12505 NW Bayonne Ln");
+    assert.equal(hints.city, "Portland");
+    assert.equal(hints.state, "OR");
+    assert.equal(hints.zip, "97229");
+    assert.equal(formatCalendarImportAddress(hints), "12505 NW Bayonne Ln, Portland, OR 97229");
   });
 
   it("reads invitee email from mailto links in html description", () => {
@@ -784,5 +802,83 @@ describe("calendar import parser", () => {
       [],
     );
     assert.equal(match.customerId, "cust-nicky");
+  });
+});
+
+describe("calendar import property on customer", () => {
+  it("builds add-property edit link", () => {
+    const href = buildCalendarImportAddPropertyHref("cust-1", "calimp-9");
+    assert.match(href, /\/admin\/customers\/cust-1\?/);
+    assert.match(href, /calendarImportId=calimp-9/);
+    assert.match(href, /addPropertyFromImport=1/);
+  });
+
+  it("detects when the import address is not on the customer", () => {
+    const hints = { streetAddress: "12505 NW Bayonne Ln", city: "Portland", state: "OR", zip: "97229" };
+    const properties = [
+      {
+        propertyId: "p1",
+        customerId: "c1",
+        streetAddress: "500 Southwest Harlequin Dr",
+        city: "Beaverton",
+        state: "OR",
+        zip: "97005",
+        status: "ACTIVE",
+      },
+    ] as import("./types.ts").Property[];
+    assert.equal(propertyMatchesCalendarImportAddress(properties[0]!, hints), false);
+    assert.equal(customerHasCalendarImportProperty(properties, "c1", hints), false);
+    const draft = calendarImportPropertyInputFromHints(hints);
+    assert.ok(draft);
+    assert.equal(draft?.streetAddress, "12505 NW Bayonne Ln");
+  });
+});
+
+describe("visibleRecentlyDismissedCalendarImports", () => {
+  const base = {
+    importId: "calimp-d",
+    googleCalendarEventId: "evt-d",
+    status: "REJECTED" as const,
+    serviceDate: "2026-11-20",
+    serviceType: "DEEP_CLEAN" as const,
+    headcountNeeded: 1,
+    specialInstructions: "",
+    marketId: "portland" as const,
+    raw: { title: "Jane", description: "", location: "" },
+    parsed: {},
+    createdAt: "2026-11-01T00:00:00.000Z",
+    lastSyncedAt: "2026-11-01T00:00:00.000Z",
+  } satisfies Omit<CalendarImport, "updatedAt">;
+
+  it("lists REJECTED and WITHDRAWN imports dismissed within the window", () => {
+    const recent = { ...base, updatedAt: "2026-11-19T12:00:00.000Z" };
+    const withdrawn = {
+      ...base,
+      importId: "calimp-w",
+      status: "WITHDRAWN" as const,
+      updatedAt: "2026-11-19T12:00:00.000Z",
+    };
+    const old = { ...base, importId: "calimp-old", updatedAt: "2026-10-01T12:00:00.000Z" };
+    const pending = { ...base, importId: "calimp-p", status: "PENDING_REVIEW" as const, updatedAt: "2026-11-19T12:00:00.000Z" };
+    const visible = visibleRecentlyDismissedCalendarImports(
+      [recent, withdrawn, old, pending],
+      "2026-11-20",
+      "all",
+    );
+    assert.equal(visible.length, 2);
+    assert.equal(visible.map((item) => item.importId).sort().join(","), "calimp-d,calimp-w");
+  });
+
+  it("counts only WITHDRAWN rows for sync-removed badge", () => {
+    const withdrawn = {
+      ...base,
+      importId: "calimp-w",
+      status: "WITHDRAWN" as const,
+      updatedAt: "2026-11-19T12:00:00.000Z",
+    };
+    const rejected = { ...base, updatedAt: "2026-11-19T12:00:00.000Z" };
+    const syncRemoved = visibleRecentlySyncRemovedCalendarImports([withdrawn, rejected], "2026-11-20", "all");
+    assert.equal(syncRemoved.length, 1);
+    assert.equal(syncRemoved[0]?.importId, "calimp-w");
   });
 });

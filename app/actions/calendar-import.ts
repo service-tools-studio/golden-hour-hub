@@ -13,6 +13,7 @@ import {
   dismissCalendarCanceledImportOnHub,
   markCalendarCanceledNotifiedOnHub,
   rejectCalendarImportOnHub,
+  reopenCalendarImportOnHub,
   updateCalendarImportOnHub,
   type ApproveCalendarImportInput,
 } from "@/lib/hub/calendar-import-mutations";
@@ -140,6 +141,23 @@ export async function rejectCalendarImportAction(
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("rejectCalendarImportAction failed.", error);
     return { ok: false, message: "Could not dismiss this import." };
+  }
+}
+
+export async function reopenCalendarImportAction(
+  importId: string,
+): Promise<CalendarImportActionResult> {
+  try {
+    await requireAdmin();
+    if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
+    return persistCalendarImportMutation(
+      () => loadAdminHubSlices({ persistReconciliation: false }),
+      (hub) => reopenCalendarImportOnHub(hub, importId),
+    );
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
+    console.error("reopenCalendarImportAction failed.", error);
+    return { ok: false, message: "Could not reopen this import." };
   }
 }
 
