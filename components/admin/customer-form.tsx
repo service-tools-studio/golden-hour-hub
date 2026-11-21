@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHub } from "@/components/hub-provider";
@@ -167,11 +167,11 @@ function applyPropertyHint(draft: PropertyDraft, hint?: CustomerFormPropertyHint
   };
 }
 
-function blankProperty(hint?: CustomerFormPropertyHint): PropertyDraft {
+function blankProperty(hint?: CustomerFormPropertyHint, key = "property-new"): PropertyDraft {
   const market =
     typeof hint?.marketId === "string" && isMarketId(hint.marketId) ? hint.marketId : undefined;
   return {
-    key: `new-${Math.random().toString(36).slice(2, 8)}`,
+    key,
     label: "",
     streetAddress: hint?.streetAddress?.trim() ?? "",
     unit: hint?.unit?.trim() ?? "",
@@ -190,10 +190,12 @@ function draftsFor(
   customer: Customer | undefined,
   properties: Property[],
   initialProperty?: CustomerFormPropertyHint,
+  newPropertyKey?: string,
 ): PropertyDraft[] {
-  if (!customer) return [blankProperty(initialProperty)];
+  const blankKey = newPropertyKey ?? "property-new";
+  if (!customer) return [blankProperty(initialProperty, blankKey)];
   const owned = properties.filter((item) => item.customerId === customer.customerId);
-  if (owned.length === 0) return [blankProperty()];
+  if (owned.length === 0) return [blankProperty(undefined, blankKey)];
   return owned.map((item) => ({
     key: item.propertyId,
     propertyId: item.propertyId,
@@ -245,6 +247,7 @@ export function CustomerForm({
 }) {
   const hub = useHub();
   const router = useRouter();
+  const newPropertyKeyBase = useId().replace(/:/g, "");
   const [error, setError] = useState<{ field: string; message: string; at: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -260,7 +263,9 @@ export function CustomerForm({
     email: customer?.email ?? initialEmail?.trim() ?? "",
     notes: customer?.notes ?? initialNotes?.trim() ?? "",
   });
-  const [properties, setProperties] = useState(() => draftsFor(customer, hub.properties, initialProperty));
+  const [properties, setProperties] = useState(() =>
+    draftsFor(customer, hub.properties, initialProperty, `property-${newPropertyKeyBase}`),
+  );
 
   useEffect(() => {
     if (customer || !initialProperty) return;
@@ -272,7 +277,7 @@ export function CustomerForm({
     const hasUnit = Boolean(initialProperty.unit?.trim());
     if (!hasSize && !hasAddress && !hasUnit) return;
     setProperties((rows) => {
-      if (rows.length === 0) return [blankProperty(initialProperty)];
+      if (rows.length === 0) return [blankProperty(initialProperty, `property-${newPropertyKeyBase}`)];
       const nextFirst = applyPropertyHint(rows[0]!, initialProperty);
       if (
         nextFirst.bedrooms === rows[0]!.bedrooms &&
@@ -296,6 +301,7 @@ export function CustomerForm({
     initialProperty?.state,
     initialProperty?.zip,
     initialProperty?.marketId,
+    newPropertyKeyBase,
   ]);
 
   const notesRef = useRef<HTMLTextAreaElement>(null);
@@ -654,7 +660,10 @@ export function CustomerForm({
           <button
             type="button"
             onClick={() => {
-              setProperties((current) => [...current, blankProperty()]);
+              setProperties((current) => [
+                ...current,
+                blankProperty(undefined, `property-${newPropertyKeyBase}-${current.length}`),
+              ]);
               clearError("properties");
             }}
             className="min-h-12 w-full rounded-2xl bg-cream text-base font-semibold text-ink"
