@@ -136,6 +136,23 @@ pk SEARCH#ADDR   sk 123 main st#prop-main
 
 A `begins_with` query matches a prefix, not the middle of a word. The preview’s `includes` match is wider than that index. Renames and address edits delete the old search items and write the new ones in the same transaction as the profile or property update. Historical jobs are not part of that transaction.
 
+### Calendar import (staging)
+
+Google Calendar events land here until an admin approves them into a job.
+
+```
+pk     CAL_IMPORT#<importId>
+sk     PROFILE
+gsi1pk CAL_IMPORT#PENDING
+gsi1sk <serviceDate>#<importId>
+gsi2pk GCAL_EVENT#<googleCalendarEventId>
+entity calendar_import
+```
+
+Statuses: `PENDING_REVIEW`, `APPROVED`, `REJECTED`, `WITHDRAWN`, `CALENDAR_CANCELED` (removed on Google with a linked hub job). `CALENDAR_CANCELED` rows may store `calendarCanceledNotifyCleanerIds` and `cleanerRemovalNotifiedAt` for admin removal texts. Approved rows store `approvedJobId`. Jobs created from an import may set `googleCalendarEventId` on the job profile for dedupe and future outbound sync.
+
+**TTL:** Each item includes a numeric `ttl` (Unix epoch **seconds**) set to one year after `updatedAt`. Enable DynamoDB TTL on the Hub table for attribute name **`ttl`** (see README AWS setup). Deletes are best-effort and may lag by up to ~48 hours. Rows touched by sync refresh `updatedAt` and therefore extend TTL.
+
 ### Recurring series
 
 ```
@@ -190,7 +207,7 @@ gsi2pk CUSTOMER#cust-jeff
 gsi2sk JOB#2026-10-20#job-johnson
 ```
 
-Fields: `jobId`, `customerId`, `propertyId`, optional `seriesId`, `serviceType`, `date`, `headcountNeeded`, `snapshot`, `specialInstructions`, optional `pricePerVisitCents` (customer price for this visit in cents; admin-only in the app), `status` (`DRAFT`, `SCHEDULED`, or `CANCELED`), and audit fields.
+Fields: `jobId`, `customerId`, `propertyId`, optional `seriesId`, optional `googleCalendarEventId`, `serviceType`, `date`, `headcountNeeded`, `snapshot`, `specialInstructions`, optional `pricePerVisitCents` (customer price for this visit in cents; admin-only in the app), `status` (`DRAFT`, `SCHEDULED`, or `CANCELED`), and audit fields.
 
 A `DRAFT` visit is work in progress before it is booked. `headcountNeeded` may be `0` until the admin chooses crew size. Optional job-level `arrivalWindowStart`, `arrivalWindowEnd`, and `expectedDurationMinutes` describe the visit window before every cleaner is staffed. Optional `draftCleanerIds` lists cleaners named on the visit. Optional `draftCleanerDetails` holds per-cleaner arrival, duration, crew, and pay saved before invite or direct assignment (same shape as the fields on an assignment row).
 

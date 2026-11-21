@@ -22,6 +22,8 @@ import {
   queryRelationIndex,
   queryScheduleIndex,
 } from "./dynamo-queries.ts";
+import { queryDashboardCalendarImportsInRange } from "./calendar-import-queries.ts";
+import { CALENDAR_IMPORT_HORIZON_DAYS } from "../domain/calendar-import.ts";
 import { finalizeLoadedHub, type FinalizeHubOptions } from "./hub-reconcile.ts";
 
 export type LoadHubSliceOptions = FinalizeHubOptions & {
@@ -114,12 +116,14 @@ async function fetchAdminHubItems(options: {
   const cleanerIds = cleanerIdsFromProfileItems([...cleanersActive, ...cleanersInactive]);
   const jobIds = await discoverAllAdminJobIds(customerIds, cleanerIds);
 
-  const [customerSeries, jobPartitions, teamExtras] = await Promise.all([
+  const importHorizonEnd = addDays(today, CALENDAR_IMPORT_HORIZON_DAYS);
+  const [customerSeries, jobPartitions, teamExtras, calendarImportRows] = await Promise.all([
     options.loadSeries ? loadCustomerSeriesItems(customerIds) : Promise.resolve([] as DynamoItem[]),
     loadJobPartitions(jobIds),
     options.loadTeamSchedulingExtras
       ? loadTeamSchedulingExtraItems(availabilityStart, horizonEnd, [...cleanersActive, ...cleanersInactive])
       : Promise.resolve([] as DynamoItem[]),
+    queryDashboardCalendarImportsInRange(today, importHorizonEnd),
   ]);
 
   return dedupeItemsByKey([
@@ -129,7 +133,18 @@ async function fetchAdminHubItems(options: {
     ...customerSeries,
     ...jobPartitions,
     ...teamExtras,
+    ...calendarImportRows,
   ]);
+}
+
+/** Single calendar import partition for the review screen. */
+export async function loadAdminHubCalendarImportSlice(importId: string): Promise<HubData> {
+  const today = todayInBusinessZone();
+  const trimmed = importId.trim();
+  if (!trimmed) return emptyHub(today);
+  const partition = await queryItemsByPk(`CAL_IMPORT#${trimmed}`);
+  if (partition.length === 0) return emptyHub(today);
+  return itemsToHub(dedupeItemsByKey(partition), today);
 }
 
 async function loadJobPartitions(jobIds: string[]): Promise<DynamoItem[]> {

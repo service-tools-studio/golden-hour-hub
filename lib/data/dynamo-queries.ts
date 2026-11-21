@@ -84,17 +84,26 @@ export async function queryScheduleIndex(
 
 export async function queryRelationIndex(
   gsi2pk: string,
-  skBeginsWith: string,
+  skBeginsWith?: string,
 ): Promise<DynamoItem[]> {
   const items: DynamoItem[] = [];
   let startKey: Record<string, unknown> | undefined;
+  const prefix = skBeginsWith?.trim();
+  const values: Record<string, string> = { ":gsi2pk": gsi2pk };
+  const keyCondition =
+    prefix && prefix.length > 0
+      ? (() => {
+          values[":prefix"] = prefix;
+          return "gsi2pk = :gsi2pk AND begins_with(gsi2sk, :prefix)";
+        })()
+      : "gsi2pk = :gsi2pk";
   do {
     const page = await doc().send(
       new QueryCommand({
         TableName: tableName(),
         IndexName: RELATION_INDEX,
-        KeyConditionExpression: "gsi2pk = :gsi2pk AND begins_with(gsi2sk, :prefix)",
-        ExpressionAttributeValues: { ":gsi2pk": gsi2pk, ":prefix": skBeginsWith },
+        KeyConditionExpression: keyCondition,
+        ExpressionAttributeValues: values,
         ExclusiveStartKey: startKey,
       }),
     );

@@ -5,6 +5,7 @@ import { customerDetailLoadSucceeded } from "@/lib/hub/bootstrap-result";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { loadCalendarImportPrefillAction } from "@/app/actions/calendar-import";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
@@ -18,6 +19,11 @@ import {
   useUnsavedNavigation,
 } from "@/components/unsaved-changes";
 import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/components/ui";
+import {
+  calendarImportCustomerPrefillFromRow,
+  calendarImportIdFromReturnTo,
+} from "@/lib/domain/calendar-import";
+import type { CalendarImportParsedHints } from "@/lib/domain/types";
 import { searchCustomers } from "@/lib/domain/customers";
 import { formatMoney } from "@/lib/domain/compensation";
 import { seriesSummary } from "@/lib/mock/seed";
@@ -142,19 +148,86 @@ export function CustomersView() {
 }
 
 export function NewCustomerView({
+  calendarImportId,
   returnTo,
   firstName,
   lastName,
+  phone,
+  email,
+  streetAddress,
+  city,
+  state,
+  zip,
+  marketId,
+  bedrooms,
+  bathrooms,
+  squareFeet,
+  unit,
+  notes,
 }: {
+  calendarImportId?: string;
   returnTo?: string;
   firstName?: string;
   lastName?: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  streetAddress?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  marketId?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFeet?: number;
+  unit?: string;
 }) {
   const hub = useHub();
   const router = useRouter();
   const formRef = useRef<CustomerFormHandle>(null);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  const back = useCleaningReturnTo(returnTo ?? "") ?? null;
+  const resolvedImportId = calendarImportId ?? calendarImportIdFromReturnTo(returnTo);
+  const normalizedBack = useCleaningReturnTo(returnTo ?? "");
+  const back =
+    normalizedBack ??
+    (calendarImportId && resolvedImportId ? `/admin/calendar-imports/${resolvedImportId}` : undefined) ??
+    null;
+  const [importHints, setImportHints] = useState<CalendarImportParsedHints | null>(null);
+
+  useEffect(() => {
+    if (!resolvedImportId) return;
+    const local = hub.calendarImports.find((item) => item.importId === resolvedImportId);
+    if (local) {
+      setImportHints(calendarImportCustomerPrefillFromRow(local));
+      return;
+    }
+    const hasServerPrefill =
+      Boolean(phone?.trim() || email?.trim()) ||
+      (typeof bedrooms === "number" && bedrooms > 0) ||
+      (typeof bathrooms === "number" && bathrooms > 0) ||
+      (typeof squareFeet === "number" && squareFeet > 0);
+    if (hasServerPrefill) return;
+    void loadCalendarImportPrefillAction(resolvedImportId).then((result) => {
+      if (result.ok) setImportHints(result.prefill);
+    });
+  }, [resolvedImportId, hub.calendarImports, phone, email, bedrooms, bathrooms, squareFeet]);
+
+  const prefill = {
+    firstName: firstName ?? importHints?.suggestedFirstName,
+    lastName: lastName ?? importHints?.suggestedLastName,
+    phone: phone ?? importHints?.suggestedPhone,
+    email: email ?? importHints?.suggestedEmail,
+    streetAddress: streetAddress ?? importHints?.streetAddress,
+    city: city ?? importHints?.city,
+    state: state ?? importHints?.state,
+    zip: zip ?? importHints?.zip,
+    marketId: marketId ?? importHints?.marketId,
+    bedrooms: bedrooms ?? importHints?.bedrooms,
+    bathrooms: bathrooms ?? importHints?.bathrooms,
+    squareFeet: squareFeet ?? importHints?.squareFeet,
+    unit: unit ?? importHints?.unit,
+    notes: notes ?? importHints?.suggestedNotes,
+  };
   useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
   useHubSyncBlocker(() => Boolean(formRef.current?.isDirty()));
 
@@ -179,13 +252,27 @@ export function NewCustomerView({
       <div className="px-5 pt-4">
         <CustomerForm
           ref={formRef}
-          initialFirstName={firstName}
-          initialLastName={lastName}
+          initialFirstName={prefill.firstName}
+          initialLastName={prefill.lastName}
+          initialPhone={prefill.phone}
+          initialEmail={prefill.email}
+          initialNotes={prefill.notes}
+          initialProperty={{
+            streetAddress: prefill.streetAddress,
+            unit: prefill.unit,
+            city: prefill.city,
+            state: prefill.state,
+            zip: prefill.zip,
+            marketId: prefill.marketId,
+            bedrooms: prefill.bedrooms,
+            bathrooms: prefill.bathrooms,
+            squareFeet: prefill.squareFeet,
+          }}
           onSaved={
             back
               ? (customerId) => {
                   const url = new URL(back, "http://local");
-                  if (url.pathname === "/admin/jobs/new") url.searchParams.set("customerId", customerId);
+                  url.searchParams.set("customerId", customerId);
                   router.push(`${url.pathname}${url.search}`);
                 }
               : undefined
@@ -316,7 +403,7 @@ export function CustomerDetail({
   const upcomingIds = new Set(upcoming.map((job) => job.jobId));
   const history = jobs
     .filter((job) => {
-      if (job.status === "CANCELED") return true;
+      if (job.status === "CANCELED") return false;
       if (job.date < hub.today) return true;
       return !upcomingIds.has(job.jobId);
     })

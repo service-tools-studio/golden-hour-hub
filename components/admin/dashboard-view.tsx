@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AdminMarketTabs, useAdminMarket } from "@/components/admin/admin-market";
 import { useHub } from "@/components/hub-provider";
-import { Card, PageHeader, PlusIcon, Screen } from "@/components/ui";
+import { Card, PageHeader, PlusIcon, Screen, SecondaryButton } from "@/components/ui";
 import { useNow } from "@/components/use-now";
 import { dismissDashboardJob, readDashboardDismissedJobIds } from "@/lib/admin/dashboard-dismissals";
 import {
@@ -15,15 +15,68 @@ import {
 } from "@/lib/domain/scheduling";
 import { editableAvailabilityHorizonEnd } from "@/lib/domain/time";
 import { customerMatchesAdminMarket, jobMatchesAdminMarket } from "@/lib/domain/markets";
-import { crewLine, formatLongDate, relativeDay, serviceLabel } from "@/lib/format";
+import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
+import type { CalendarImport } from "@/lib/domain/types";
+import {
+  calendarImportCanceledJobId,
+  normalizeCalendarEventTitle,
+  resolveCalendarImportMatchedJobId,
+  visibleDashboardCalendarImports,
+} from "@/lib/domain/calendar-import";
+import {
+  cleanerRemovedFromJobSms,
+  crewLine,
+  customerFirstNameForCleaner,
+  formatLongDate,
+  formatTimeLabel,
+  jobHasCleanerScheduleReinvite,
+  jobScheduleAttentionFlagLines,
+  relativeDay,
+  serviceLabel,
+} from "@/lib/format";
 
 const heading = "text-sm font-semibold uppercase tracking-[0.14em] text-ink/50";
 
 export function DashboardView() {
-  const hub = useHub();
+  const {
+    syncCalendarImports,
+    rejectCalendarImport,
+    dismissCalendarCanceledImport,
+    markCalendarCanceledNotified,
+    queueSchedulingSms,
+    flash,
+    flashLoading,
+    clearActionLoading,
+    ...hub
+  } = useHub();
   const { marketFilter, viewingToday } = useAdminMarket();
   const now = useNow();
   const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(() => new Set());
+  const [checkingGmail, setCheckingGmail] = useState(false);
+  const [dismissingImportId, setDismissingImportId] = useState<string | null>(null);
+  const [notifyingImportId, setNotifyingImportId] = useState<string | null>(null);
+
+  async function dismissCalendarImport(importId: string) {
+    setDismissingImportId(importId);
+    try {
+      const result = await rejectCalendarImport(importId);
+      if (result.message) flash(result.message);
+    } finally {
+      setDismissingImportId(null);
+    }
+  }
+
+  async function checkGmailForJobs() {
+    setCheckingGmail(true);
+    flashLoading("Checking Gmail…");
+    try {
+      const result = await syncCalendarImports();
+      if (result.message) flash(result.message);
+    } finally {
+      clearActionLoading();
+      setCheckingGmail(false);
+    }
+  }
 
   useEffect(() => {
     setDismissedJobIds(readDashboardDismissedJobIds(viewingToday));
@@ -49,7 +102,15 @@ export function DashboardView() {
     const people = calculateConfirmedHeadcount(hub.assignments.filter((item) => item.jobId === job.jobId));
     return people < job.headcountNeeded;
   });
-  const needsAttention = unstaffed.filter((job) => job.date <= staffingHorizon);
+  const unstaffedInHorizon = unstaffed.filter((job) => job.date <= staffingHorizon);
+  const scheduleReinviteInHorizon = upcoming.filter(
+    (job) => job.date <= staffingHorizon && jobHasCleanerScheduleReinvite(job, hub.assignments),
+  );
+  const needsAttentionById = new Map<string, (typeof upcoming)[number]>();
+  for (const job of [...unstaffedInHorizon, ...scheduleReinviteInHorizon]) {
+    needsAttentionById.set(job.jobId, job);
+  }
+  const needsAttention = [...needsAttentionById.values()].sort((a, b) => a.date.localeCompare(b.date));
   const missingPhone = hub.customers
     .filter(
       (customer) =>
@@ -59,7 +120,69 @@ export function DashboardView() {
     .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
   const staffed = upcoming
     .filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon)
+    .filter((job) => !needsAttentionById.has(job.jobId))
     .filter((job) => !dismissedJobIds.has(job.jobId));
+  const calendarImports = visibleDashboardCalendarImports(
+    hub.calendarImports,
+    viewingToday,
+    marketFilter,
+    hub,
+  );
+
+  async function notifyCalendarCanceledCleaners(item: CalendarImport) {
+    const jobId = calendarImportCanceledJobId(hub, item);
+    const job = jobId ? hub.jobs.find((row) => row.jobId === jobId) : undefined;
+    const cleanerIds = item.calendarCanceledNotifyCleanerIds ?? [];
+    if (!job || cleanerIds.length === 0) {
+      flash("No confirmed cleaners to notify for this import.");
+      return;
+    }
+    setNotifyingImportId(item.importId);
+    try {
+      let queued = 0;
+      for (const cleanerId of cleanerIds) {
+        const cleaner = hub.cleaners.find((row) => row.cleanerId === cleanerId);
+        if (!cleaner) continue;
+        const assignment = hub.assignments.find(
+          (row) => row.jobId === job.jobId && row.cleanerId === cleanerId,
+        );
+        const body = cleanerRemovedFromJobSms({
+          cleanerFirstName: cleaner.firstName,
+          customerFirstName: customerFirstNameForCleaner(job.snapshot),
+          date: job.date,
+        });
+        queueSchedulingSms(
+          deliverSchedulingCleanerSms({
+            cleaner,
+            body,
+            manualDetail: "calendar cancel removal",
+            assignmentLog: assignment
+              ? { assignmentId: assignment.assignmentId, jobId: job.jobId, kind: "removal" }
+              : undefined,
+          }),
+        );
+        queued += 1;
+      }
+      if (queued === 0) {
+        flash("No confirmed cleaners to notify for this import.");
+        return;
+      }
+      const saved = await markCalendarCanceledNotified(item.importId);
+      if (saved.message) flash(saved.message);
+    } finally {
+      setNotifyingImportId(null);
+    }
+  }
+
+  async function dismissCalendarCanceledImportRow(importId: string) {
+    setDismissingImportId(importId);
+    try {
+      const result = await dismissCalendarCanceledImport(importId);
+      if (result.message) flash(result.message);
+    } finally {
+      setDismissingImportId(null);
+    }
+  }
 
   return (
     <Screen>
@@ -120,6 +243,136 @@ export function DashboardView() {
               <JobStaffingCard key={job.jobId} jobId={job.jobId} />
             ))
           )}
+          <div className="space-y-2 pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-ink/45">
+                Jobs imported from Gmail
+              </h3>
+              <div className="shrink-0 [&_button]:min-h-10 [&_button]:w-auto [&_button]:px-4 [&_button]:text-sm">
+                <SecondaryButton
+                  type="button"
+                  disabled={checkingGmail}
+                  loading={checkingGmail}
+                  loadingLabel="Checking…"
+                  onClick={() => void checkGmailForJobs()}
+                >
+                  Check Gmail
+                </SecondaryButton>
+              </div>
+            </div>
+            {calendarImports.length > 0 ? (
+              calendarImports.map((item) => {
+                const canceledOnGmail = item.status === "CALENDAR_CANCELED";
+                const matchedJobId = canceledOnGmail
+                  ? calendarImportCanceledJobId(hub, item)
+                  : resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, item);
+                const dismissing = dismissingImportId === item.importId;
+                const notifying = notifyingImportId === item.importId;
+                const notifyIds = item.calendarCanceledNotifyCleanerIds ?? [];
+                const needsCleanerNotice = canceledOnGmail && notifyIds.length > 0 && !item.cleanerRemovalNotifiedAt;
+                const showFooter = matchedJobId && !canceledOnGmail;
+                return (
+                  <Card
+                    key={item.importId}
+                    className={`${showFooter ? "relative pb-11" : ""} ${canceledOnGmail ? "ring-2 ring-red-600/40" : ""}`}
+                  >
+                    {canceledOnGmail ? (
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-red-700">
+                          Canceled on Gmail
+                        </span>
+                        {item.cleanerRemovalNotifiedAt ? (
+                          <span className="text-xs font-medium text-ink/55">Cleaners notified</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {showFooter ? (
+                      <button
+                        type="button"
+                        disabled={dismissing || dismissingImportId !== null}
+                        onClick={() => void dismissCalendarImport(item.importId)}
+                        className="absolute bottom-3 right-4 z-10 min-h-10 rounded-xl px-3 text-sm font-semibold text-ink underline decoration-ink/25 underline-offset-2 disabled:opacity-50"
+                      >
+                        {dismissing ? "Dismissing…" : "Dismiss"}
+                      </button>
+                    ) : null}
+                    {canceledOnGmail && matchedJobId ? (
+                      <Link href={`/admin/jobs/${matchedJobId}?from=dashboard`} className="block">
+                        <p className="text-lg font-semibold">
+                          {normalizeCalendarEventTitle(item.raw.title) ||
+                            [item.parsed.suggestedFirstName, item.parsed.suggestedLastName]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            "Calendar event"}
+                        </p>
+                        <p className="text-sm text-ink/70">
+                          {formatLongDate(item.serviceDate)}
+                          {item.arrivalWindowStart ? ` · ${formatTimeLabel(item.arrivalWindowStart)}` : null}
+                        </p>
+                        {item.raw.location ? <p className="mt-1 text-sm text-ink/70">{item.raw.location}</p> : null}
+                        <p className="mt-2 text-sm font-semibold text-red-700">
+                          Removed from Gmail — hub job canceled
+                        </p>
+                      </Link>
+                    ) : (
+                      <Link
+                        href={
+                          matchedJobId && canceledOnGmail
+                            ? `/admin/jobs/${matchedJobId}?from=dashboard`
+                            : `/admin/calendar-imports/${item.importId}`
+                        }
+                        className="block"
+                      >
+                        <p className="text-lg font-semibold">
+                          {normalizeCalendarEventTitle(item.raw.title) ||
+                            [item.parsed.suggestedFirstName, item.parsed.suggestedLastName]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            "Calendar event"}
+                        </p>
+                        <p className="text-sm text-ink/70">
+                          {formatLongDate(item.serviceDate)}
+                          {item.arrivalWindowStart ? ` · ${formatTimeLabel(item.arrivalWindowStart)}` : null}
+                        </p>
+                        {item.raw.location ? <p className="mt-1 text-sm text-ink/70">{item.raw.location}</p> : null}
+                        {matchedJobId ? (
+                          <p className="mt-2 text-sm font-semibold text-gold">Already on schedule</p>
+                        ) : (
+                          <p className="mt-2 text-sm font-semibold text-ink">Review import</p>
+                        )}
+                      </Link>
+                    )}
+                    {canceledOnGmail ? (
+                      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-ink/8 pt-4">
+                        {needsCleanerNotice ? (
+                          <button
+                            type="button"
+                            disabled={notifying || dismissingImportId !== null}
+                            onClick={() => void notifyCalendarCanceledCleaners(item)}
+                            className="min-h-10 rounded-xl bg-ink px-3 text-sm font-semibold text-cream disabled:opacity-50"
+                          >
+                            {notifying ? "Notifying…" : "Notify confirmed cleaners"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={dismissing || notifying}
+                          onClick={() => void dismissCalendarCanceledImportRow(item.importId)}
+                          className="min-h-10 rounded-xl px-3 text-sm font-semibold text-ink underline decoration-ink/25 underline-offset-2 disabled:opacity-50"
+                        >
+                          {dismissing ? "Dismissing…" : "Dismiss"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </Card>
+                );
+              })
+            ) : (
+              <Card>
+                <p className="text-base text-ink/70">No pending Gmail imports. Use Check Gmail to refresh from the calendar.</p>
+              </Card>
+            )}
+          </div>
         </section>
 
         {staffed.length > 0 ? (
@@ -161,10 +414,14 @@ function JobStaffingCard({
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   const availabilityFollowUp = assignments.some((item) => item.availabilityConflictWeekStart);
+  const scheduleReinvite = jobHasCleanerScheduleReinvite(job, hub.assignments);
+  const scheduleAttentionLines = jobScheduleAttentionFlagLines(job, assignments, (cleanerId) =>
+    hub.cleaners.find((cleaner) => cleaner.cleanerId === cleanerId)?.firstName,
+  );
   const showDismiss = dismissable && jobCleaningHasEnded(job, hub.assignments, viewingToday, now);
   return (
     <Card
-      className={`relative ${showDismiss ? "pb-10" : ""} ${full ? "ring-2 ring-mint" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}`}
+      className={`relative ${showDismiss ? "pb-10" : ""} ${full ? "ring-2 ring-mint" : scheduleReinvite ? "ring-2 ring-gold/50" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}`}
     >
       {showDismiss ? (
         <button
@@ -184,6 +441,11 @@ function JobStaffingCard({
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
+            {scheduleReinvite ? (
+              <span className="rounded-full bg-gold/25 px-2.5 py-0.5 text-xs font-semibold text-ink ring-1 ring-inset ring-gold/40">
+                Re-invite cleaners
+              </span>
+            ) : null}
             {availabilityFollowUp ? (
               <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-800 ring-1 ring-inset ring-red-600/35">
                 Availability follow-up
@@ -197,6 +459,11 @@ function JobStaffingCard({
         <p className="mt-3 text-base font-medium">
           {draft ? "Draft" : `Headcount: ${confirmed} / ${job.headcountNeeded} confirmed`}
         </p>
+        {scheduleAttentionLines.map((line) => (
+          <p key={line} className="mt-2 text-sm font-semibold text-red-700">
+            {line}
+          </p>
+        ))}
         <ul className="mt-2 space-y-1 text-sm text-ink/80">
           {assignments.length === 0 && pendingCleaners.length === 0 ? <li>No cleaners assigned yet</li> : null}
           {pendingCleaners.map((cleaner) => (

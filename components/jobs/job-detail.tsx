@@ -36,7 +36,6 @@ import { seriesSummary } from "@/lib/mock/seed";
 import {
   arrivalChangeSms,
   arrivalMismatchText,
-  dateReinviteNeeded,
   earliestCleanerArrival,
   formatArrival,
   formatTimeLabel,
@@ -48,14 +47,15 @@ import {
   formatLongDate,
   formatScheduleFacts,
   assignmentNotifiesOnRemoval,
-  assignmentTracksCleanerNotification,
-  startTimeNoticeFlagText,
-  startTimeNoticeGap,
+  assignmentNeedsScheduleNotify,
+  assignmentScheduleNotifyIsDateChange,
+  cleanerScheduleAttentionKind,
+  scheduleChangeNoticeFlagText,
+  cleanerDateRescheduleInviteSms,
   cleanerStartTimeUpdateSms,
   assignmentPayPerPersonDetail,
   payLine,
   propertySizeLabel,
-  reinviteFlagText,
   serviceEmoji,
   cleanerRemovedFromJobSms,
   customerFirstNameForCleaner,
@@ -311,10 +311,12 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
               const cleaner = hub.cleaners.find((item) => item.cleanerId === assignment.cleanerId);
               if (!cleaner) return null;
               const declined = assignment.status === "DECLINED";
-              const gap = assignmentTracksCleanerNotification(assignment.status)
-                ? startTimeNoticeGap(assignment, assignment.lastNotified)
-                : false;
-              const showNotice = gap;
+              const showNotice = assignmentNeedsScheduleNotify(assignment, job.date);
+              const scheduleDateChange = assignmentScheduleNotifyIsDateChange(assignment, job.date);
+              const previousNotifiedDate =
+                assignment.notifiedServiceDate && assignment.notifiedServiceDate !== assignment.serviceDate
+                  ? assignment.notifiedServiceDate
+                  : undefined;
               const attentionMessage =
                 assignment.arrivalWindowStart && assignment.arrivalWindowEnd
                   ? liveAvailabilityAttentionMessage({
@@ -355,10 +357,12 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                           </span>
                         </div>
                         {showNotice ? (
-                          <p className="mt-2 text-sm font-semibold text-red-700">{startTimeNoticeFlagText(cleaner.firstName)}</p>
-                        ) : null}
-                        {dateReinviteNeeded(assignment, job.date) ? (
-                          <p className="mt-2 text-sm font-semibold text-red-700">{reinviteFlagText([cleaner.firstName])}</p>
+                          <p className="mt-2 text-sm font-semibold text-red-700">
+                            {scheduleChangeNoticeFlagText(
+                              cleaner.firstName,
+                              cleanerScheduleAttentionKind(assignment, job) ?? "time",
+                            )}
+                          </p>
                         ) : null}
                         {attentionMessage ? (
                           <p className="mt-2 text-sm font-semibold text-red-700">{attentionMessage}</p>
@@ -376,30 +380,42 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
                       <NotifyCleanerNotice
                         loading={notifyingAssignmentId === assignment.assignmentId}
                         disabled={!cleaner.mobilePhone || removalBusy}
+                        notifyLabel={scheduleDateChange ? "Send re-invite" : "Notify by text"}
+                        allowDismiss={!scheduleDateChange}
                         onNotify={() => {
                           if (!cleaner.mobilePhone) return;
                           setNotifyingAssignmentId(assignment.assignmentId);
-                          const body = cleanerStartTimeUpdateSms({
-                            cleanerFirstName: cleaner.firstName,
-                            customerFirstName: customerFirstNameForCleaner(job.snapshot),
-                            date: assignment.serviceDate,
-                            arrivalWindowStart: assignment.arrivalWindowStart,
-                            jobId: job.jobId,
-                          });
+                          const customerFirstName = customerFirstNameForCleaner(job.snapshot);
+                          const body = scheduleDateChange
+                            ? cleanerDateRescheduleInviteSms({
+                                cleanerFirstName: cleaner.firstName,
+                                customerFirstName,
+                                date: assignment.serviceDate,
+                                previousDate: previousNotifiedDate,
+                                arrivalWindowStart: assignment.arrivalWindowStart,
+                                jobId: job.jobId,
+                              })
+                            : cleanerStartTimeUpdateSms({
+                                cleanerFirstName: cleaner.firstName,
+                                customerFirstName,
+                                date: assignment.serviceDate,
+                                arrivalWindowStart: assignment.arrivalWindowStart,
+                                jobId: job.jobId,
+                              });
                           hub.queueSchedulingSms(
                             deliverSchedulingCleanerSms({
                               cleaner,
                               body,
-                              manualDetail: "start time update",
+                              manualDetail: scheduleDateChange ? "date reschedule re-invite" : "start time update",
                               assignmentLog: {
                                 assignmentId: assignment.assignmentId,
                                 jobId: job.jobId,
-                                kind: "start_time_update",
+                                kind: scheduleDateChange ? "invite" : "start_time_update",
                               },
                             })
                               .then(async (outcome) => {
                                 if (!outcome.manual) {
-                                  await hub.markAssignmentNotified(assignment.assignmentId);
+                                  await hub.markAssignmentScheduleNotified(assignment.assignmentId);
                                 }
                                 return outcome;
                               })
@@ -497,11 +513,15 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
 function NotifyCleanerNotice({
   loading = false,
   disabled = false,
+  notifyLabel = "Notify by text",
+  allowDismiss = true,
   onNotify,
   onDismiss,
 }: {
   loading?: boolean;
   disabled?: boolean;
+  notifyLabel?: string;
+  allowDismiss?: boolean;
   onNotify: () => void;
   onDismiss: () => void;
 }) {
@@ -513,16 +533,18 @@ function NotifyCleanerNotice({
         onClick={onNotify}
         className="flex min-h-10 w-full items-center justify-center whitespace-nowrap rounded-full px-3 text-sm font-semibold bg-ink text-white disabled:bg-ink/40"
       >
-        {loading ? "Sending…" : "Notify by text"}
+        {loading ? "Sending…" : notifyLabel}
       </button>
-      <button
-        type="button"
-        disabled={disabled || loading}
-        onClick={onDismiss}
-        className="self-start px-1 text-sm font-semibold text-ink/70 underline decoration-ink/40 decoration-2 underline-offset-4 disabled:text-ink/40"
-      >
-        Dismiss
-      </button>
+      {allowDismiss ? (
+        <button
+          type="button"
+          disabled={disabled || loading}
+          onClick={onDismiss}
+          className="self-start px-1 text-sm font-semibold text-ink/70 underline decoration-ink/40 decoration-2 underline-offset-4 disabled:text-ink/40"
+        >
+          Dismiss
+        </button>
+      ) : null}
     </div>
   );
 }

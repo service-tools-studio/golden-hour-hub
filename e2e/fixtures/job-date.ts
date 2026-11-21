@@ -6,6 +6,12 @@ export const e2eJobDate = addDays(todayInBusinessZone(), 1);
 /** Future date for flow tests (create customer → book → schedule). */
 export const e2eFutureJobDate = addDays(todayInBusinessZone(), 7);
 
+/** Keep in sync with `scripts/seed-e2e.ts` calendar import service dates. */
+export const e2eCalendarImportApproveDate = addDays(todayInBusinessZone(), 14);
+export const e2eCalendarImportDismissDate = addDays(todayInBusinessZone(), 15);
+export const e2eCalendarImportFreshDate = addDays(todayInBusinessZone(), 16);
+export const e2eCalendarImportReturningDate = addDays(todayInBusinessZone(), 17);
+
 /** Spread staffing specs so Ada is not double-booked at the same clock time. Keep in sync with `scripts/seed-e2e.ts` availability. */
 export const e2eStaffingDayOffsets = {
   Invite: 7,

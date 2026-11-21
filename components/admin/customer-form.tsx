@@ -7,7 +7,7 @@ import { useHub } from "@/components/hub-provider";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Field, PrimaryButton, ButtonLoadingLabel, fieldClass } from "@/components/ui";
 import { findCustomerByExactName, validateCustomerInput } from "@/lib/domain/customers";
-import { ADMIN_MARKET_FILTER_LABELS, MARKET_IDS, type MarketId } from "@/lib/domain/markets";
+import { ADMIN_MARKET_FILTER_LABELS, MARKET_IDS, isMarketId, type MarketId } from "@/lib/domain/markets";
 import type { Customer, Property } from "@/lib/domain/types";
 import { formatPhoneInput } from "@/lib/format";
 
@@ -15,6 +15,14 @@ function inputClass(invalid: boolean) {
   return invalid
     ? "min-h-12 w-full rounded-2xl border border-red-600 bg-white px-3 text-base text-ink outline-none focus:border-red-600"
     : fieldClass;
+}
+
+function displayContactField(stored: string, initial: string | undefined, format?: (value: string) => string): string {
+  const current = stored.trim();
+  if (current) return stored;
+  const seed = initial?.trim() ?? "";
+  if (!seed) return stored;
+  return format ? format(seed) : seed;
 }
 
 function StepGlyph({ direction }: { direction: "up" | "down" }) {
@@ -130,24 +138,60 @@ type PropertyDraft = {
   preferences: string;
 };
 
-function blankProperty(): PropertyDraft {
+export type CustomerFormPropertyHint = {
+  streetAddress?: string;
+  unit?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  marketId?: MarketId | string;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFeet?: number;
+};
+
+function applyPropertyHint(draft: PropertyDraft, hint?: CustomerFormPropertyHint): PropertyDraft {
+  if (!hint) return draft;
+  return {
+    ...draft,
+    streetAddress: hint.streetAddress?.trim() || draft.streetAddress,
+    unit: hint.unit?.trim() || draft.unit,
+    city: hint.city?.trim() || draft.city,
+    state: hint.state?.trim() || draft.state,
+    zip: hint.zip?.trim() || draft.zip,
+    marketId:
+      typeof hint.marketId === "string" && isMarketId(hint.marketId) ? hint.marketId : draft.marketId,
+    bedrooms: typeof hint.bedrooms === "number" ? hint.bedrooms : draft.bedrooms,
+    bathrooms: typeof hint.bathrooms === "number" ? hint.bathrooms : draft.bathrooms,
+    squareFeet: typeof hint.squareFeet === "number" ? hint.squareFeet : draft.squareFeet,
+  };
+}
+
+function blankProperty(hint?: CustomerFormPropertyHint): PropertyDraft {
+  const market =
+    typeof hint?.marketId === "string" && isMarketId(hint.marketId) ? hint.marketId : undefined;
   return {
     key: `new-${Math.random().toString(36).slice(2, 8)}`,
     label: "",
-    streetAddress: "",
-    unit: "",
-    city: "Portland",
-    state: "OR",
-    zip: "",
-    bedrooms: 0,
-    bathrooms: 0,
-    squareFeet: 0,
+    streetAddress: hint?.streetAddress?.trim() ?? "",
+    unit: hint?.unit?.trim() ?? "",
+    city: hint?.city?.trim() || "Portland",
+    state: hint?.state?.trim() || "OR",
+    zip: hint?.zip?.trim() ?? "",
+    marketId: market,
+    bedrooms: typeof hint?.bedrooms === "number" ? hint.bedrooms : 0,
+    bathrooms: typeof hint?.bathrooms === "number" ? hint.bathrooms : 0,
+    squareFeet: typeof hint?.squareFeet === "number" ? hint.squareFeet : 0,
     preferences: "",
   };
 }
 
-function draftsFor(customer: Customer | undefined, properties: Property[]): PropertyDraft[] {
-  if (!customer) return [blankProperty()];
+function draftsFor(
+  customer: Customer | undefined,
+  properties: Property[],
+  initialProperty?: CustomerFormPropertyHint,
+): PropertyDraft[] {
+  if (!customer) return [blankProperty(initialProperty)];
   const owned = properties.filter((item) => item.customerId === customer.customerId);
   if (owned.length === 0) return [blankProperty()];
   return owned.map((item) => ({
@@ -176,6 +220,10 @@ export function CustomerForm({
   customer,
   initialFirstName,
   initialLastName,
+  initialPhone,
+  initialEmail,
+  initialNotes,
+  initialProperty,
   scrollToPropertyId,
   onCancel,
   onSaved,
@@ -185,6 +233,10 @@ export function CustomerForm({
   customer?: Customer;
   initialFirstName?: string;
   initialLastName?: string;
+  initialPhone?: string;
+  initialEmail?: string;
+  initialNotes?: string;
+  initialProperty?: CustomerFormPropertyHint;
   scrollToPropertyId?: string | null;
   onCancel?: () => void;
   onSaved?: (customerId: string) => void;
@@ -200,11 +252,51 @@ export function CustomerForm({
   const [form, setForm] = useState({
     firstName: customer?.firstName ?? initialFirstName ?? "",
     lastName: customer?.lastName ?? initialLastName ?? "",
-    phone: customer ? formatPhoneInput(customer.phone) : "",
-    email: customer?.email ?? "",
-    notes: customer?.notes ?? "",
+    phone: customer
+      ? formatPhoneInput(customer.phone)
+      : initialPhone?.trim()
+        ? formatPhoneInput(initialPhone)
+        : "",
+    email: customer?.email ?? initialEmail?.trim() ?? "",
+    notes: customer?.notes ?? initialNotes?.trim() ?? "",
   });
-  const [properties, setProperties] = useState(() => draftsFor(customer, hub.properties));
+  const [properties, setProperties] = useState(() => draftsFor(customer, hub.properties, initialProperty));
+
+  useEffect(() => {
+    if (customer || !initialProperty) return;
+    const hasSize =
+      typeof initialProperty.bedrooms === "number" ||
+      typeof initialProperty.bathrooms === "number" ||
+      typeof initialProperty.squareFeet === "number";
+    const hasAddress = Boolean(initialProperty.streetAddress?.trim());
+    const hasUnit = Boolean(initialProperty.unit?.trim());
+    if (!hasSize && !hasAddress && !hasUnit) return;
+    setProperties((rows) => {
+      if (rows.length === 0) return [blankProperty(initialProperty)];
+      const nextFirst = applyPropertyHint(rows[0]!, initialProperty);
+      if (
+        nextFirst.bedrooms === rows[0]!.bedrooms &&
+        nextFirst.bathrooms === rows[0]!.bathrooms &&
+        nextFirst.squareFeet === rows[0]!.squareFeet &&
+        nextFirst.streetAddress === rows[0]!.streetAddress &&
+        nextFirst.unit === rows[0]!.unit
+      ) {
+        return rows;
+      }
+      return [nextFirst, ...rows.slice(1)];
+    });
+  }, [
+    customer,
+    initialProperty?.bedrooms,
+    initialProperty?.bathrooms,
+    initialProperty?.squareFeet,
+    initialProperty?.streetAddress,
+    initialProperty?.unit,
+    initialProperty?.city,
+    initialProperty?.state,
+    initialProperty?.zip,
+    initialProperty?.marketId,
+  ]);
 
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const initial = useRef({ form, properties });
@@ -213,8 +305,13 @@ export function CustomerForm({
 
   function liveForm() {
     const notes = notesRef.current?.value;
-    if (notes === undefined) return latest.current.form;
-    return { ...latest.current.form, notes };
+    const base = latest.current.form;
+    const merged = {
+      ...base,
+      email: base.email.trim() || initialEmail?.trim() || "",
+    };
+    if (notes === undefined) return merged;
+    return { ...merged, notes };
   }
 
   function clearError(field: string) {
@@ -535,7 +632,7 @@ export function CustomerForm({
                   onChange={(value) => updateProperty(property.key, { squareFeet: value })}
                 />
               </div>
-              <Field label="Preferences">
+              <Field label="Preferences (visible to the cleaner)">
                 <textarea
                   className={`${fieldClass} min-h-24 py-3`}
                   value={property.preferences}
@@ -572,9 +669,15 @@ export function CustomerForm({
         </div>
       </div>
       <Field id="customer-email" label="Email" error={fieldMessage("email")}>
-        <input className={inputClass(Boolean(fieldMessage("email")))} type="email" value={form.email} onChange={(event) => set("email", event.target.value)} aria-invalid={Boolean(fieldMessage("email"))} />
+        <input
+          className={inputClass(Boolean(fieldMessage("email")))}
+          type="email"
+          value={displayContactField(form.email, initialEmail)}
+          onChange={(event) => set("email", event.target.value)}
+          aria-invalid={Boolean(fieldMessage("email"))}
+        />
       </Field>
-      <Field id="customer-notes" label="Notes">
+      <Field id="customer-notes" label="Notes (not visible to the cleaner)">
         <textarea
           ref={notesRef}
           className={`${inputClass(false)} min-h-24 py-3`}

@@ -14,6 +14,7 @@ import {
   deleteJobOnHub,
   deleteSeriesOnHub,
   markAssignmentNotifiedOnHub,
+  markAssignmentScheduleNotifiedOnHub,
   moveAssignmentTimeOnHub,
   removeJobCleanerOnHub,
   saveCleanerDetailsOnHub,
@@ -270,6 +271,18 @@ export async function markAssignmentNotifiedAction(assignmentId: string): Promis
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("markAssignmentNotifiedAction failed.", error);
+    return { ok: false, message: "Could not update this assignment." };
+  }
+}
+
+export async function markAssignmentScheduleNotifiedAction(assignmentId: string): Promise<AdminHubActionResult> {
+  try {
+    await requireAdmin();
+    if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
+    return persistAdminHubApplier((hub) => markAssignmentScheduleNotifiedOnHub(hub, assignmentId));
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, message: error.message };
+    console.error("markAssignmentScheduleNotifiedAction failed.", error);
     return { ok: false, message: "Could not update this assignment." };
   }
 }

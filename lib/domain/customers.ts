@@ -104,6 +104,39 @@ export function findCustomerByExactName(
   );
 }
 
+/** True when a calendar title first name matches a stored name that includes a nickname (e.g. Nicolette vs Nicolette "Nicky"). */
+export function calendarImportFirstNameMatches(storedFirstName: string, eventFirstName: string): boolean {
+  const stored = normalizeSearchText(storedFirstName);
+  const eventFirst = normalizeSearchText(eventFirstName);
+  if (!stored || !eventFirst) return false;
+  if (stored === eventFirst) return true;
+  const storedLead = stored.split(" ")[0] ?? "";
+  if (storedLead === eventFirst) return true;
+  return stored.startsWith(`${eventFirst} `);
+}
+
+/**
+ * Match calendar parse names to a customer — exact first+last, or legal first name with nicknames in the profile.
+ */
+export function findCustomerByCalendarEventName(
+  customers: Customer[],
+  firstName: string,
+  lastName: string,
+  excludeCustomerId?: string,
+): Customer | undefined {
+  const exact = findCustomerByExactName(customers, firstName, lastName, excludeCustomerId);
+  if (exact) return exact;
+  const last = normalizeSearchText(lastName);
+  if (!normalizeSearchText(firstName) || !last) return undefined;
+  return customers.find(
+    (customer) =>
+      customer.status === "ACTIVE" &&
+      customer.customerId !== excludeCustomerId &&
+      normalizeSearchText(customer.lastName) === last &&
+      calendarImportFirstNameMatches(customer.firstName, firstName),
+  );
+}
+
 export function buildCustomerSearchKeys(input: {
   firstName: string;
   lastName: string;
@@ -244,6 +277,19 @@ export function snapshotVisit(customer: Customer, property: Property): JobCustom
   };
 }
 
+function customerNameMatchesSearchQuery(
+  firstNorm: string,
+  lastNorm: string,
+  nameKeys: string[],
+  text: string,
+): boolean {
+  if (!text) return false;
+  const full = `${firstNorm} ${lastNorm}`.trim();
+  const flipped = `${lastNorm} ${firstNorm}`.trim();
+  if (full.includes(text) || flipped.includes(text)) return true;
+  return nameKeys.some((key) => key.includes(text));
+}
+
 export function searchCustomers(customers: Customer[], properties: Property[], query: string): Customer[] {
   const trimmed = query.trim().toLowerCase();
   const active = customers.filter((customer) => customer.status === "ACTIVE");
@@ -253,13 +299,9 @@ export function searchCustomers(customers: Customer[], properties: Property[], q
   return active.filter((customer) => {
     const keys = buildCustomerSearchKeys(customer);
     const homes = properties.filter((property) => property.customerId === customer.customerId);
-    const textParts = text.split(" ").filter((part) => part.length > 0);
     const firstNorm = normalizeSearchText(customer.firstName);
     const lastNorm = normalizeSearchText(customer.lastName);
-    const nameMatch =
-      keys.nameKeys.some((key) => key.includes(text)) ||
-      (textParts.length >= 2 &&
-        textParts.every((part) => firstNorm.includes(part) || lastNorm.includes(part)));
+    const nameMatch = customerNameMatchesSearchQuery(firstNorm, lastNorm, keys.nameKeys, text);
     const addressMatch = homes.some(
       (property) =>
         normalizeSearchText(property.streetAddress).includes(text) ||

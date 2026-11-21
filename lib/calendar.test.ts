@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildIcs, eventFromSearchParams, googleCalendarUrl, icsDownloadPath, type CalendarEvent } from "./calendar.ts";
+import {
+  appleCalendarDayUrl,
+  buildIcs,
+  eventFromSearchParams,
+  googleCalendarUrl,
+  icsDownloadPath,
+  type CalendarEvent,
+} from "./calendar.ts";
 
 const event: CalendarEvent = {
   uid: "as-mariana-priya@goldenhourhub",
@@ -40,5 +47,13 @@ describe("calendar links", () => {
   it("builds a Google Calendar link with UTC dates", () => {
     const url = new URL(googleCalendarUrl(event));
     assert.equal(url.searchParams.get("dates"), "20261016T200000Z/20261017T003000Z");
+  });
+
+  it("builds an iOS calshow day link in the business timezone", () => {
+    const url = appleCalendarDayUrl({ date: "2026-11-28", time: "17:00" });
+    assert.match(url ?? "", /^calshow:\d+$/);
+    assert.equal(url, appleCalendarDayUrl({ date: "2026-11-28", time: "17:00" }));
+    assert.notEqual(url, appleCalendarDayUrl({ date: "2026-11-29", time: "17:00" }));
+    assert.equal(appleCalendarDayUrl({ date: "bad" }), null);
   });
 });

@@ -10,6 +10,7 @@ import {
 import type {
   AvailabilitySubmission,
   AvailabilityWindow,
+  CalendarImport,
   CleanerProfile,
   Customer,
   DayOfWeek,
@@ -31,6 +32,7 @@ export type HubData = {
   availability: AvailabilityWindow[];
   submissions: AvailabilitySubmission[];
   contractorQuestionnaireSubmissions: ContractorQuestionnaireSubmissionRecord[];
+  calendarImports: CalendarImport[];
 };
 
 export function emptyHub(today: string): HubData {
@@ -45,6 +47,7 @@ export function emptyHub(today: string): HubData {
     availability: [],
     submissions: [],
     contractorQuestionnaireSubmissions: [],
+    calendarImports: [],
   };
 }
 
@@ -245,6 +248,7 @@ export function buildSeed(today: string): HubData {
     jobs: generated.jobs,
     assignments: generated.assignments,
     contractorQuestionnaireSubmissions: [],
+    calendarImports: [],
   };
 }
 

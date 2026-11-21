@@ -45,7 +45,7 @@ export function EstimatedDurationPicker({
         className={`${fieldClass} flex items-center justify-between gap-2 text-left`}
       >
         <span className={value === null ? "text-ink/45" : undefined}>
-          {value === null ? "None" : formatDurationSelectLabel(value)}
+          {value === null ? "No estimate" : formatDurationSelectLabel(value)}
         </span>
         <ChevronDown className="shrink-0 text-ink/45" />
       </button>

@@ -18,6 +18,7 @@ import {
   cleanerInvitationPayLines,
 } from "./domain/pay-copy";
 import { assignmentScheduleNoticeInSync, assignmentStartTimeOutOfSync } from "./domain/arrival";
+import { cleanerScheduleAttentionKind, dateReinviteNeeded } from "./domain/schedule-reinvite.ts";
 import { cleaningTimeSpan } from "./domain/availability";
 import { cleanerHubSmsLink } from "./site-metadata.ts";
 import { calculateBlockedRange, cleaningCoverage, type AssignmentSchedule } from "./domain/scheduling";
@@ -375,7 +376,70 @@ export function startTimeNoticeFlagText(firstName: string): string {
   return `${firstName} has not been notified of the updated start time.`;
 }
 
-/** Twilio text when only the assignment start time changed. */
+/** Job detail flag when the service date changed since the last text. */
+export function scheduleDateReinviteFlagText(firstName: string): string {
+  return `${firstName} needs to be reinvited for the new date.`;
+}
+
+/** Job detail flag when only the start time changed (same day). */
+export function scheduleTimeNotifyFlagText(firstName: string): string {
+  return `${firstName} needs to be notified of the new time.`;
+}
+
+export function scheduleChangeNoticeFlagText(
+  firstName: string,
+  kind: "date" | "time",
+): string {
+  return kind === "date" ? scheduleDateReinviteFlagText(firstName) : scheduleTimeNotifyFlagText(firstName);
+}
+
+export function assignmentScheduleNotifyIsDateChange(
+  assignment: Pick<JobAssignment, "status" | "serviceDate" | "notifiedServiceDate">,
+  jobDate: string,
+): boolean {
+  return dateReinviteNeeded(assignment, jobDate);
+}
+
+export function assignmentNeedsScheduleNotify(
+  assignment: Pick<
+    JobAssignment,
+    | "status"
+    | "serviceDate"
+    | "notifiedServiceDate"
+    | "lastNotified"
+    | "arrivalWindowStart"
+    | "arrivalWindowEnd"
+    | "expectedDurationMinutes"
+    | "proposedCrewSize"
+    | "payType"
+    | "payPerPersonCents"
+  >,
+  jobDate: string,
+): boolean {
+  if (!assignmentTracksCleanerNotification(assignment.status)) return false;
+  if (dateReinviteNeeded(assignment, jobDate)) return true;
+  return startTimeNoticeGap(assignment, assignment.lastNotified);
+}
+
+/** Twilio text when the cleaning moved to a new service date — cleaner must accept again. */
+export function cleanerDateRescheduleInviteSms(input: {
+  cleanerFirstName: string;
+  customerFirstName: string;
+  date: string;
+  previousDate?: string;
+  arrivalWindowStart?: string;
+  jobId?: string;
+  appUrl?: string;
+}): string {
+  const timeLabel = input.arrivalWindowStart ? ` at ${formatTimeLabel(input.arrivalWindowStart)}` : "";
+  const link = input.appUrl ?? cleanerHubSmsLink(input.jobId ? `/cleaner/jobs/${input.jobId}` : "/cleaner");
+  const moveLine = input.previousDate
+    ? `Your cleaning for ${input.customerFirstName} was moved from ${formatLongDate(input.previousDate)} to ${formatLongDate(input.date)}${timeLabel}.`
+    : `Your cleaning for ${input.customerFirstName} was moved to ${formatLongDate(input.date)}${timeLabel}.`;
+  return `Hi ${input.cleanerFirstName}! Golden Hour Hub here.\n\n${moveLine} Please accept or decline in the Hub: ${link}`;
+}
+
+/** Twilio text when only the assignment start time changed (same day). */
 export function cleanerStartTimeUpdateSms(input: {
   cleanerFirstName: string;
   customerFirstName: string;
@@ -389,23 +453,60 @@ export function cleanerStartTimeUpdateSms(input: {
   return `Hi ${input.cleanerFirstName}! Golden Hour Hub here.\n\nYour cleaning for ${input.customerFirstName} on ${formatLongDate(input.date)} has an updated start time of ${timeLabel}.\n\nDetails for this cleaning are in the Hub: ${link}`;
 }
 
-export function dateReinviteNeeded(
-  assignment: Pick<JobAssignment, "status" | "serviceDate" | "notifiedServiceDate">,
-  date: string,
-): boolean {
-  if (assignment.status !== "INVITED" && assignment.status !== "CONFIRMED") return false;
-  return date !== (assignment.notifiedServiceDate ?? assignment.serviceDate);
+export {
+  cleanerNeedsScheduleReinvite,
+  cleanerScheduleAttentionKind,
+  dateReinviteNeeded,
+  jobHasCleanerScheduleReinvite,
+} from "./domain/schedule-reinvite.ts";
+
+function cleanerFirstNameList(firstNames: string[]): string | null {
+  if (firstNames.length === 0) return null;
+  return firstNames.length === 1
+    ? firstNames[0]
+    : firstNames.length === 2
+      ? `${firstNames[0]} and ${firstNames[1]}`
+      : `${firstNames.slice(0, -1).join(", ")}, and ${firstNames[firstNames.length - 1]}`;
 }
 
-export function reinviteFlagText(firstNames: string[]): string | null {
-  if (firstNames.length === 0) return null;
-  const list =
-    firstNames.length === 1
-      ? firstNames[0]
-      : firstNames.length === 2
-        ? `${firstNames[0]} and ${firstNames[1]}`
-        : `${firstNames.slice(0, -1).join(", ")}, and ${firstNames[firstNames.length - 1]}`;
+export function cleanerDateReinviteFlagText(firstNames: string[]): string | null {
+  const list = cleanerFirstNameList(firstNames);
+  if (!list) return null;
   return `${list} ${firstNames.length === 1 ? "needs" : "need"} to be reinvited for the new date.`;
+}
+
+export function cleanerTimeNotifyFlagText(firstNames: string[]): string | null {
+  const list = cleanerFirstNameList(firstNames);
+  if (!list) return null;
+  return `${list} ${firstNames.length === 1 ? "needs" : "need"} to be notified of the new time.`;
+}
+
+/** @deprecated Use cleanerDateReinviteFlagText / cleanerTimeNotifyFlagText. */
+export function reinviteFlagText(firstNames: string[]): string | null {
+  return cleanerDateReinviteFlagText(firstNames);
+}
+
+export function jobScheduleAttentionFlagLines(
+  job: Pick<Job, "jobId" | "date" | "arrivalWindowStart">,
+  assignments: JobAssignment[],
+  cleanerFirstName: (cleanerId: string) => string | undefined,
+): string[] {
+  const dateNames: string[] = [];
+  const timeNames: string[] = [];
+  for (const assignment of assignments) {
+    if (assignment.jobId !== job.jobId) continue;
+    const kind = cleanerScheduleAttentionKind(assignment, job);
+    const name = cleanerFirstName(assignment.cleanerId);
+    if (!kind || !name) continue;
+    if (kind === "date") dateNames.push(name);
+    else timeNames.push(name);
+  }
+  const lines: string[] = [];
+  const dateLine = cleanerDateReinviteFlagText(dateNames);
+  const timeLine = cleanerTimeNotifyFlagText(timeNames);
+  if (dateLine) lines.push(dateLine);
+  if (timeLine) lines.push(timeLine);
+  return lines;
 }
 
 export function arrivalMismatchText(scheduledTime: string, firstName: string, arrivalTime: string): string {

@@ -35,5 +35,6 @@ export function hubDataForCleaner(hub: HubData, cleanerId: string): HubData {
     availability: hub.availability.filter((window) => window.cleanerId === cleanerId),
     submissions: hub.submissions.filter((submission) => submission.cleanerId === cleanerId),
     contractorQuestionnaireSubmissions: [],
+    calendarImports: [],
   };
 }

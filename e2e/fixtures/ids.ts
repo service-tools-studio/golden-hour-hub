@@ -8,12 +8,28 @@ export const E2E = {
   propertyPhoenix: "e2e-phx-property",
   jobPortland: "e2e-pdx-job",
   jobPhoenix: "e2e-phx-job",
+  customerReturning: "e2e-returning-customer",
+  propertyReturning: "e2e-returning-property",
+  jobReturningScheduled: "e2e-returning-scheduled",
   /** Phoenix draft without cleaners — assign-cleaner specs mutate this job only. */
   jobPhoenixAssign: "e2e-phx-assign",
+  customerFresh: "e2e-fresh-customer",
+  propertyFresh: "e2e-fresh-property",
+  /** Gmail / calendar import rows (see scripts/seed-e2e.ts). */
+  calImportPortlandApprove: "e2e-cal-pdx-approve",
+  calImportDismiss: "e2e-cal-dismiss",
+  calImportFresh: "e2e-cal-fresh",
+  calImportReturning: "e2e-cal-returning",
+  gcalEventPortlandApprove: "e2e-gcal-pdx-approve",
+  gcalEventDismiss: "e2e-gcal-dismiss",
+  gcalEventFresh: "e2e-gcal-fresh",
+  gcalEventReturning: "e2e-gcal-returning",
   labels: {
     portlandCustomer: "E2E Portland",
     phoenixCustomer: "E2E Phoenix",
     portlandCleaner: "Ada E2E",
     phoenixCleaner: "Rio E2E",
+    freshCustomer: "E2E Fresh",
+    returningCustomer: "E2E Returning",
   },
 } as const;

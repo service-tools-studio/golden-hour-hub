@@ -11,6 +11,7 @@ export type HubPatchRemove = {
   availabilityIds?: string[];
   submissionKeys?: string[];
   questionnaireSubmissionIds?: string[];
+  calendarImportIds?: string[];
 };
 
 export type MergeHubPatchOptions = {
@@ -87,6 +88,7 @@ function applyRemoves(current: HubData, remove?: HubPatchRemove): HubData {
   const availabilityIds = new Set(remove.availabilityIds ?? []);
   const submissionKeys = new Set(remove.submissionKeys ?? []);
   const questionnaireSubmissionIds = new Set(remove.questionnaireSubmissionIds ?? []);
+  const calendarImportIds = new Set(remove.calendarImportIds ?? []);
   return {
     ...current,
     customers: customerIds.size ? current.customers.filter((item) => !customerIds.has(item.customerId)) : current.customers,
@@ -108,6 +110,9 @@ function applyRemoves(current: HubData, remove?: HubPatchRemove): HubData {
     contractorQuestionnaireSubmissions: questionnaireSubmissionIds.size
       ? current.contractorQuestionnaireSubmissions.filter((item) => !questionnaireSubmissionIds.has(item.submissionId))
       : current.contractorQuestionnaireSubmissions,
+    calendarImports: calendarImportIds.size
+      ? current.calendarImports.filter((item) => !calendarImportIds.has(item.importId))
+      : current.calendarImports,
   };
 }
 
@@ -131,7 +136,8 @@ function hasPatchData(patch: HubData): boolean {
     patch.assignments.length > 0 ||
     patch.availability.length > 0 ||
     patch.submissions.length > 0 ||
-    patch.contractorQuestionnaireSubmissions.length > 0
+    patch.contractorQuestionnaireSubmissions.length > 0 ||
+    patch.calendarImports.length > 0
   );
 }
 
@@ -156,6 +162,7 @@ export function hubMutationPatch(
       after.contractorQuestionnaireSubmissions,
       (item) => item.submissionId,
     ),
+    calendarImports: changedRows(before.calendarImports, after.calendarImports, (item) => item.importId),
   };
   const remove = compactRemove({
     jobIds: removedIds(before.jobs, after.jobs, (item) => item.jobId),
@@ -171,6 +178,7 @@ export function hubMutationPatch(
       after.contractorQuestionnaireSubmissions,
       (item) => item.submissionId,
     ),
+    calendarImportIds: removedIds(before.calendarImports, after.calendarImports, (item) => item.importId),
   });
   return { patch, remove };
 }
@@ -213,6 +221,7 @@ export function mergeHubPatchIntoHub(
       patch.contractorQuestionnaireSubmissions,
       "submissionId",
     ),
+    calendarImports: mergeById(base.calendarImports, patch.calendarImports, "importId"),
   };
 }
 
