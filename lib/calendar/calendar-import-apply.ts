@@ -9,7 +9,7 @@ import {
   syncedCalendarImportSpecialInstructions,
   findExistingJobForCalendarImport,
   parseGoogleCalendarEvent,
-  resolveCalendarImportCustomerLink,
+  suggestCustomerForCalendarImport,
 } from "../domain/calendar-import.ts";
 import type { CalendarImport } from "../domain/types.ts";
 import {
@@ -202,11 +202,11 @@ export async function applyCalendarEventsToHub(
       continue;
     }
 
-    const customerLink = resolveCalendarImportCustomerLink(workingHub.customers, workingHub.properties, {
-      parsed: parsed.fields.parsed,
-      raw: parsed.fields.raw,
-      specialInstructions: parsed.fields.specialInstructions,
-    });
+    const suggestions = suggestCustomerForCalendarImport(
+      workingHub.customers,
+      parsed.fields.parsed,
+      workingHub.properties,
+    );
     const matchedJob = findExistingJobForCalendarImport(
       workingHub.jobs,
       workingHub.customers,
@@ -214,8 +214,8 @@ export async function applyCalendarEventsToHub(
       {
         googleCalendarEventId: eventId,
         serviceDate: parsed.fields.serviceDate,
-        suggestedCustomerId: customerLink.customerId,
-        suggestedPropertyId: customerLink.propertyId,
+        suggestedCustomerId: suggestions.customerId ?? existing?.suggestedCustomerId,
+        suggestedPropertyId: suggestions.propertyId ?? existing?.suggestedPropertyId,
         parsed: parsed.fields.parsed,
       },
     );
@@ -226,7 +226,7 @@ export async function applyCalendarEventsToHub(
         expectedDurationMinutes: _eventDuration,
         ...syncedFields
       } = parsed.fields;
-      const suggestedCustomerId = customerLink.customerId;
+      const suggestedCustomerId = suggestions.customerId ?? existing.suggestedCustomerId;
       const linkedJobId = matchedJob?.jobId ?? existing.matchedJobId ?? existing.approvedJobId;
       const next: CalendarImport = {
         ...existing,
@@ -244,7 +244,7 @@ export async function applyCalendarEventsToHub(
         ),
         expectedDurationMinutes: calendarImportPreservedDurationMinutes(existing, event),
         suggestedCustomerId,
-        suggestedPropertyId: customerLink.propertyId,
+        suggestedPropertyId: suggestions.propertyId ?? existing.suggestedPropertyId,
         matchedJobId: existing.matchedJobId?.trim() || linkedJobId,
         approvedJobId: existing.approvedJobId,
         status: "PENDING_REVIEW",
@@ -262,13 +262,13 @@ export async function applyCalendarEventsToHub(
       ...parsed.fields,
       serviceType: calendarImportDefaultServiceType(
         parsed.fields.serviceType,
-        customerLink.customerId,
+        suggestions.customerId,
         workingHub.customers,
         workingHub.jobs,
       ),
       status: "PENDING_REVIEW",
-      suggestedCustomerId: customerLink.customerId,
-      suggestedPropertyId: customerLink.propertyId,
+      suggestedCustomerId: suggestions.customerId,
+      suggestedPropertyId: suggestions.propertyId,
       matchedJobId: matchedJob?.jobId,
       createdAt: now,
       updatedAt: now,
