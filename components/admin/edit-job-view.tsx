@@ -155,6 +155,30 @@ function cleaningArrivalForForm(
   return defaultArrival(windows, jobStart) ?? null;
 }
 
+/** Prefer saved cleaner row over client visit time when staffing a specific person. */
+function staffingArrivalForForm(
+  row: { arrivalWindowStart?: string; arrivalWindowEnd?: string } | undefined,
+  job: Job | undefined,
+  windows: { start: string; end: string }[],
+  jobStart: string | undefined,
+): { start: string; end: string } {
+  if (row && !isUnsetArrival(row.arrivalWindowStart, row.arrivalWindowEnd)) {
+    return { start: row.arrivalWindowStart!, end: row.arrivalWindowEnd! };
+  }
+  const fromVisit = cleaningArrivalForForm(job, windows, jobStart);
+  if (fromVisit) return fromVisit;
+  const fallback = defaultArrival(windows, jobStart);
+  return { start: fallback?.start ?? "", end: fallback?.end ?? "" };
+}
+
+function staffingDurationForForm(
+  row: { expectedDurationMinutes?: number } | undefined,
+  job: Job | undefined,
+): number | null {
+  if (row) return initialDurationMinutes(row.expectedDurationMinutes);
+  return initialDurationMinutes(job?.expectedDurationMinutes);
+}
+
 function cleaningStart(
   job: Job | undefined,
   hub: Pick<ReturnType<typeof useHub>, "series" | "assignments" | "cleaners">,
@@ -318,20 +342,13 @@ export function EditJobView({
       : undefined,
   );
   const jobStart = cleaningStart(job, hub, assignment?.cleanerId ?? "");
-  const cleaningArrival = cleaningArrivalForForm(job, arrivalWindows, jobStart);
-  const initialArrival = defaultArrival(arrivalWindows, jobStart);
-  const [arrivalStart, setArrivalStart] = useState(
-    cleaningArrival?.start ?? assignment?.arrivalWindowStart ?? initialArrival?.start ?? "",
-  );
-  const [arrivalEnd, setArrivalEnd] = useState(
-    cleaningArrival?.end ?? assignment?.arrivalWindowEnd ?? initialArrival?.end ?? "",
-  );
+  const staffingArrival = staffingArrivalForForm(assignment, job, arrivalWindows, jobStart);
+  const [arrivalStart, setArrivalStart] = useState(staffingArrival.start);
+  const [arrivalEnd, setArrivalEnd] = useState(staffingArrival.end);
   const [arrivalStartTbd, setArrivalStartTbd] = useState(
     assignmentStartTbdDefault(job, assignment?.arrivalWindowStart, assignment?.arrivalWindowEnd),
   );
-  const [duration, setDuration] = useState<number | null>(
-    initialDurationMinutes(assignment?.expectedDurationMinutes ?? job?.expectedDurationMinutes),
-  );
+  const [duration, setDuration] = useState<number | null>(staffingDurationForForm(assignment, job));
   const initialCrew = assignment?.confirmedCrewSize ?? assignment?.proposedCrewSize ?? 1;
   const [crew, setCrew] = useState(initialCrew);
   const [payType, setPayType] = useState<PayType>(assignment?.payType ?? DEFAULT_PAY_TYPE);
@@ -894,20 +911,13 @@ function DraftStaffingForm({ jobId, cleanerId, from }: { jobId: string; cleanerI
       : undefined,
   );
   const jobStart = cleaningStart(job, hub, cleanerId);
-  const cleaningArrival = cleaningArrivalForForm(job, windows, jobStart);
-  const initialArrival = defaultArrival(windows, jobStart);
-  const [arrivalStart, setArrivalStart] = useState(
-    cleaningArrival?.start ?? savedDetail?.arrivalWindowStart ?? initialArrival?.start ?? "",
-  );
-  const [arrivalEnd, setArrivalEnd] = useState(
-    cleaningArrival?.end ?? savedDetail?.arrivalWindowEnd ?? initialArrival?.end ?? "",
-  );
+  const staffingArrival = staffingArrivalForForm(savedDetail, job, windows, jobStart);
+  const [arrivalStart, setArrivalStart] = useState(staffingArrival.start);
+  const [arrivalEnd, setArrivalEnd] = useState(staffingArrival.end);
   const [arrivalStartTbd, setArrivalStartTbd] = useState(
     assignmentStartTbdDefault(job, savedDetail?.arrivalWindowStart, savedDetail?.arrivalWindowEnd),
   );
-  const [duration, setDuration] = useState<number | null>(
-    initialDurationMinutes(savedDetail?.expectedDurationMinutes ?? job?.expectedDurationMinutes),
-  );
+  const [duration, setDuration] = useState<number | null>(staffingDurationForForm(savedDetail, job));
   const initialDraftCrew = savedDetail?.proposedCrewSize ?? usualCrew;
   const [crew, setCrew] = useState(initialDraftCrew);
   const [payType, setPayType] = useState<PayType>(savedDetail?.payType ?? DEFAULT_PAY_TYPE);

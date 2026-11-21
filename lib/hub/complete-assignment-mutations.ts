@@ -80,31 +80,6 @@ function withEarliestArrival(job: Job, _assignments: JobAssignment[]): Job {
   return job;
 }
 
-function jobWithCleaningArrival(job: Job, arrivalWindowStart: string, arrivalWindowEnd: string, now: string): Job {
-  return {
-    ...job,
-    arrivalWindowStart,
-    arrivalWindowEnd,
-    updatedAt: now,
-    updatedBy: "kelsey",
-  };
-}
-
-function syncJobAssignmentsToCleaningArrival(
-  assignments: JobAssignment[],
-  jobId: string,
-  arrivalWindowStart: string,
-  arrivalWindowEnd: string,
-  now: string,
-): JobAssignment[] {
-  return assignments.map((item) => {
-    if (item.jobId !== jobId) return item;
-    if (item.status === "CANCELED" || item.status === "EXPIRED_JOB_FILLED") return item;
-    if (item.arrivalWindowStart === arrivalWindowStart && item.arrivalWindowEnd === arrivalWindowEnd) return item;
-    return { ...item, arrivalWindowStart, arrivalWindowEnd, updatedAt: now };
-  });
-}
-
 function assignmentSavedMessage(
   cleaner: CleanerProfile,
   assignment: Pick<JobAssignment, "status" | "attentionReason">,
@@ -285,19 +260,7 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
       };
       return nextItem;
     });
-    if (arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined) {
-      nextAssignments = syncJobAssignmentsToCleaningArrival(
-        nextAssignments,
-        job.jobId,
-        arrivalTimes.arrivalWindowStart,
-        arrivalTimes.arrivalWindowEnd,
-        now,
-      );
-    }
-    const nextJob =
-      arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined
-        ? jobWithCleaningArrival(job, arrivalTimes.arrivalWindowStart, arrivalTimes.arrivalWindowEnd, now)
-        : { ...job, updatedAt: now, updatedBy: "kelsey" };
+    const nextJob = { ...job, updatedAt: now, updatedBy: "kelsey" };
     const next = withEarliestArrival(nextJob, nextAssignments);
     const savedMessage =
       existing.status === "INVITED" ||
@@ -376,25 +339,14 @@ export function completeAssignmentOnHub(hub: HubData, input: CompleteAssignmentI
   let nextAssignments = existing
     ? hub.assignments.map((item) => (item.assignmentId === existing.assignmentId ? savedAssignment : item))
     : [...hub.assignments, savedAssignment];
-  if (arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined) {
-    nextAssignments = syncJobAssignmentsToCleaningArrival(
-      nextAssignments,
-      job.jobId,
-      arrivalTimes.arrivalWindowStart,
-      arrivalTimes.arrivalWindowEnd,
-      now,
-    );
-  }
-  const scheduledJob = {
+  const nextJob = {
     ...job,
     draftCleanerIds: (job.draftCleanerIds ?? []).filter((id) => id !== cleaner.cleanerId),
     draftCleanerDetails: (job.draftCleanerDetails ?? []).filter((item) => item.cleanerId !== cleaner.cleanerId),
     status: "SCHEDULED" as const,
+    updatedAt: now,
+    updatedBy: "kelsey",
   };
-  const nextJob =
-    arrivalTimes.arrivalWindowStart !== undefined && arrivalTimes.arrivalWindowEnd !== undefined
-      ? jobWithCleaningArrival(scheduledJob, arrivalTimes.arrivalWindowStart, arrivalTimes.arrivalWindowEnd, now)
-      : { ...scheduledJob, updatedAt: now, updatedBy: "kelsey" };
   const next = withEarliestArrival(nextJob, nextAssignments);
   let assignments = nextAssignments;
   if (savedAssignment.status === "CONFIRMED") {
