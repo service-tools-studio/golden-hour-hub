@@ -1,3 +1,8 @@
+import { isValidDate, isValidLocalTime, zonedToUtc } from "./domain/time.ts";
+
+/** Jan 1, 2001 00:00:00 UTC — `calshow:` reference instant on iOS. */
+const APPLE_CALENDAR_REFERENCE_MS = Date.UTC(2001, 0, 1, 0, 0, 0);
+
 export type CalendarEvent = {
   uid: string;
   title: string;
@@ -93,6 +98,19 @@ export function googleCalendarUrl(event: CalendarEvent): string {
     details: event.notes,
   });
   return `https://calendar.google.com/calendar/render?${params}`;
+}
+
+/**
+ * Opens Apple Calendar on iPhone/iPad (and often macOS) to the day around `date`.
+ * Uses the business-timezone arrival time when provided; otherwise 9:00 AM local.
+ */
+export function appleCalendarDayUrl(input: { date: string; time?: string }): string | null {
+  if (!isValidDate(input.date)) return null;
+  const time = input.time?.trim() && isValidLocalTime(input.time) ? input.time.trim() : "09:00";
+  const instant = zonedToUtc(input.date, time);
+  if (Number.isNaN(instant.getTime())) return null;
+  const seconds = Math.floor((instant.getTime() - APPLE_CALENDAR_REFERENCE_MS) / 1000);
+  return `calshow:${seconds}`;
 }
 
 export function outlookCalendarUrl(event: CalendarEvent): string {

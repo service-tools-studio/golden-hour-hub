@@ -20,6 +20,7 @@ import {
   normalizeCalendarEventTitle,
   resolveCalendarImportMatchedJobId,
 } from "@/lib/domain/calendar-import";
+import { appleCalendarDayUrl } from "@/lib/calendar";
 import type { ServiceType } from "@/lib/domain/types";
 import { formatLongDate, serviceLabel } from "@/lib/format";
 
@@ -117,6 +118,10 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     formatCalendarImportAddress(mergedHints) ||
     (active.raw.location?.trim() ? active.raw.location.trim() : undefined);
   const rawEventDetails = calendarImportRawEventDetailsText(active.raw);
+  const iphoneCalendarDayHref = appleCalendarDayUrl({
+    date: serviceDate,
+    time: arrivalStartTbd ? undefined : arrivalStart || undefined,
+  });
 
   function draftInput() {
     const arrival = arrivalStartTbd
@@ -248,9 +253,9 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
               </SecondaryButton>
             </div>
           )}
-          {active.raw.htmlLink ? (
-            <a href={active.raw.htmlLink} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-semibold underline">
-              Open in Google Calendar
+          {iphoneCalendarDayHref ? (
+            <a href={iphoneCalendarDayHref} className="mt-2 inline-block text-sm font-semibold underline">
+              Open in iPhone Calendar
             </a>
           ) : null}
         </div>
