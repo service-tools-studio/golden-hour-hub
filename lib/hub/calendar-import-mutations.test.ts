@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { reopenCalendarImportOnHub } from "./calendar-import-mutations.ts";
+import { rejectCalendarImportOnHub, reopenCalendarImportOnHub } from "./calendar-import-mutations.ts";
 import type { CalendarImport } from "../domain/types.ts";
 import { emptyHub } from "../mock/seed.ts";
 
@@ -62,5 +62,17 @@ describe("reopenCalendarImportOnHub", () => {
     assert.equal(result.ok, false);
     if (result.ok) return;
     assert.match(result.message, /already waiting/i);
+  });
+});
+
+describe("rejectCalendarImportOnHub", () => {
+  it("dismisses WITHDRAWN sync-removed imports", () => {
+    const hub = { ...emptyHub("2026-11-20"), calendarImports: [stubImport({ status: "WITHDRAWN" })] };
+    const result = rejectCalendarImportOnHub(hub, "calimp-1");
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const row = result.hub.calendarImports[0];
+    assert.equal(row?.status, "REJECTED");
+    assert.equal(row?.rejectedReason, "Dismissed after sync removal");
   });
 });

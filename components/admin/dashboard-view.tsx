@@ -59,8 +59,9 @@ export function DashboardView() {
   const [dismissingImportId, setDismissingImportId] = useState<string | null>(null);
   const [reopeningImportId, setReopeningImportId] = useState<string | null>(null);
   const [notifyingImportId, setNotifyingImportId] = useState<string | null>(null);
+  const [showSyncRemoved, setShowSyncRemoved] = useState(false);
   const [showRecentlyDismissed, setShowRecentlyDismissed] = useState(false);
-  const recentlyDismissedRef = useRef<HTMLDivElement>(null);
+  const syncRemovedRef = useRef<HTMLDivElement>(null);
 
   async function dismissCalendarImport(importId: string) {
     setDismissingImportId(importId);
@@ -138,7 +139,7 @@ export function DashboardView() {
     hub.calendarImports,
     viewingToday,
     marketFilter,
-  );
+  ).filter((item) => item.status === "REJECTED");
   const syncRemoved = visibleRecentlySyncRemovedCalendarImports(
     hub.calendarImports,
     viewingToday,
@@ -146,10 +147,58 @@ export function DashboardView() {
   );
 
   function reviewSyncRemovedImports() {
-    setShowRecentlyDismissed(true);
+    setShowSyncRemoved(true);
     requestAnimationFrame(() => {
-      recentlyDismissedRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      syncRemovedRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
+  }
+
+  function renderRecoverableImportCard(
+    item: CalendarImport,
+    statusLabel: string,
+    options?: { showDismiss?: boolean },
+  ) {
+    const reopening = reopeningImportId === item.importId;
+    const dismissing = dismissingImportId === item.importId;
+    const rowBusy = reopeningImportId !== null || dismissingImportId !== null;
+    return (
+      <Card key={item.importId} className="bg-cream/60">
+        <Link href={`/admin/calendar-imports/${item.importId}`} className="block">
+          <p className="text-base font-semibold">
+            {normalizeCalendarEventTitle(item.raw.title) ||
+              [item.parsed.suggestedFirstName, item.parsed.suggestedLastName].filter(Boolean).join(" ") ||
+              "Calendar event"}
+          </p>
+          <p className="text-sm text-ink/70">
+            {formatLongDate(item.serviceDate)}
+            {item.arrivalWindowStart ? ` · ${formatTimeLabel(item.arrivalWindowStart)}` : null}
+          </p>
+          <p className="mt-1 text-xs text-ink/50">
+            {statusLabel} {relativeDay(item.updatedAt.slice(0, 10), viewingToday)}
+          </p>
+        </Link>
+        <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-ink/8 pt-3">
+          {options?.showDismiss ? (
+            <button
+              type="button"
+              disabled={rowBusy}
+              onClick={() => void dismissCalendarImport(item.importId)}
+              className="min-h-10 rounded-xl px-3 text-sm font-semibold text-ink underline decoration-ink/25 underline-offset-2 disabled:opacity-50"
+            >
+              {dismissing ? "Dismissing…" : "Dismiss"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={rowBusy}
+            onClick={() => void reopenDismissedImport(item.importId)}
+            className="min-h-10 rounded-xl bg-ink px-3 text-sm font-semibold text-cream disabled:opacity-50"
+          >
+            {reopening ? "Reopening…" : "Reopen for review"}
+          </button>
+        </div>
+      </Card>
+    );
   }
 
   async function reopenDismissedImport(importId: string, options?: { refreshFromGmail?: boolean }) {
@@ -428,52 +477,37 @@ export function DashboardView() {
                 <p className="text-base text-ink/70">No pending Gmail imports. Use Check Gmail to refresh from the calendar.</p>
               </Card>
             )}
+            {syncRemoved.length > 0 ? (
+              <div ref={syncRemovedRef} className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSyncRemoved((open) => !open)}
+                  className="flex w-full items-center justify-between gap-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-ink/45"
+                  aria-expanded={showSyncRemoved}
+                >
+                  <span>Removed by sync ({syncRemoved.length})</span>
+                  <span className="text-ink/35 normal-case tracking-normal">{showSyncRemoved ? "Hide" : "Show"}</span>
+                </button>
+                {showSyncRemoved
+                  ? syncRemoved.map((item) =>
+                      renderRecoverableImportCard(item, "Removed by sync", { showDismiss: true }),
+                    )
+                  : null}
+              </div>
+            ) : null}
             {recentlyDismissed.length > 0 ? (
-              <div ref={recentlyDismissedRef} className="space-y-2 pt-2">
+              <div className="space-y-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowRecentlyDismissed((open) => !open)}
                   className="flex w-full items-center justify-between gap-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-ink/45"
                   aria-expanded={showRecentlyDismissed}
                 >
-                  <span>Recently dismissed / removed ({recentlyDismissed.length})</span>
+                  <span>Recently dismissed ({recentlyDismissed.length})</span>
                   <span className="text-ink/35 normal-case tracking-normal">{showRecentlyDismissed ? "Hide" : "Show"}</span>
                 </button>
                 {showRecentlyDismissed
-                  ? recentlyDismissed.map((item) => {
-                      const reopening = reopeningImportId === item.importId;
-                      return (
-                        <Card key={item.importId} className="bg-cream/60">
-                          <Link href={`/admin/calendar-imports/${item.importId}`} className="block">
-                            <p className="text-base font-semibold">
-                              {normalizeCalendarEventTitle(item.raw.title) ||
-                                [item.parsed.suggestedFirstName, item.parsed.suggestedLastName]
-                                  .filter(Boolean)
-                                  .join(" ") ||
-                                "Calendar event"}
-                            </p>
-                            <p className="text-sm text-ink/70">
-                              {formatLongDate(item.serviceDate)}
-                              {item.arrivalWindowStart ? ` · ${formatTimeLabel(item.arrivalWindowStart)}` : null}
-                            </p>
-                            <p className="mt-1 text-xs text-ink/50">
-                              {item.status === "WITHDRAWN" ? "Removed by sync" : "Dismissed"}{" "}
-                              {relativeDay(item.updatedAt.slice(0, 10), viewingToday)}
-                            </p>
-                          </Link>
-                          <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-ink/8 pt-3">
-                            <button
-                              type="button"
-                              disabled={reopening || reopeningImportId !== null}
-                              onClick={() => void reopenDismissedImport(item.importId)}
-                              className="min-h-10 rounded-xl bg-ink px-3 text-sm font-semibold text-cream disabled:opacity-50"
-                            >
-                              {reopening ? "Reopening…" : "Reopen for review"}
-                            </button>
-                          </div>
-                        </Card>
-                      );
-                    })
+                  ? recentlyDismissed.map((item) => renderRecoverableImportCard(item, "Dismissed"))
                   : null}
               </div>
             ) : null}

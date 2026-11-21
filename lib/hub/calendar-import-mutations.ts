@@ -170,12 +170,14 @@ export function rejectCalendarImportOnHub(
 ): MutationResult {
   const row = findImport(hub, importId);
   if (!row) return { ok: false, message: "That import could not be found." };
-  if (row.status !== "PENDING_REVIEW") return { ok: false, message: "That import was already handled." };
+  if (row.status !== "PENDING_REVIEW" && row.status !== "WITHDRAWN") {
+    return { ok: false, message: "That import was already handled." };
+  }
   const now = new Date().toISOString();
   const next: CalendarImport = {
     ...row,
     status: "REJECTED",
-    rejectedReason: reason?.trim() || undefined,
+    rejectedReason: reason?.trim() || (row.status === "WITHDRAWN" ? "Dismissed after sync removal" : undefined),
     updatedAt: now,
     lastSyncedAt: now,
   };
