@@ -165,6 +165,9 @@ export function saveCustomerOnHub(
       updatedBy: ACTOR,
     };
   });
+  const addedProperties = nextProperties.filter(
+    (item) => !existing.some((property) => property.propertyId === item.propertyId),
+  );
   const priorCustomer = hub.customers.find((item) => item.customerId === id);
   const saved: Customer = {
     customerId: id,
@@ -195,6 +198,7 @@ export function saveCustomerOnHub(
       }),
     },
     customerId: id,
+    propertyId: addedProperties.length > 0 ? addedProperties.at(-1)?.propertyId : undefined,
   };
 }
 

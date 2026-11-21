@@ -1,6 +1,11 @@
-import { buildCustomerSearchKeys, findCustomerByCalendarEventName } from "./customers.ts";
+import {
+  buildCustomerSearchKeys,
+  findCustomerByCalendarEventName,
+  normalizeSearchText,
+  type PropertyInput,
+} from "./customers.ts";
 import { DEFAULT_MARKET_ID, isMarketId, type MarketId } from "./markets.ts";
-import type { CalendarImport, CalendarImportParsedHints, Customer, Job, ServiceType } from "./types.ts";
+import type { CalendarImport, CalendarImportParsedHints, Customer, Job, Property, ServiceType } from "./types.ts";
 import type { HubData } from "../mock/seed.ts";
 import { addDays, formatHm, formatYmd, isValidDate, minutesFromTime, todayInBusinessZone } from "./time.ts";
 import { BUSINESS_TIME_ZONE } from "./types.ts";
@@ -171,6 +176,39 @@ function isStateCode(segment: string): boolean {
   return code.length === 2 && US_STATE_CODES.has(code);
 }
 
+/** Prefer ZIP after state (e.g. ", OR 97229"); avoid treating a leading house number as ZIP. */
+function parseZipFromUsLocation(location: string): string | undefined {
+  const trimmed = location.trim();
+  if (!trimmed) return undefined;
+  const stateZip = /(?:,\s*|\s+)([A-Z]{2})\s+(\d{5})(?:-\d{4})?(?:\s*,\s*(?:United States|USA|US)\.?)?\s*$/i.exec(
+    trimmed,
+  );
+  if (stateZip) return stateZip[2];
+
+  const matches = [...trimmed.matchAll(/\b(\d{5})(?:-\d{4})?\b/g)];
+  if (matches.length === 0) return undefined;
+  if (matches.length === 1) {
+    const match = matches[0]!;
+    const index = match.index ?? 0;
+    if (index <= 1 && /^\d{5}\s+[A-Za-z]/.test(trimmed)) return undefined;
+    return match[1];
+  }
+  return matches[matches.length - 1]![1];
+}
+
+function locationWithoutZip(location: string, zip: string): string {
+  const trimmed = location.trim();
+  const idx = trimmed.lastIndexOf(zip);
+  if (idx < 0) return trimmed;
+  let next = (trimmed.slice(0, idx) + trimmed.slice(idx + zip.length))
+    .replace(/\s{2,}/g, " ")
+    .replace(/,\s*,/g, ",")
+    .replace(/,\s*$/g, "")
+    .trim();
+  next = next.replace(/(?:,\s*|\s+)([A-Z]{2})\s*$/i, (_, state) => `, ${String(state).toUpperCase()}`);
+  return next;
+}
+
 export function parseLocationHint(location: string): Pick<
   CalendarImportParsedHints,
   "streetAddress" | "city" | "state" | "zip" | "marketId"
@@ -179,12 +217,12 @@ export function parseLocationHint(location: string): Pick<
   if (!trimmed) {
     return { marketId: DEFAULT_MARKET_ID };
   }
-  const zipMatch = /\b(\d{5})(?:-\d{4})?\b/.exec(trimmed);
-  const zip = zipMatch?.[1];
+  const zip = parseZipFromUsLocation(trimmed);
+  const addressCore = zip ? locationWithoutZip(trimmed, zip) : trimmed;
 
-  let segments = trimmed
+  let segments = addressCore
     .split(",")
-    .map((part) => part.replace(/\b\d{5}(?:-\d{4})?\b/, "").trim())
+    .map((part) => part.trim())
     .filter(Boolean);
 
   while (segments.length > 0 && isCountrySegment(segments[segments.length - 1]!)) {
@@ -504,7 +542,7 @@ export function formatCalendarImportAddress(hints: CalendarImportParsedHints): s
   return tail || undefined;
 }
 
-const MOVE_OUT_FROM_EVENT_TEXT = /\bmove[\s-]*out\b/i;
+const MOVE_OUT_FROM_EVENT_TEXT = /\bmove[\s-]*(?:out|in\s*\/\s*out)\b/i;
 
 export function parseServiceTypeFromEventText(text: string): ServiceType {
   const normalized = stripEventDetailText(text.replace(/\r\n/g, "\n"));
@@ -1025,9 +1063,8 @@ function matchPropertyForHints(
 ) {
   const mine = properties.filter((property) => property.customerId === customerId);
   if (mine.length === 0) return undefined;
-  const street = parsed.streetAddress?.trim().toLowerCase();
-  if (street) {
-    const match = mine.find((property) => property.streetAddress.trim().toLowerCase() === street);
+  if (parsed.streetAddress?.trim()) {
+    const match = mine.find((property) => propertyMatchesCalendarImportAddress(property, parsed));
     if (match) return match;
   }
   const market = parsed.marketId && isMarketId(parsed.marketId) ? parsed.marketId : undefined;
@@ -1059,6 +1096,55 @@ export function calendarImportShowsOnAdminDashboard(item: Pick<CalendarImport, "
   return item.status === "PENDING_REVIEW" || item.status === "CALENDAR_CANCELED";
 }
 
+export const RECENTLY_DISMISSED_CALENDAR_IMPORT_DAYS = 14;
+
+function visibleRecentlyRecoverableCalendarImports(
+  imports: CalendarImport[],
+  today: string,
+  filter: import("./markets.ts").AdminMarketFilter,
+  statuses: Set<CalendarImport["status"]>,
+  recentDays = RECENTLY_DISMISSED_CALENDAR_IMPORT_DAYS,
+): CalendarImport[] {
+  const cutoff = addDays(today, -recentDays);
+  return imports
+    .filter((item) => statuses.has(item.status))
+    .filter((item) => item.updatedAt.slice(0, 10) >= cutoff)
+    .filter((item) => calendarImportMatchesAdminMarket(item, filter))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Gmail imports dismissed in the last N days (admin dashboard). */
+export function visibleRecentlyDismissedCalendarImports(
+  imports: CalendarImport[],
+  today: string,
+  filter: import("./markets.ts").AdminMarketFilter,
+  recentDays = RECENTLY_DISMISSED_CALENDAR_IMPORT_DAYS,
+): CalendarImport[] {
+  return visibleRecentlyRecoverableCalendarImports(
+    imports,
+    today,
+    filter,
+    new Set(["REJECTED", "WITHDRAWN"]),
+    recentDays,
+  );
+}
+
+/** Imports Gmail sync withdrew (`WITHDRAWN`) in the last N days — recoverable via reopen. */
+export function visibleRecentlySyncRemovedCalendarImports(
+  imports: CalendarImport[],
+  today: string,
+  filter: import("./markets.ts").AdminMarketFilter,
+  recentDays = RECENTLY_DISMISSED_CALENDAR_IMPORT_DAYS,
+): CalendarImport[] {
+  return visibleRecentlyRecoverableCalendarImports(
+    imports,
+    today,
+    filter,
+    new Set(["WITHDRAWN"]),
+    recentDays,
+  );
+}
+
 /** Pending Gmail imports shown on the admin dashboard (by market tab). */
 export function visibleDashboardCalendarImports(
   imports: CalendarImport[],
@@ -1079,7 +1165,7 @@ function withdrawRescheduleGhostImportRow(
   row: CalendarImport,
   now: string,
 ): CalendarImport {
-  if (row.status !== "CALENDAR_CANCELED" && row.status !== "PENDING_REVIEW") return row;
+  if (row.status !== "CALENDAR_CANCELED") return row;
   if (!calendarImportRescheduleStaleImportRow(hub, row)) return row;
   return {
     ...row,
@@ -1118,6 +1204,74 @@ export function calendarImportIdFromReturnTo(returnTo: string | undefined): stri
   if (!returnTo) return undefined;
   const match = returnTo.match(/\/admin\/calendar-imports\/([^/?#]+)/);
   return match?.[1];
+}
+
+/** True when a hub property is the same place as the Gmail / Calendly address. */
+export function propertyMatchesCalendarImportAddress(
+  property: Pick<Property, "streetAddress"> & Partial<Pick<Property, "unit" | "city" | "zip">>,
+  hints: CalendarImportParsedHints,
+): boolean {
+  const importStreet = hints.streetAddress?.trim();
+  if (!importStreet) return false;
+  const hubStreet = normalizeSearchText(property.streetAddress);
+  const eventStreet = normalizeSearchText(importStreet);
+  if (!hubStreet || !eventStreet) return false;
+  if (hubStreet === eventStreet) return true;
+  if (hubStreet.includes(eventStreet) || eventStreet.includes(hubStreet)) return true;
+  const importZip = hints.zip?.replace(/\D/g, "").slice(0, 5);
+  const hubZip = property.zip?.replace(/\D/g, "").slice(0, 5);
+  if (importZip && hubZip && hubZip === importZip) {
+    const hubLead = hubStreet.split(" ").slice(0, 2).join(" ");
+    const eventLead = eventStreet.split(" ").slice(0, 2).join(" ");
+    if (hubLead && eventLead && hubLead === eventLead) return true;
+  }
+  return false;
+}
+
+export function customerHasCalendarImportProperty(
+  properties: Property[],
+  customerId: string,
+  hints: CalendarImportParsedHints,
+): boolean {
+  return properties
+    .filter((item) => item.customerId === customerId && item.status === "ACTIVE")
+    .some((item) => propertyMatchesCalendarImportAddress(item, hints));
+}
+
+/** Draft property row for saveCustomer / customer form when the event lists a new address. */
+export function calendarImportPropertyInputFromHints(
+  hints: CalendarImportParsedHints,
+  fallbackMarketId: MarketId = DEFAULT_MARKET_ID,
+): PropertyInput | null {
+  const streetAddress = hints.streetAddress?.trim() ?? "";
+  if (streetAddress.length < 3) return null;
+  const city = hints.city?.trim() || "Portland";
+  const stateRaw = (hints.state?.trim() || "OR").toUpperCase();
+  const state = /^[A-Z]{2}$/.test(stateRaw) ? stateRaw : "OR";
+  const zip = (hints.zip?.trim() ?? "").replace(/\D/g, "").slice(0, 5);
+  const marketId = hints.marketId && isMarketId(hints.marketId) ? hints.marketId : fallbackMarketId;
+  return {
+    streetAddress,
+    unit: hints.unit?.trim() || undefined,
+    city,
+    state,
+    zip,
+    marketId,
+    bedrooms: typeof hints.bedrooms === "number" ? hints.bedrooms : 0,
+    bathrooms: typeof hints.bathrooms === "number" ? hints.bathrooms : 0,
+    squareFeet: typeof hints.squareFeet === "number" ? hints.squareFeet : 0,
+    preferences: "",
+  };
+}
+
+export function buildCalendarImportAddPropertyHref(customerId: string, importId: string): string {
+  const params = new URLSearchParams({
+    edit: "1",
+    calendarImportId: importId,
+    addPropertyFromImport: "1",
+    returnTo: `/admin/calendar-imports/${importId}`,
+  });
+  return `/admin/customers/${customerId}?${params.toString()}`;
 }
 
 /** Link to new customer; import rows are loaded server-side via `calendarImportId`. */

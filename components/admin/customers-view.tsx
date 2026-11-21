@@ -6,6 +6,7 @@ import { customerDetailLoadSucceeded } from "@/lib/hub/bootstrap-result";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadCalendarImportPrefillAction } from "@/app/actions/calendar-import";
+import type { CustomerFormPropertyHint } from "@/components/admin/customer-form";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CustomerForm, type CustomerFormHandle } from "@/components/admin/customer-form";
 import { SeriesForm } from "@/components/admin/series-form";
@@ -22,9 +23,11 @@ import { AlertIcon, Card, PageHeader, PlusIcon, Screen, fieldClass } from "@/com
 import {
   calendarImportCustomerPrefillFromRow,
   calendarImportIdFromReturnTo,
+  propertyMatchesCalendarImportAddress,
 } from "@/lib/domain/calendar-import";
 import type { CalendarImportParsedHints } from "@/lib/domain/types";
 import { searchCustomers } from "@/lib/domain/customers";
+import { isMarketId } from "@/lib/domain/markets";
 import { formatMoney } from "@/lib/domain/compensation";
 import { seriesSummary } from "@/lib/mock/seed";
 import {
@@ -300,11 +303,15 @@ export function CustomerDetail({
   initialSeriesId = "",
   returnTo = "",
   initialEdit = false,
+  calendarImportId = "",
+  appendPropertyFromImport = false,
 }: {
   customerId: string;
   initialSeriesId?: string;
   returnTo?: string;
   initialEdit?: boolean;
+  calendarImportId?: string;
+  appendPropertyFromImport?: boolean;
 }) {
   const hub = useHub();
   const now = useNow();
@@ -316,6 +323,7 @@ export function CustomerDetail({
   const [editingSeriesId, setEditingSeriesId] = useState<string | null>(initialSeriesId || null);
   const backTo = useCleaningReturnTo(returnTo);
   const [focusPropertyId, setFocusPropertyId] = useState<string | null>(null);
+  const [importAppendHint, setImportAppendHint] = useState<CustomerFormPropertyHint | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<{ href?: string } | null>(null);
   const [savedReturnHref, setSavedReturnHref] = useState<string | null>(null);
   const customerDetailLoadRef = useRef<string | null>(null);
@@ -331,6 +339,41 @@ export function CustomerDetail({
   useHubSyncBlocker(
     () => editingRecord && Boolean((editingSeriesId ? seriesFormRef.current : formRef.current)?.isDirty()),
   );
+
+  useEffect(() => {
+    if (!appendPropertyFromImport || !calendarImportId) return;
+    const local = hub.calendarImports.find((item) => item.importId === calendarImportId);
+    if (local) {
+      const hints = calendarImportCustomerPrefillFromRow(local);
+      setImportAppendHint({
+        streetAddress: hints.streetAddress,
+        unit: hints.unit,
+        city: hints.city,
+        state: hints.state,
+        zip: hints.zip,
+        marketId: hints.marketId,
+        bedrooms: hints.bedrooms,
+        bathrooms: hints.bathrooms,
+        squareFeet: hints.squareFeet,
+      });
+      return;
+    }
+    void loadCalendarImportPrefillAction(calendarImportId).then((result) => {
+      if (!result.ok) return;
+      const hints = result.prefill;
+      setImportAppendHint({
+        streetAddress: hints.streetAddress,
+        unit: hints.unit,
+        city: hints.city,
+        state: hints.state,
+        zip: hints.zip,
+        marketId: hints.marketId,
+        bedrooms: hints.bedrooms,
+        bathrooms: hints.bathrooms,
+        squareFeet: hints.squareFeet,
+      });
+    });
+  }, [appendPropertyFromImport, calendarImportId, hub.calendarImports]);
 
   useEffect(() => {
     if (!hub.ready) return;
@@ -444,11 +487,32 @@ export function CustomerDetail({
             ref={formRef}
             customer={customer}
             scrollToPropertyId={focusPropertyId}
+            appendPropertyHint={appendPropertyFromImport ? importAppendHint ?? undefined : undefined}
             onCancel={() => (backTo ? requestLeave(backTo) : requestLeave())}
-            onSaved={() => {
+            onSaved={(savedCustomerId) => {
               if (backTo) {
                 setSavedReturnHref(backTo);
-                router.push(backTo);
+                const url = new URL(backTo, "http://local");
+                url.searchParams.set("customerId", savedCustomerId);
+                if (appendPropertyFromImport && importAppendHint?.streetAddress) {
+                  const match = hub.properties.find(
+                    (item) =>
+                      item.customerId === savedCustomerId &&
+                      propertyMatchesCalendarImportAddress(item, {
+                        streetAddress: importAppendHint.streetAddress,
+                        city: importAppendHint.city,
+                        state: importAppendHint.state,
+                        zip: importAppendHint.zip,
+                        unit: importAppendHint.unit,
+                        marketId:
+                          importAppendHint.marketId && isMarketId(importAppendHint.marketId)
+                            ? importAppendHint.marketId
+                            : undefined,
+                      }),
+                  );
+                  if (match) url.searchParams.set("propertyId", match.propertyId);
+                }
+                router.push(`${url.pathname}${url.search}`);
                 return;
               }
               setEditing(false);

@@ -14,17 +14,23 @@ import {
   calendarImportDetailText,
   calendarImportRawEventDetailsText,
   resolvedCalendarImportSpecialInstructions,
+  buildCalendarImportAddPropertyHref,
+  calendarImportCustomerPrefillFromRow,
   calendarImportNewCustomerHref,
+  calendarImportPropertyInputFromHints,
   calendarEventTitleHasTbd,
+  customerHasCalendarImportProperty,
   formatCalendarImportAddress,
   mergeCalendarImportCustomerHints,
+  propertyMatchesCalendarImportAddress,
   normalizeCalendarEventTitle,
   resolveCalendarImportMatchedJobId,
   suggestCustomerForCalendarImport,
 } from "@/lib/domain/calendar-import";
 import { appleCalendarDayUrl } from "@/lib/calendar";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
-import { searchCustomers } from "@/lib/domain/customers";
+import { searchCustomers, validateCustomerInput, type CustomerInput } from "@/lib/domain/customers";
+import { readMarketId } from "@/lib/domain/markets";
 import type { Property, ServiceType } from "@/lib/domain/types";
 import {
   ESTIMATED_ON_SITE_FIELD_HINT,
@@ -162,6 +168,19 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       if (!nextCustomerId) nextCustomerId = suggestion.customerId ?? "";
       if (!nextPropertyId) nextPropertyId = suggestion.propertyId ?? "";
     }
+    if (!nextPropertyId && nextCustomerId) {
+      const mergedForAddress = mergeCalendarImportCustomerHints(
+        current.parsed,
+        calendarImportDetailText(current.raw, ""),
+      );
+      const addressMatch = hub.properties.find(
+        (item) =>
+          item.customerId === nextCustomerId &&
+          item.status === "ACTIVE" &&
+          propertyMatchesCalendarImportAddress(item, mergedForAddress),
+      );
+      if (addressMatch) nextPropertyId = addressMatch.propertyId;
+    }
     setCustomerId(nextCustomerId);
     setPropertyId(nextPropertyId);
     setServiceType(
@@ -180,7 +199,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     customerId,
   ]);
   const [message, setMessage] = useState<string | null>(null);
-  const [pending, setPending] = useState<"approve" | "dismiss" | null>(null);
+  const [pending, setPending] = useState<"approve" | "dismiss" | "reopen" | "addProperty" | null>(null);
   const [refreshingDetails, setRefreshingDetails] = useState(false);
   const busy = pending !== null;
 
@@ -202,12 +221,34 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     const match = hub.customers.find((item) => item.customerId === returnedCustomerId && item.status === "ACTIVE");
     if (!match) return;
     setCustomerId(match.customerId);
+    const returnedPropertyId = searchParams.get("propertyId")?.trim();
+    const returnedProperty = returnedPropertyId
+      ? hub.properties.find(
+          (property) =>
+            property.propertyId === returnedPropertyId &&
+            property.customerId === match.customerId &&
+            property.status === "ACTIVE",
+        )
+      : undefined;
+    const currentRow = hub.calendarImports.find((item) => item.importId === importId);
+    const mergedForAddress = currentRow
+      ? mergeCalendarImportCustomerHints(currentRow.parsed, calendarImportDetailText(currentRow.raw, ""))
+      : undefined;
+    const importProperty = mergedForAddress
+      ? hub.properties.find(
+          (property) =>
+            property.customerId === match.customerId &&
+            property.status === "ACTIVE" &&
+            propertyMatchesCalendarImportAddress(property, mergedForAddress),
+        )
+      : undefined;
     const firstProperty = hub.properties.find(
       (property) => property.customerId === match.customerId && property.status === "ACTIVE",
     );
-    setPropertyId(firstProperty?.propertyId ?? "");
+    setPropertyId(
+      returnedProperty?.propertyId ?? importProperty?.propertyId ?? firstProperty?.propertyId ?? "",
+    );
     setQuery("");
-    const currentRow = hub.calendarImports.find((item) => item.importId === importId);
     if (currentRow) {
       setServiceType(
         calendarImportDefaultServiceType(currentRow.serviceType, match.customerId, hub.customers, hub.jobs),
@@ -229,6 +270,67 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       <Screen>
         <PageHeader title="Calendar import" crumb={{ href: "/admin", label: "Dashboard" }} />
         <p className="px-5 pt-8 text-sm text-ink/55">Loading import…</p>
+      </Screen>
+    );
+  }
+
+  const reviewRow = row;
+
+  async function reopenDismissed(refreshFromGmail = false) {
+    const removedBySync = reviewRow.status === "WITHDRAWN";
+    setPending("reopen");
+    const result = await hub.reopenCalendarImport(importId);
+    if (!result.ok) {
+      setPending(null);
+      setMessage(result.message ?? "Could not reopen this import.");
+      return;
+    }
+    if (refreshFromGmail || removedBySync) {
+      hub.flashLoading("Checking Gmail…");
+      const sync = await hub.syncCalendarImports();
+      hub.clearActionLoading();
+      setPending(null);
+      hub.flash(sync.message ?? result.message ?? "Import returned to the review queue.");
+      return;
+    }
+    setPending(null);
+    hub.flash(result.message ?? "Import returned to the review queue.");
+  }
+
+  if (row.status === "REJECTED" || row.status === "WITHDRAWN") {
+    const title =
+      normalizeCalendarEventTitle(row.raw.title) ||
+      [row.parsed.suggestedFirstName, row.parsed.suggestedLastName].filter(Boolean).join(" ") ||
+      "Calendar event";
+    const removedBySync = row.status === "WITHDRAWN";
+    return (
+      <Screen>
+        <PageHeader
+          title={removedBySync ? "Removed import" : "Dismissed import"}
+          subtitle={formatLongDate(row.serviceDate)}
+          crumb={{ href: "/admin", label: "Dashboard" }}
+        />
+        <div className="space-y-4 px-5 pt-4">
+          <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-ink/10">
+            <p className="text-lg font-semibold">{title}</p>
+            {row.raw.location ? <p className="mt-1 text-sm text-ink/80">{row.raw.location}</p> : null}
+            <p className="mt-2 text-sm text-ink/60">
+              {removedBySync
+                ? "Gmail sync removed this import from the queue (often when the event was not returned in a calendar check). Reopen it to continue review."
+                : "You dismissed this Gmail import. Reopen it to match a customer and add it to the schedule."}
+            </p>
+          </div>
+          <FormSubmitNotice message={message} tone="error" />
+          <PrimaryButton
+            type="button"
+            disabled={pending !== null}
+            loading={pending === "reopen"}
+            loadingLabel={removedBySync ? "Reopening…" : "Reopening…"}
+            onClick={() => void reopenDismissed(removedBySync)}
+          >
+            {removedBySync ? "Reopen and refresh from Gmail" : "Reopen for review"}
+          </PrimaryButton>
+        </div>
       </Screen>
     );
   }
@@ -277,6 +379,13 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     active.parsed,
     calendarImportDetailText(active.raw, ""),
   );
+  const importPrefill = calendarImportCustomerPrefillFromRow(active);
+  const importMissingOnCustomer =
+    Boolean(linkedCustomerId) &&
+    Boolean(importPrefill.streetAddress?.trim()) &&
+    !customerHasCalendarImportProperty(hub.properties, linkedCustomerId, importPrefill);
+  const selectedProperty =
+    linkedProperties.find((item) => item.propertyId === (propertyId || linkedPropertyId)) ?? linkedProperty;
   const sizeSummary = [
     mergedHints.bedrooms !== undefined ? `${mergedHints.bedrooms} bed` : null,
     mergedHints.bathrooms !== undefined ? `${mergedHints.bathrooms} bath` : null,
@@ -357,6 +466,60 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       suggestedCustomerId: customerId || undefined,
       suggestedPropertyId: propertyId || undefined,
     };
+  }
+
+  function customerSaveInputWithNewImportProperty(): CustomerInput | null {
+    if (!linkedCustomer) return null;
+    const nextProperty = calendarImportPropertyInputFromHints(importPrefill, readMarketId(active.marketId));
+    if (!nextProperty) return null;
+    const input: CustomerInput = {
+      firstName: linkedCustomer.firstName,
+      lastName: linkedCustomer.lastName,
+      phone: linkedCustomer.phone,
+      email: linkedCustomer.email,
+      notes: linkedCustomer.notes,
+      properties: [
+        ...linkedProperties.map((home) => ({
+          propertyId: home.propertyId,
+          label: home.label,
+          streetAddress: home.streetAddress,
+          unit: home.unit,
+          city: home.city,
+          state: home.state,
+          zip: home.zip,
+          marketId: readMarketId(home.marketId),
+          bedrooms: home.bedrooms,
+          bathrooms: home.bathrooms,
+          squareFeet: home.squareFeet,
+          preferences: home.preferences,
+        })),
+        nextProperty,
+      ],
+    };
+    const decision = validateCustomerInput(input);
+    if (!decision.ok) return null;
+    return decision.value;
+  }
+
+  async function addImportPropertyToCustomer() {
+    const input = customerSaveInputWithNewImportProperty();
+    if (!input || !linkedCustomer) {
+      setMessage("Could not read the address from this event. Add the property from the customer profile.");
+      return;
+    }
+    setPending("addProperty");
+    setMessage(null);
+    const result = await hub.saveCustomer(input, linkedCustomer.customerId);
+    setPending(null);
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+    if (result.propertyId) {
+      setPropertyId(result.propertyId);
+      setCustomerId(linkedCustomer.customerId);
+    }
+    hub.flash(result.propertyId ? "Property added from Gmail." : "Customer updated.");
   }
 
   async function refreshEventDetails() {
@@ -480,8 +643,8 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
                 <span className="block font-semibold">
                   {linkedCustomer.firstName} {linkedCustomer.lastName}
                 </span>
-                {linkedProperty ? (
-                  <span className="block text-sm text-ink/70">{propertyLine(linkedProperty)}</span>
+                {selectedProperty ? (
+                  <span className="block text-sm text-ink/70">{propertyLine(selectedProperty)}</span>
                 ) : null}
               </span>
               <div className="flex shrink-0 items-center gap-1">
@@ -550,6 +713,35 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
                 </option>
               ))}
             </select>
+            {importMissingOnCustomer ? (
+              <div className="mt-3 space-y-2 rounded-2xl bg-amber-50 px-3 py-3 text-sm text-ink/80 ring-1 ring-amber-200/80">
+                <p>
+                  This event&apos;s address{addressLine ? ` (${addressLine})` : ""} is not on{" "}
+                  {linkedCustomer?.firstName ?? "this customer"}&apos;s properties yet.
+                </p>
+                {customerSaveInputWithNewImportProperty() ? (
+                  <PrimaryButton
+                    type="button"
+                    disabled={busy}
+                    loading={pending === "addProperty"}
+                    loadingLabel="Adding…"
+                    onClick={() => void addImportPropertyToCustomer()}
+                  >
+                    Add address from event
+                  </PrimaryButton>
+                ) : null}
+                {linkedCustomer ? (
+                  <p>
+                    <Link
+                      href={buildCalendarImportAddPropertyHref(linkedCustomer.customerId, active.importId)}
+                      className="font-semibold underline"
+                    >
+                      Review or edit address on customer profile
+                    </Link>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </Field>
         ) : null}
 

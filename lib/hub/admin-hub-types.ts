@@ -112,6 +112,7 @@ export type AdminHubApplierSuccess = {
   hub: import("../mock/seed.ts").HubData;
   message?: string;
   customerId?: string;
+  propertyId?: string;
   jobId?: string;
   assignmentId?: string;
 };
