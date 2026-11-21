@@ -22,6 +22,7 @@ import {
   resolveCalendarImportMatchedJobId,
 } from "@/lib/domain/calendar-import";
 import { appleCalendarDayUrl } from "@/lib/calendar";
+import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { searchCustomers } from "@/lib/domain/customers";
 import type { Property, ServiceType } from "@/lib/domain/types";
 import { formatLongDate, serviceLabel } from "@/lib/format";
@@ -87,6 +88,9 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   const [headcount, setHeadcount] = useState(row && row.headcountNeeded > 0 ? row.headcountNeeded : 1);
   const resolvedInstructions = row ? resolvedCalendarImportSpecialInstructions(row) : "";
   const [instructions, setInstructions] = useState("");
+  const [pricePerVisit, setPricePerVisit] = useState(() =>
+    row?.pricePerVisitCents !== undefined ? formatCentsToDollarsInput(row.pricePerVisitCents) : "",
+  );
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -182,7 +186,13 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     setMessage(null);
   }
 
-  function draftInput() {
+  function pricePerVisitCentsFromInput(): number | undefined | null {
+    const trimmed = pricePerVisit.trim();
+    if (!trimmed) return undefined;
+    return parseDollarsToCents(trimmed);
+  }
+
+  function draftInput(pricePerVisitCents: number | undefined) {
     const arrival = arrivalStartTbd
       ? { arrivalWindowStart: undefined, arrivalWindowEnd: undefined }
       : { arrivalWindowStart: arrivalStart, arrivalWindowEnd: arrivalEnd };
@@ -194,6 +204,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       serviceType,
       headcountNeeded: headcount,
       specialInstructions: instructions.trim() || resolvedInstructions,
+      pricePerVisitCents,
       suggestedCustomerId: customerId || undefined,
       suggestedPropertyId: propertyId || undefined,
     };
@@ -212,7 +223,13 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   async function saveDraft() {
     setPending("draft");
     setMessage(null);
-    const result = await hub.updateCalendarImport(draftInput());
+    const parsedPrice = pricePerVisitCentsFromInput();
+    if (parsedPrice === null) {
+      setMessage("Enter a valid price per visit.");
+      setPending(null);
+      return;
+    }
+    const result = await hub.updateCalendarImport(draftInput(parsedPrice));
     setPending(null);
     if (!result.ok) {
       setMessage(result.message);
@@ -242,10 +259,15 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       setMessage("Choose a customer and property before approving.");
       return;
     }
+    const parsedPrice = pricePerVisitCentsFromInput();
+    if (parsedPrice === null) {
+      setMessage("Enter a valid price per visit.");
+      return;
+    }
     setPending("approve");
     setMessage(null);
     const result = await hub.approveCalendarImport({
-      ...draftInput(),
+      ...draftInput(parsedPrice),
       customerId,
       propertyId,
     });
@@ -436,6 +458,20 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
             max={12}
             ariaLabel="Headcount needed"
             onChange={setHeadcount}
+          />
+        </Field>
+
+        <Field label="Price per visit (optional)" hint="Admin only. Cleaners never see this.">
+          <input
+            type="text"
+            inputMode="decimal"
+            className={fieldClass}
+            placeholder="e.g. 185"
+            value={pricePerVisit}
+            onChange={(event) => {
+              setPricePerVisit(event.target.value);
+              setMessage(null);
+            }}
           />
         </Field>
 
