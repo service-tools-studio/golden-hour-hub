@@ -26,7 +26,13 @@ import { appleCalendarDayUrl } from "@/lib/calendar";
 import { formatCentsToDollarsInput, parseDollarsToCents } from "@/lib/domain/compensation";
 import { searchCustomers } from "@/lib/domain/customers";
 import type { Property, ServiceType } from "@/lib/domain/types";
-import { formatLongDate, propertySizeLabel, serviceLabel } from "@/lib/format";
+import {
+  ESTIMATED_ON_SITE_FIELD_HINT,
+  ESTIMATED_ON_SITE_FIELD_LABEL,
+  formatLongDate,
+  propertySizeLabel,
+  serviceLabel,
+} from "@/lib/format";
 import {
   calculateQuoteEstimate,
   type CleanType,
@@ -119,6 +125,19 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     row?.pricePerVisitCents !== undefined ? formatCentsToDollarsInput(row.pricePerVisitCents) : "",
   );
   const [query, setQuery] = useState("");
+  const [customerCleared, setCustomerCleared] = useState(false);
+  const [importLoadFailed, setImportLoadFailed] = useState(false);
+
+  useEffect(() => {
+    if (row || !hub.ready || importLoadFailed) return;
+    let cancelled = false;
+    void hub.ensureHubCalendarImport(importId).then((loaded) => {
+      if (!cancelled && !loaded) setImportLoadFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hub, hub.ready, row, importId, importLoadFailed, hub.ensureHubCalendarImport]);
 
   useEffect(() => {
     if (!row) return;
@@ -126,20 +145,42 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   }, [row?.importId]);
 
   useEffect(() => {
+    setCustomerCleared(false);
+  }, [importId]);
+
+  useEffect(() => {
     const current = hub.calendarImports.find((item) => item.importId === importId);
     if (!current) return;
-    const merged = mergeCalendarImportCustomerHints(current.parsed, calendarImportDetailText(current.raw, ""));
-    const suggestion = suggestCustomerForCalendarImport(hub.customers, merged, hub.properties);
-    const nextCustomerId = current.suggestedCustomerId ?? suggestion.customerId ?? "";
-    const nextPropertyId = current.suggestedPropertyId ?? suggestion.propertyId ?? "";
+    const suggestedId = current.suggestedCustomerId?.trim() ?? "";
+    if (customerCleared) return;
+    if (customerId.trim() && customerId.trim() !== suggestedId) return;
+    let nextCustomerId = suggestedId;
+    let nextPropertyId = current.suggestedPropertyId?.trim() ?? "";
+    if (!nextCustomerId || !nextPropertyId) {
+      const merged = mergeCalendarImportCustomerHints(current.parsed, calendarImportDetailText(current.raw, ""));
+      const suggestion = suggestCustomerForCalendarImport(hub.customers, merged, hub.properties);
+      if (!nextCustomerId) nextCustomerId = suggestion.customerId ?? "";
+      if (!nextPropertyId) nextPropertyId = suggestion.propertyId ?? "";
+    }
     setCustomerId(nextCustomerId);
     setPropertyId(nextPropertyId);
-    if (nextCustomerId) {
-      setServiceType((c) => calendarImportDefaultServiceType(c, nextCustomerId, hub.customers, hub.jobs));
-    }
-  }, [importId]);
+    setServiceType(
+      calendarImportDefaultServiceType(current.serviceType, nextCustomerId || undefined, hub.customers, hub.jobs),
+    );
+  }, [
+    importId,
+    row?.importId,
+    row?.suggestedCustomerId,
+    row?.suggestedPropertyId,
+    row?.serviceType,
+    row?.updatedAt,
+    hub.customers,
+    hub.jobs,
+    customerCleared,
+    customerId,
+  ]);
   const [message, setMessage] = useState<string | null>(null);
-  const [pending, setPending] = useState<"approve" | "draft" | "dismiss" | null>(null);
+  const [pending, setPending] = useState<"approve" | "dismiss" | null>(null);
   const [refreshingDetails, setRefreshingDetails] = useState(false);
   const busy = pending !== null;
 
@@ -166,16 +207,38 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     );
     setPropertyId(firstProperty?.propertyId ?? "");
     setQuery("");
-    setServiceType((current) => calendarImportDefaultServiceType(current, match.customerId, hub.customers, hub.jobs));
+    const currentRow = hub.calendarImports.find((item) => item.importId === importId);
+    if (currentRow) {
+      setServiceType(
+        calendarImportDefaultServiceType(currentRow.serviceType, match.customerId, hub.customers, hub.jobs),
+      );
+    }
     router.replace(`/admin/calendar-imports/${importId}`, { scroll: false });
   }, [searchParams, hub.customers, hub.properties, importId, router]);
 
-  if (!row || row.status !== "PENDING_REVIEW") {
+  if (!row) {
+    if (importLoadFailed) {
+      return (
+        <Screen>
+          <PageHeader title="Calendar import" crumb={{ href: "/admin", label: "Dashboard" }} />
+          <div className="px-5 pt-4 text-base text-ink/70">That import is not available for review.</div>
+        </Screen>
+      );
+    }
+    return (
+      <Screen>
+        <PageHeader title="Calendar import" crumb={{ href: "/admin", label: "Dashboard" }} />
+        <p className="px-5 pt-8 text-sm text-ink/55">Loading import…</p>
+      </Screen>
+    );
+  }
+
+  if (row.status !== "PENDING_REVIEW") {
     return (
       <Screen>
         <PageHeader title="Calendar import" crumb={{ href: "/admin", label: "Dashboard" }} />
         <div className="px-5 pt-4 text-base text-ink/70">
-          {row?.status === "APPROVED" && row.approvedJobId ? (
+          {row.status === "APPROVED" && row.approvedJobId ? (
             <Link href={`/admin/jobs/${row.approvedJobId}?from=dashboard`} className="font-semibold underline">
               This import was already approved.
             </Link>
@@ -188,6 +251,25 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   }
 
   const active = row;
+  const suggestedCustomerId = active.suggestedCustomerId?.trim() ?? "";
+  const linkedCustomerId = customerCleared ? customerId.trim() : customerId.trim() || suggestedCustomerId;
+  const linkedCustomer = hub.customers.find((item) => item.customerId === linkedCustomerId);
+  const linkedPropertyId =
+    propertyId ||
+    (linkedCustomerId === suggestedCustomerId ? active.suggestedPropertyId?.trim() || "" : "");
+  const linkedProperties = hub.properties.filter(
+    (item) => item.customerId === linkedCustomerId && item.status === "ACTIVE",
+  );
+  const linkedProperty =
+    linkedProperties.find((item) => item.propertyId === (propertyId || linkedPropertyId)) ?? linkedProperties[0];
+  const displayServiceType = calendarImportDefaultServiceType(
+    active.serviceType,
+    linkedCustomerId || undefined,
+    hub.customers,
+    hub.jobs,
+  );
+  const customerChanged = Boolean(customerId.trim()) && customerId.trim() !== suggestedCustomerId;
+  const shownServiceType = customerChanged ? serviceType : displayServiceType;
   const matchedJobId = resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, active);
   const matchedJob = matchedJobId ? hub.jobs.find((job) => job.jobId === matchedJobId) : undefined;
   const suggestedName = [active.parsed.suggestedFirstName, active.parsed.suggestedLastName].filter(Boolean).join(" ");
@@ -206,12 +288,13 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     formatCalendarImportAddress(mergedHints) ||
     (active.raw.location?.trim() ? active.raw.location.trim() : undefined);
   const rawEventDetails = calendarImportRawEventDetailsText(active.raw);
-  const cleanTypeForEstimate = cleanTypeFor(serviceType);
-  const estimateSizeSource = property
+  const cleanTypeForEstimate = cleanTypeFor(shownServiceType);
+  const estimateProperty = property ?? linkedProperty;
+  const estimateSizeSource = estimateProperty
     ? {
-        bedrooms: property.bedrooms,
-        bathrooms: property.bathrooms,
-        sqft: property.squareFeet,
+        bedrooms: estimateProperty.bedrooms,
+        bathrooms: estimateProperty.bathrooms,
+        sqft: estimateProperty.squareFeet,
       }
     : mergedHints.bedrooms !== undefined && mergedHints.bathrooms !== undefined
       ? {
@@ -235,17 +318,20 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
 
   function chooseCustomer(nextId: string) {
     const nextHomes = hub.properties.filter((item) => item.customerId === nextId && item.status === "ACTIVE");
+    setCustomerCleared(false);
     setCustomerId(nextId);
     setPropertyId(nextHomes[0]?.propertyId ?? "");
     setQuery("");
-    setServiceType((current) => calendarImportDefaultServiceType(current, nextId, hub.customers, hub.jobs));
+    setServiceType(calendarImportDefaultServiceType(active.serviceType, nextId, hub.customers, hub.jobs));
     setMessage(null);
   }
 
   function clearCustomer() {
+    setCustomerCleared(true);
     setCustomerId("");
     setPropertyId("");
     setQuery("");
+    setServiceType(calendarImportDefaultServiceType(active.serviceType, undefined, hub.customers, hub.jobs));
     setMessage(null);
   }
 
@@ -255,7 +341,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     return parseDollarsToCents(trimmed);
   }
 
-  function draftInput(pricePerVisitCents: number | undefined) {
+  function approveInput(pricePerVisitCents: number | undefined) {
     const arrival = arrivalStartTbd
       ? { arrivalWindowStart: undefined, arrivalWindowEnd: undefined }
       : { arrivalWindowStart: arrivalStart, arrivalWindowEnd: arrivalEnd };
@@ -281,24 +367,6 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     } finally {
       setRefreshingDetails(false);
     }
-  }
-
-  async function saveDraft() {
-    setPending("draft");
-    setMessage(null);
-    const parsedPrice = pricePerVisitCentsFromInput();
-    if (parsedPrice === null) {
-      setMessage("Enter a valid price per visit.");
-      setPending(null);
-      return;
-    }
-    const result = await hub.updateCalendarImport(draftInput(parsedPrice));
-    setPending(null);
-    if (!result.ok) {
-      setMessage(result.message);
-      return;
-    }
-    hub.flash("Draft saved.");
   }
 
   async function dismiss() {
@@ -330,7 +398,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     setPending("approve");
     setMessage(null);
     const result = await hub.approveCalendarImport({
-      ...draftInput(parsedPrice),
+      ...approveInput(parsedPrice),
       customerId,
       propertyId,
     });
@@ -351,6 +419,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
         crumb={{ href: "/admin", label: "Dashboard" }}
       />
       <form
+        data-testid="calendar-import-review-form"
         className="space-y-4 px-5 pt-4"
         onSubmit={(event) => {
           event.preventDefault();
@@ -404,20 +473,22 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
           ) : null}
         </div>
 
-        {customer ? (
+        {linkedCustomer && !customerCleared ? (
           <Field label="Customer">
             <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 ring-1 ring-ink/15">
               <span>
                 <span className="block font-semibold">
-                  {customer.firstName} {customer.lastName}
+                  {linkedCustomer.firstName} {linkedCustomer.lastName}
                 </span>
-                {property ? <span className="block text-sm text-ink/70">{propertyLine(property)}</span> : null}
+                {linkedProperty ? (
+                  <span className="block text-sm text-ink/70">{propertyLine(linkedProperty)}</span>
+                ) : null}
               </span>
               <div className="flex shrink-0 items-center gap-1">
                 <Link
-                  href={customerEditHref(customer.customerId, customerEditReturnTo)}
+                  href={customerEditHref(linkedCustomer.customerId, customerEditReturnTo)}
                   className="flex size-11 items-center justify-center rounded-full text-ink/70 hover:bg-cream"
-                  aria-label={`Edit ${customer.firstName} ${customer.lastName}`}
+                  aria-label={`Edit ${linkedCustomer.firstName} ${linkedCustomer.lastName}`}
                 >
                   <CustomerEditIcon />
                 </Link>
@@ -460,17 +531,17 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
           </>
         )}
 
-        {customerId ? (
+        {linkedCustomerId ? (
           <Field label="Property">
             <select
               className={fieldClass}
-              value={propertyId}
+              value={propertyId || linkedPropertyId}
               onChange={(event) => setPropertyId(event.target.value)}
             >
               <option value="">Choose a property</option>
-              {properties.map((property) => (
-                <option key={property.propertyId} value={property.propertyId}>
-                  {property.streetAddress}, {property.city}
+              {linkedProperties.map((home) => (
+                <option key={home.propertyId} value={home.propertyId}>
+                  {home.streetAddress}, {home.city}
                 </option>
               ))}
             </select>
@@ -499,18 +570,22 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
           />
         </Field>
 
-        <EstimatedDurationPicker value={duration} onChange={setDuration} />
+        <Field label={ESTIMATED_ON_SITE_FIELD_LABEL}>
+          <EstimatedDurationPicker value={duration} onChange={setDuration} />
+          <p className="mt-1.5 text-sm text-ink/60">{ESTIMATED_ON_SITE_FIELD_HINT}</p>
+        </Field>
 
-        <Field label="Service type">
+        <Field label="Service type" id="calendar-import-service-type">
           <div className="flex flex-wrap gap-2">
             {SERVICES.map((item) => (
               <button
                 key={item}
                 type="button"
-                aria-pressed={serviceType === item}
+                data-service-type={item}
+                aria-pressed={shownServiceType === item}
                 onClick={() => setServiceType(item)}
                 className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
-                  serviceType === item ? "bg-gold text-ink" : "bg-white text-ink/70 ring-1 ring-ink/15"
+                  shownServiceType === item ? "bg-gold text-ink" : "bg-white text-ink/70 ring-1 ring-ink/15"
                 }`}
               >
                 {serviceLabel(item)}
@@ -582,15 +657,6 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
           >
             Approve and add to schedule
           </PrimaryButton>
-          <SecondaryButton
-            type="button"
-            disabled={busy}
-            loading={pending === "draft"}
-            loadingLabel="Saving…"
-            onClick={() => void saveDraft()}
-          >
-            Save draft
-          </SecondaryButton>
           <SecondaryButton
             type="button"
             disabled={busy}

@@ -10,7 +10,14 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { BatchWriteCommand, DynamoDBDocumentClient, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { hubToItems } from "../lib/data/items.ts";
 import { snapshotVisit } from "../lib/domain/customers.ts";
-import type { AvailabilityWindow, CleanerProfile, Customer, Job, Property } from "../lib/domain/types.ts";
+import type {
+  AvailabilityWindow,
+  CalendarImport,
+  CleanerProfile,
+  Customer,
+  Job,
+  Property,
+} from "../lib/domain/types.ts";
 import { addDays, todayInBusinessZone } from "../lib/domain/time.ts";
 import { emptyHub } from "../lib/mock/seed.ts";
 import { E2E } from "../e2e/fixtures/ids.ts";
@@ -179,13 +186,50 @@ function availabilityWindow(
   return { availabilityId, cleanerId, date, start: "07:00", end: "17:00" };
 }
 
-function draftJob(
+function pendingCalendarImport(
+  row: Pick<
+    CalendarImport,
+    | "importId"
+    | "googleCalendarEventId"
+    | "serviceDate"
+    | "raw"
+    | "parsed"
+    | "suggestedCustomerId"
+    | "suggestedPropertyId"
+    | "marketId"
+  > &
+    Partial<CalendarImport>,
+): CalendarImport {
+  return {
+    importId: row.importId,
+    googleCalendarEventId: row.googleCalendarEventId,
+    status: "PENDING_REVIEW",
+    serviceDate: row.serviceDate,
+    arrivalWindowStart: row.arrivalWindowStart ?? "10:00",
+    arrivalWindowEnd: row.arrivalWindowEnd ?? "10:00",
+    expectedDurationMinutes: row.expectedDurationMinutes,
+    serviceType: row.serviceType ?? "DEEP_CLEAN",
+    headcountNeeded: row.headcountNeeded ?? 1,
+    specialInstructions: row.specialInstructions ?? "",
+    marketId: row.marketId ?? "portland",
+    raw: row.raw,
+    parsed: row.parsed,
+    suggestedCustomerId: row.suggestedCustomerId,
+    suggestedPropertyId: row.suggestedPropertyId,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+    lastSyncedAt: STAMP,
+  };
+}
+
+function hubJob(
   jobId: string,
   date: string,
   customerId: string,
   propertyId: string,
   cust: Customer,
   prop: Property,
+  status: Job["status"],
 ): Job {
   return {
     jobId,
@@ -194,7 +238,7 @@ function draftJob(
     propertyId,
     snapshot: snapshotVisit(cust, prop),
     serviceType: "DEEP_CLEAN",
-    status: "DRAFT",
+    status,
     headcountNeeded: 1,
     specialInstructions: "",
     expectedDurationMinutes: 240,
@@ -208,6 +252,17 @@ function draftJob(
   };
 }
 
+function draftJob(
+  jobId: string,
+  date: string,
+  customerId: string,
+  propertyId: string,
+  cust: Customer,
+  prop: Property,
+): Job {
+  return hubJob(jobId, date, customerId, propertyId, cust, prop, "DRAFT");
+}
+
 export async function seedE2eHub(): Promise<void> {
   assertE2eTable();
   const today = todayInBusinessZone();
@@ -217,6 +272,8 @@ export async function seedE2eHub(): Promise<void> {
 
   const pdxCustomer = customer(E2E.customerPortland, "E2E", "Portland", "5035550101");
   const phxCustomer = customer(E2E.customerPhoenix, "E2E", "Phoenix", "6025550102");
+  const freshCustomer = customer(E2E.customerFresh, "E2E", "Fresh", "5035550199");
+  const returningCustomer = customer(E2E.customerReturning, "E2E", "Returning", "5035550198");
   const pdxProperty = property(
     E2E.propertyPortland,
     E2E.customerPortland,
@@ -233,6 +290,27 @@ export async function seedE2eHub(): Promise<void> {
     "AZ",
     "85004",
   );
+  const freshProperty = property(
+    E2E.propertyFresh,
+    E2E.customerFresh,
+    "portland",
+    "Portland",
+    "OR",
+    "97205",
+  );
+  const returningProperty = property(
+    E2E.propertyReturning,
+    E2E.customerReturning,
+    "portland",
+    "Portland",
+    "OR",
+    "97206",
+  );
+
+  const importApproveDate = addDays(today, 14);
+  const importDismissDate = addDays(today, 15);
+  const importFreshDate = addDays(today, 16);
+  const importReturningDate = addDays(today, 17);
 
   const hub = {
     ...emptyHub(today),
@@ -240,9 +318,18 @@ export async function seedE2eHub(): Promise<void> {
       cleaner(E2E.cleanerPortland, "Ada", "E2E", "portland", "5035550201"),
       cleaner(E2E.cleanerPhoenix, "Rio", "E2E", "phoenix", "6025550202"),
     ],
-    customers: [pdxCustomer, phxCustomer],
-    properties: [pdxProperty, phxProperty],
+    customers: [pdxCustomer, phxCustomer, freshCustomer, returningCustomer],
+    properties: [pdxProperty, phxProperty, freshProperty, returningProperty],
     jobs: [
+      hubJob(
+        E2E.jobReturningScheduled,
+        addDays(today, -7),
+        E2E.customerReturning,
+        E2E.propertyReturning,
+        returningCustomer,
+        returningProperty,
+        "SCHEDULED",
+      ),
       draftJob(E2E.jobPortland, jobDate, E2E.customerPortland, E2E.propertyPortland, pdxCustomer, pdxProperty),
       draftJob(E2E.jobPhoenix, jobDate, E2E.customerPhoenix, E2E.propertyPhoenix, phxCustomer, phxProperty),
       draftJob(E2E.jobPhoenixAssign, jobDate, E2E.customerPhoenix, E2E.propertyPhoenix, phxCustomer, phxProperty),
@@ -251,6 +338,98 @@ export async function seedE2eHub(): Promise<void> {
       availabilityWindow(`e2e-av-pdx-${date}`, E2E.cleanerPortland, date),
       availabilityWindow(`e2e-av-phx-${date}`, E2E.cleanerPhoenix, date),
     ]),
+    calendarImports: [
+      pendingCalendarImport({
+        importId: E2E.calImportPortlandApprove,
+        googleCalendarEventId: E2E.gcalEventPortlandApprove,
+        serviceDate: importApproveDate,
+        marketId: "portland",
+        suggestedCustomerId: E2E.customerPortland,
+        suggestedPropertyId: E2E.propertyPortland,
+        raw: {
+          title: "E2E Portland",
+          description: "4 bed\n2 bath\n1,200 sq ft",
+          location: "100 E2E St, Portland, OR 97201",
+        },
+        parsed: {
+          suggestedFirstName: "E2E",
+          suggestedLastName: "Portland",
+          streetAddress: "100 E2E St",
+          city: "Portland",
+          state: "OR",
+          zip: "97201",
+          marketId: "portland",
+          bedrooms: 4,
+          bathrooms: 2,
+          squareFeet: 1200,
+        },
+      }),
+      pendingCalendarImport({
+        importId: E2E.calImportDismiss,
+        googleCalendarEventId: E2E.gcalEventDismiss,
+        serviceDate: importDismissDate,
+        marketId: "portland",
+        raw: {
+          title: "Zelda E2E Stranger",
+          description: "3 bed\n2 bath\n1,100 sq ft",
+          location: "999 Unknown Ave, Portland, OR",
+        },
+        parsed: {
+          suggestedFirstName: "Zelda",
+          suggestedLastName: "E2E Stranger",
+          bedrooms: 3,
+          bathrooms: 2,
+          squareFeet: 1100,
+          marketId: "portland",
+        },
+      }),
+      pendingCalendarImport({
+        importId: E2E.calImportFresh,
+        googleCalendarEventId: E2E.gcalEventFresh,
+        serviceDate: importFreshDate,
+        marketId: "portland",
+        suggestedCustomerId: E2E.customerFresh,
+        suggestedPropertyId: E2E.propertyFresh,
+        raw: {
+          title: "E2E Fresh",
+          description: "2 bed\n1 bath\nApt 2",
+          location: "100 E2E St, Portland, OR 97205, United States",
+        },
+        parsed: {
+          suggestedFirstName: "E2E",
+          suggestedLastName: "Fresh",
+          bedrooms: 2,
+          bathrooms: 1,
+          marketId: "portland",
+        },
+        specialInstructions: "Apt 2",
+      }),
+      pendingCalendarImport({
+        importId: E2E.calImportReturning,
+        googleCalendarEventId: E2E.gcalEventReturning,
+        serviceDate: importReturningDate,
+        marketId: "portland",
+        suggestedCustomerId: E2E.customerReturning,
+        suggestedPropertyId: E2E.propertyReturning,
+        raw: {
+          title: "E2E Returning",
+          description: "3 bed\n2 bath\n1,400 sq ft",
+          location: "200 E2E St, Portland, OR 97206, United States",
+        },
+        parsed: {
+          suggestedFirstName: "E2E",
+          suggestedLastName: "Returning",
+          streetAddress: "200 E2E St",
+          city: "Portland",
+          state: "OR",
+          zip: "97206",
+          marketId: "portland",
+          bedrooms: 3,
+          bathrooms: 2,
+          squareFeet: 1400,
+        },
+      }),
+    ],
   };
 
   const items = hubToItems(hub);

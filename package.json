@@ -19,6 +19,7 @@
     "dynamo:backfill-customer-gsi": "node --env-file=.env.local --experimental-strip-types scripts/backfill-customer-gsi.ts",
     "dynamo:backfill-markets": "node --env-file=.env.local --experimental-strip-types scripts/backfill-markets.ts",
     "e2e:prepare": "node --experimental-strip-types scripts/e2e-prepare.ts",
+    "e2e:stop": "sh -c 'lsof -ti:${E2E_PORT:-3099} | xargs kill -9 2>/dev/null; rm -f .next-e2e/dev/lock 2>/dev/null; true'",
     "playwright:install": "playwright install chromium",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui --headed"

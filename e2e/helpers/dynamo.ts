@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { Page } from "@playwright/test";
@@ -74,6 +75,12 @@ export type JobProfileRow = {
 };
 
 /** Confirms Playwright is wired to the seeded e2e table (not preview-only). */
+export async function getCalendarImportFromDynamo(importId: string): Promise<Record<string, unknown> | null> {
+  const items = await queryPartition(`CAL_IMPORT#${importId}`);
+  const profile = items.find((item) => item.sk === "PROFILE");
+  return profile ?? null;
+}
+
 export async function expectE2eSeedPresentInDynamo(): Promise<void> {
   for (const jobId of [E2E.jobPortland, E2E.jobPhoenix, E2E.jobPhoenixAssign]) {
     const profile = await getJobProfileFromDynamo(jobId);
@@ -87,6 +94,22 @@ export async function expectE2eSeedPresentInDynamo(): Promise<void> {
       throw new Error(`Seed cleaner CLEANER#${cleanerId} PROFILE missing in ${e2eTableName()}.`);
     }
   }
+}
+
+/** Full clear + seed (same as `npm run e2e:prepare`). Calendar-import specs call this between tests. */
+export function reseedE2eTable(): void {
+  const e2eEnv = path.join(e2eRoot, ".env");
+  const local = path.join(repoRoot, ".env.local");
+  const envFile = process.env.E2E_ENV_FILE?.trim() || (fs.existsSync(e2eEnv) ? e2eEnv : local);
+  if (!fs.existsSync(envFile)) {
+    throw new Error("Missing e2e/.env or .env.local for reseedE2eTable.");
+  }
+  const table = e2eTableName();
+  execSync(`node --env-file="${envFile}" --experimental-strip-types scripts/seed-e2e.ts`, {
+    cwd: repoRoot,
+    stdio: "pipe",
+    env: { ...process.env, DYNAMODB_TABLE_NAME: table },
+  });
 }
 
 /** Read `JOB#…` / PROFILE from the e2e Dynamo table (not the in-memory hub). */

@@ -51,14 +51,11 @@ import {
   dismissCalendarCanceledImportAction,
   markCalendarCanceledNotifiedAction,
   rejectCalendarImportAction,
+  loadCalendarImportAction,
   syncCalendarImportsAction,
-  updateCalendarImportAction,
   type CalendarImportActionResult,
 } from "@/app/actions/calendar-import";
-import type {
-  ApproveCalendarImportInput,
-  UpdateCalendarImportInput,
-} from "@/lib/hub/calendar-import-mutations";
+import type { ApproveCalendarImportInput } from "@/lib/hub/calendar-import-mutations";
 import {
   bootstrapHub,
   bootstrapAdminHubSupplement,
@@ -210,6 +207,8 @@ type HubContextValue = HubState & {
   ensureScheduleJobsForMonth: (monthStart: string) => Promise<void>;
   /** Load one JOB# partition when it is missing from the in-memory hub. */
   ensureHubJob: (jobId: string) => Promise<boolean>;
+  /** Load one CAL_IMPORT# row when it is missing from the in-memory hub (deep links). */
+  ensureHubCalendarImport: (importId: string) => Promise<boolean>;
   saveCustomer: (input: CustomerInput, customerId?: string) => AsyncActionResult;
   deleteCustomer: (customerId: string) => AsyncActionResult;
   saveSeries: (seriesId: string, input: SaveSeriesInput) => AsyncActionResult;
@@ -226,7 +225,6 @@ type HubContextValue = HubState & {
   markAssignmentNotified: (assignmentId: string) => AsyncActionResult;
   deleteJob: (jobId: string) => AsyncActionResult;
   deleteSeries: (seriesId: string) => AsyncActionResult;
-  updateCalendarImport: (input: UpdateCalendarImportInput) => AsyncActionResult;
   rejectCalendarImport: (importId: string, reason?: string) => AsyncActionResult;
   dismissCalendarCanceledImport: (importId: string) => AsyncActionResult;
   markCalendarCanceledNotified: (importId: string) => AsyncActionResult;
@@ -445,6 +443,7 @@ export function HubProvider({
   const scheduleLookbackMonthsRef = useRef(new Set<string>());
   const scheduleLookbackInflightRef = useRef(new Map<string, Promise<void>>());
   const hubJobHydrateInflightRef = useRef(new Map<string, Promise<boolean>>());
+  const hubCalendarImportHydrateInflightRef = useRef(new Map<string, Promise<boolean>>());
   const skipPersistForRemoteSyncRef = useRef(false);
   const staffingSaveInFlightRef = useRef(false);
   const actionLoadingRef = useRef(0);
@@ -841,6 +840,38 @@ export function HubProvider({
       hubJobHydrateInflightRef.current.delete(trimmed);
     });
     hubJobHydrateInflightRef.current.set(trimmed, pending);
+    return pending;
+  }, [setState]);
+
+  const ensureHubCalendarImport = useCallback(async (importId: string): Promise<boolean> => {
+    if (!bootstrappedRef.current || sourceRef.current !== "dynamodb" || stateRef.current?.role !== "ADMIN") {
+      return false;
+    }
+    const trimmed = importId.trim();
+    if (!trimmed) return false;
+    if (stateRef.current.calendarImports.some((item) => item.importId === trimmed)) return true;
+    const inflight = hubCalendarImportHydrateInflightRef.current.get(trimmed);
+    if (inflight) {
+      await inflight;
+      return stateRef.current?.calendarImports.some((item) => item.importId === trimmed) ?? false;
+    }
+    const pending = (async (): Promise<boolean> => {
+      const remote = await loadCalendarImportAction(trimmed);
+      if (!remote.ok) return false;
+      setState((prev) => {
+        if (!prev) return prev;
+        if (prev.calendarImports.some((item) => item.importId === trimmed)) return prev;
+        return {
+          ...withCurrentHorizon(mergeHubPatchIntoHub(prev, remote.hub)),
+          role: prev.role,
+          cleanerId: prev.cleanerId,
+        };
+      });
+      return true;
+    })().finally(() => {
+      hubCalendarImportHydrateInflightRef.current.delete(trimmed);
+    });
+    hubCalendarImportHydrateInflightRef.current.set(trimmed, pending);
     return pending;
   }, [setState]);
 
@@ -1483,14 +1514,6 @@ export function HubProvider({
     return { ok: true, message: remote.message, jobId: remote.jobId };
   }
 
-  async function updateCalendarImport(input: UpdateCalendarImportInput): AsyncActionResult {
-    if (isDynamoAdmin()) {
-      return applyCalendarImportActionResult(await updateCalendarImportAction(input));
-    }
-    const { updateCalendarImportOnHub } = await import("@/lib/hub/calendar-import-mutations");
-    return applyPreviewMutation(updateCalendarImportOnHub(data, input));
-  }
-
   async function rejectCalendarImport(importId: string, reason?: string): AsyncActionResult {
     if (isDynamoAdmin()) {
       return applyCalendarImportActionResult(await rejectCalendarImportAction(importId, reason));
@@ -1631,6 +1654,7 @@ export function HubProvider({
     mergeAdminHub,
     ensureScheduleJobsForMonth,
     ensureHubJob,
+    ensureHubCalendarImport,
     saveCustomer,
     deleteCustomer,
     saveSeries,
@@ -1647,7 +1671,6 @@ export function HubProvider({
     markAssignmentNotified,
     deleteJob,
     deleteSeries,
-    updateCalendarImport,
     rejectCalendarImport,
     dismissCalendarCanceledImport,
     markCalendarCanceledNotified,

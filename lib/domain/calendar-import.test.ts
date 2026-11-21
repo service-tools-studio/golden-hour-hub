@@ -117,6 +117,10 @@ describe("calendar import parser", () => {
     const customers = [{ customerId: "c-1", status: "ACTIVE" as const }];
     const priorJob = [{ customerId: "c-1", status: "SCHEDULED" as const }];
     assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", "c-1", customers, priorJob), "RECURRING");
+    assert.equal(
+      calendarImportDefaultServiceType("DEEP_CLEAN", "c-1", customers, [{ customerId: "c-1", status: "DRAFT" }]),
+      "RECURRING",
+    );
     assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", "c-1", customers, []), "DEEP_CLEAN");
     assert.equal(calendarImportDefaultServiceType("MOVE_OUT", "c-1", customers, priorJob), "MOVE_OUT");
     assert.equal(calendarImportDefaultServiceType("DEEP_CLEAN", undefined, customers), "DEEP_CLEAN");

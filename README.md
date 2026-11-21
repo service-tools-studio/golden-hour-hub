@@ -51,10 +51,18 @@ Uses a **dedicated** DynamoDB table (default `GoldenHourHub-e2e`). `globalSetup`
 
 ```bash
 npm run e2e:prepare   # clear + seed only
-npm run test:e2e:ui   # Playwright UI (headed Chrome + step-through)
+npm run test:e2e:ui   # Playwright Test UI (native window) + headed Chromium when you run specs
 ```
 
-In **UI mode**, the preview stays empty until you **run** a test: that starts Next on [http://localhost:3099](http://localhost:3099) (not your usual `npm run dev` port). You are not meant to browse the app inside the UI like a normal tab—either watch the headed window while tests run, or open port 3099 yourself while the UI session is running after a test has started the server.
+**UI mode** opens Playwright’s own Test UI (not your daily browser). When you run a spec, `--headed` shows Chromium driving the app. That run starts Next on [http://localhost:3099](http://localhost:3099) (not `npm run dev` on port 3000). Run UI from **macOS Terminal** if the Playwright window does not appear behind Cursor.
+
+**UI or tests hang / connection refused:** stop a stale e2e server and drop Next’s e2e lock, then retry:
+
+```bash
+npm run e2e:stop
+npm run playwright:install   # after @playwright/test updates
+npm run test:e2e:ui
+```
 
 ### CI and deployment gates
 

@@ -15,7 +15,6 @@ import {
   rejectCalendarImportOnHub,
   updateCalendarImportOnHub,
   type ApproveCalendarImportInput,
-  type UpdateCalendarImportInput,
 } from "@/lib/hub/calendar-import-mutations";
 import type { HubData } from "@/lib/mock/seed";
 import { hubMutationPatch, type HubPatchRemove } from "@/lib/hub/merge-hub-patch";
@@ -90,23 +89,6 @@ async function persistCalendarImportMutation(
     revision: saved.revision,
     message: saved.message,
   };
-}
-
-export async function updateCalendarImportAction(
-  input: UpdateCalendarImportInput,
-): Promise<CalendarImportActionResult> {
-  try {
-    await requireAdmin();
-    if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    return persistCalendarImportMutation(
-      () => loadAdminHubSlices({ persistReconciliation: false }),
-      (hub) => updateCalendarImportOnHub(hub, input),
-    );
-  } catch (error) {
-    if (error instanceof AuthError) return { ok: false, message: error.message };
-    console.error("updateCalendarImportAction failed.", error);
-    return { ok: false, message: "Could not save this import." };
-  }
 }
 
 export async function dismissCalendarCanceledImportAction(
