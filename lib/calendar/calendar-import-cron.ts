@@ -7,6 +7,7 @@ import {
   listGoogleCalendarEventsInRange,
 } from "../services/google-calendar-client.ts";
 import { applyCalendarEventsToHub } from "./calendar-import-apply.ts";
+import { notifyJasminNewCalendarImports } from "./calendar-import-notify.ts";
 
 export async function runCalendarImportCron(hub: HubData = emptyHub(todayInBusinessZone())): Promise<{
   ran: boolean;
@@ -69,6 +70,10 @@ export async function runCalendarImportCron(hub: HubData = emptyHub(todayInBusin
       skipped: applied.skipped,
       message: applied.message,
     };
+  }
+
+  if (applied.persisted && applied.created > 0) {
+    await notifyJasminNewCalendarImports(applied.created);
   }
 
   return {
