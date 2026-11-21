@@ -54,7 +54,7 @@ export async function syncCalendarImportsAction(): Promise<CalendarImportActionR
       return { ok: false, message: "Google Calendar import is not configured." };
     }
     const hub = await loadAdminHubSlices({ persistReconciliation: true });
-    const result = await runCalendarImportCron(hub);
+    const result = await runCalendarImportCron(hub, { notifyJasminOnNewImports: false });
     if (!result.ran) {
       return { ok: false, message: formatCalendarSyncMessage(result) };
     }

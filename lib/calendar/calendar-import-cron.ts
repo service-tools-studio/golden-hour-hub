@@ -9,7 +9,15 @@ import {
 import { applyCalendarEventsToHub } from "./calendar-import-apply.ts";
 import { notifyJasminNewCalendarImports } from "./calendar-import-notify.ts";
 
-export async function runCalendarImportCron(hub: HubData = emptyHub(todayInBusinessZone())): Promise<{
+export type RunCalendarImportCronOptions = {
+  /** Texts JASMIN_PHONE when new import rows are persisted (cron / webhook only; not Check Gmail). */
+  notifyJasminOnNewImports?: boolean;
+};
+
+export async function runCalendarImportCron(
+  hub: HubData = emptyHub(todayInBusinessZone()),
+  options: RunCalendarImportCronOptions = {},
+): Promise<{
   ran: boolean;
   fetched: number;
   created: number;
@@ -72,7 +80,8 @@ export async function runCalendarImportCron(hub: HubData = emptyHub(todayInBusin
     };
   }
 
-  if (applied.persisted && applied.created > 0) {
+  const notifyJasmin = options.notifyJasminOnNewImports !== false;
+  if (notifyJasmin && applied.persisted && applied.created > 0) {
     await notifyJasminNewCalendarImports(applied.created);
   }
 

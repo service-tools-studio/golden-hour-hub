@@ -20,7 +20,7 @@ Admins review at `/admin/calendar-imports/[importId]`, match or create a custome
 2. **Webhook** — `POST /api/google-calendar/webhook` validates `X-Goog-Channel-ID` / `X-Goog-Resource-ID` (and optional `GOOGLE_CALENDAR_WEBHOOK_TOKEN` via `X-Goog-Channel-Token`), then runs the same import pass as the daily cron.
 3. **Daily backstop** — `GET /api/cron/calendar-import` (`0 9 * * *`) still runs a full range import if a push was missed.
 
-When sync **persists one or more new** `PENDING_REVIEW` imports, Hub texts **`JASMIN_PHONE`** (Twilio staff SMS) with the count and a link to `/admin` (`NEXT_PUBLIC_APP_URL`). Updates to existing import rows do not trigger this text.
+When **automated** sync (daily cron or Google push webhook) **persists one or more new** `PENDING_REVIEW` imports, Hub texts **`JASMIN_PHONE`** (Twilio staff SMS) with the count and a link to `/admin` (`NEXT_PUBLIC_APP_URL`). Dashboard **Check Gmail** does not send that text. Updates to existing import rows do not trigger it.
 
 Production needs:
 
