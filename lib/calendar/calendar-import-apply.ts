@@ -9,7 +9,7 @@ import {
   syncedCalendarImportSpecialInstructions,
   findExistingJobForCalendarImport,
   parseGoogleCalendarEvent,
-  suggestCustomerForCalendarImport,
+  resolveCalendarImportCustomerLink,
 } from "../domain/calendar-import.ts";
 import type { CalendarImport } from "../domain/types.ts";
 import {
@@ -90,6 +90,9 @@ export async function applyCalendarEventsToHub(
 
   function withdrawLinkedImport(existing: CalendarImport) {
     const jobId = calendarImportLinkedJobId(workingHub, existing);
+    if (existing.status === "WITHDRAWN" && !jobId) {
+      return;
+    }
     const rescheduleStale = calendarImportRescheduleStaleImportRow(workingHub, existing);
     let notifyCleanerIds = existing.calendarCanceledNotifyCleanerIds;
     if (jobId && !rescheduleStale) {
@@ -199,11 +202,11 @@ export async function applyCalendarEventsToHub(
       continue;
     }
 
-    const suggestions = suggestCustomerForCalendarImport(
-      workingHub.customers,
-      parsed.fields.parsed,
-      workingHub.properties,
-    );
+    const customerLink = resolveCalendarImportCustomerLink(workingHub.customers, workingHub.properties, {
+      parsed: parsed.fields.parsed,
+      raw: parsed.fields.raw,
+      specialInstructions: parsed.fields.specialInstructions,
+    });
     const matchedJob = findExistingJobForCalendarImport(
       workingHub.jobs,
       workingHub.customers,
@@ -211,8 +214,8 @@ export async function applyCalendarEventsToHub(
       {
         googleCalendarEventId: eventId,
         serviceDate: parsed.fields.serviceDate,
-        suggestedCustomerId: suggestions.customerId ?? existing?.suggestedCustomerId,
-        suggestedPropertyId: suggestions.propertyId ?? existing?.suggestedPropertyId,
+        suggestedCustomerId: customerLink.customerId,
+        suggestedPropertyId: customerLink.propertyId,
         parsed: parsed.fields.parsed,
       },
     );
@@ -223,7 +226,7 @@ export async function applyCalendarEventsToHub(
         expectedDurationMinutes: _eventDuration,
         ...syncedFields
       } = parsed.fields;
-      const suggestedCustomerId = suggestions.customerId ?? existing.suggestedCustomerId;
+      const suggestedCustomerId = customerLink.customerId;
       const linkedJobId = matchedJob?.jobId ?? existing.matchedJobId ?? existing.approvedJobId;
       const next: CalendarImport = {
         ...existing,
@@ -241,7 +244,7 @@ export async function applyCalendarEventsToHub(
         ),
         expectedDurationMinutes: calendarImportPreservedDurationMinutes(existing, event),
         suggestedCustomerId,
-        suggestedPropertyId: suggestions.propertyId ?? existing.suggestedPropertyId,
+        suggestedPropertyId: customerLink.propertyId,
         matchedJobId: existing.matchedJobId?.trim() || linkedJobId,
         approvedJobId: existing.approvedJobId,
         status: "PENDING_REVIEW",
@@ -259,13 +262,13 @@ export async function applyCalendarEventsToHub(
       ...parsed.fields,
       serviceType: calendarImportDefaultServiceType(
         parsed.fields.serviceType,
-        suggestions.customerId,
+        customerLink.customerId,
         workingHub.customers,
         workingHub.jobs,
       ),
       status: "PENDING_REVIEW",
-      suggestedCustomerId: suggestions.customerId,
-      suggestedPropertyId: suggestions.propertyId,
+      suggestedCustomerId: customerLink.customerId,
+      suggestedPropertyId: customerLink.propertyId,
       matchedJobId: matchedJob?.jobId,
       createdAt: now,
       updatedAt: now,

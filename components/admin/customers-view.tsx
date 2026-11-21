@@ -163,6 +163,7 @@ export function NewCustomerView({
   bathrooms,
   squareFeet,
   unit,
+  notes,
 }: {
   calendarImportId?: string;
   returnTo?: string;
@@ -170,6 +171,7 @@ export function NewCustomerView({
   lastName?: string;
   phone?: string;
   email?: string;
+  notes?: string;
   streetAddress?: string;
   city?: string;
   state?: string;
@@ -224,6 +226,7 @@ export function NewCustomerView({
     bathrooms: bathrooms ?? importHints?.bathrooms,
     squareFeet: squareFeet ?? importHints?.squareFeet,
     unit: unit ?? importHints?.unit,
+    notes: notes ?? importHints?.suggestedNotes,
   };
   useUnsavedNavigation(true, () => Boolean(formRef.current?.isDirty()), setLeaveHref);
   useHubSyncBlocker(() => Boolean(formRef.current?.isDirty()));
@@ -253,6 +256,7 @@ export function NewCustomerView({
           initialLastName={prefill.lastName}
           initialPhone={prefill.phone}
           initialEmail={prefill.email}
+          initialNotes={prefill.notes}
           initialProperty={{
             streetAddress: prefill.streetAddress,
             unit: prefill.unit,

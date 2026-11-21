@@ -86,6 +86,20 @@ describe("calendar import sync side effects", () => {
       ),
       true,
     );
+    assert.equal(
+      calendarImportShouldWithdrawFromGoogleSync(
+        stubImport({ status: "WITHDRAWN", approvedJobId: "job-1" }),
+        undefined,
+      ),
+      false,
+    );
+    assert.equal(
+      calendarImportShouldWithdrawFromGoogleSync(
+        stubImport({ status: "CALENDAR_CANCELED", approvedJobId: "job-1" }),
+        undefined,
+      ),
+      false,
+    );
   });
 
   it("flags imports missing from Google inside the sync window", () => {

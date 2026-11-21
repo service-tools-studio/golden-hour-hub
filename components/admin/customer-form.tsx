@@ -222,6 +222,7 @@ export function CustomerForm({
   initialLastName,
   initialPhone,
   initialEmail,
+  initialNotes,
   initialProperty,
   scrollToPropertyId,
   onCancel,
@@ -234,6 +235,7 @@ export function CustomerForm({
   initialLastName?: string;
   initialPhone?: string;
   initialEmail?: string;
+  initialNotes?: string;
   initialProperty?: CustomerFormPropertyHint;
   scrollToPropertyId?: string | null;
   onCancel?: () => void;
@@ -256,7 +258,7 @@ export function CustomerForm({
         ? formatPhoneInput(initialPhone)
         : "",
     email: customer?.email ?? initialEmail?.trim() ?? "",
-    notes: customer?.notes ?? "",
+    notes: customer?.notes ?? initialNotes?.trim() ?? "",
   });
   const [properties, setProperties] = useState(() => draftsFor(customer, hub.properties, initialProperty));
 
@@ -630,7 +632,7 @@ export function CustomerForm({
                   onChange={(value) => updateProperty(property.key, { squareFeet: value })}
                 />
               </div>
-              <Field label="Preferences">
+              <Field label="Preferences (visible to the cleaner)">
                 <textarea
                   className={`${fieldClass} min-h-24 py-3`}
                   value={property.preferences}
@@ -675,7 +677,7 @@ export function CustomerForm({
           aria-invalid={Boolean(fieldMessage("email"))}
         />
       </Field>
-      <Field id="customer-notes" label="Notes">
+      <Field id="customer-notes" label="Notes (not visible to the cleaner)">
         <textarea
           ref={notesRef}
           className={`${inputClass(false)} min-h-24 py-3`}

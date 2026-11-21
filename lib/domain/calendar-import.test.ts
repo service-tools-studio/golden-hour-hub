@@ -29,8 +29,10 @@ import {
   parsePropertySizeFromEventText,
   parseServiceTypeFromEventText,
   calendarImportDefaultServiceType,
+  calendarImportLinkedJobId,
   calendarImportRawEventDetailsText,
   suggestCustomerForCalendarImport,
+  resolveCalendarImportCustomerLink,
 } from "./calendar-import.ts";
 import type { CalendarImport, Customer, Job } from "./types.ts";
 
@@ -571,6 +573,47 @@ describe("calendar import parser", () => {
     );
   });
 
+  it("does not treat a canceled hub job as still linked for calendar sync", () => {
+    const hub = {
+      jobs: [
+        {
+          jobId: "job-1",
+          customerId: "c1",
+          propertyId: "p1",
+          serviceType: "DEEP_CLEAN" as const,
+          date: "2026-11-29",
+          headcountNeeded: 1,
+          snapshot: {} as Job["snapshot"],
+          status: "CANCELED" as const,
+          createdAt: "",
+          createdBy: "",
+          updatedAt: "",
+          updatedBy: "",
+          specialInstructions: "",
+        },
+      ],
+      customers: [],
+      properties: [],
+    };
+    const row = {
+      importId: "imp-1",
+      googleCalendarEventId: "gcal-1",
+      approvedJobId: "job-1",
+      serviceDate: "2026-11-29",
+      status: "WITHDRAWN" as const,
+      serviceType: "DEEP_CLEAN" as const,
+      headcountNeeded: 1,
+      specialInstructions: "",
+      marketId: "portland" as const,
+      raw: { title: "", description: "", location: "" },
+      parsed: {},
+      createdAt: "",
+      updatedAt: "",
+      lastSyncedAt: "",
+    } satisfies CalendarImport;
+    assert.equal(calendarImportLinkedJobId(hub, row), undefined);
+  });
+
   it("treats CALENDAR_CANCELED on the old date as stale when the hub job moved", () => {
     const hub = {
       jobs: [
@@ -636,6 +679,7 @@ describe("calendar import parser", () => {
       },
     });
     assert.equal(prefill.unit, "Apt 2");
+    assert.equal(prefill.suggestedNotes, "2 bed\n1 bath\nApt 2");
   });
 
   it("builds new customer href with parsed hints", () => {
@@ -719,6 +763,155 @@ describe("calendar import parser", () => {
     suggestedLastName: "Smith",
   }, []);
     assert.equal(match.customerId, "cust-rebecca");
+  });
+
+  it("does not suggest a customer when the event street does not match their homes", () => {
+    const customers: Customer[] = [
+      {
+        customerId: "cust-rebecca",
+        firstName: "Rebecca",
+        lastName: "Smith",
+        phone: "5035551212",
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        updatedBy: "test",
+      },
+    ];
+    const match = suggestCustomerForCalendarImport(
+      customers,
+      {
+        suggestedFirstName: "Rebecca",
+        suggestedLastName: "Smith",
+        streetAddress: "999 Other St",
+        city: "Portland",
+        state: "OR",
+        zip: "97201",
+        marketId: "portland",
+      },
+      [{ propertyId: "prop-1", customerId: "cust-rebecca", streetAddress: "123 Main St", marketId: "portland" }],
+    );
+    assert.equal(match.customerId, undefined);
+  });
+
+  it("drops a stale stored customer link when the event address does not match", () => {
+    const customers: Customer[] = [
+      {
+        customerId: "jasmin-again",
+        firstName: "Jasmin",
+        lastName: "Test Again",
+        phone: "5035550100",
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        updatedBy: "test",
+      },
+    ];
+    const link = resolveCalendarImportCustomerLink(
+      customers,
+      [{ propertyId: "prop-a", customerId: "jasmin-again", streetAddress: "10 A St", marketId: "portland" }],
+      {
+        parsed: {
+          suggestedFirstName: "Jasmin",
+          suggestedLastName: "Final test",
+          streetAddress: "20 B St",
+          city: "Portland",
+          state: "OR",
+          marketId: "portland",
+        },
+        raw: { title: "Jasmin Final test", description: "", location: "20 B St, Portland, OR" },
+        specialInstructions: "",
+        suggestedCustomerId: "jasmin-again",
+        suggestedPropertyId: "prop-a",
+      },
+    );
+    assert.equal(link.customerId, undefined);
+    assert.equal(link.propertyId, undefined);
+  });
+
+  it("does not suggest by shared phone when first and last name are parsed", () => {
+    const customers: Customer[] = [
+      {
+        customerId: "jasmin-again",
+        firstName: "Jasmin",
+        lastName: "Test Again",
+        phone: "5035550100",
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        updatedBy: "test",
+      },
+    ];
+    const match = suggestCustomerForCalendarImport(
+      customers,
+      {
+        suggestedFirstName: "Jasmin",
+        suggestedLastName: "Final test",
+        suggestedPhone: "5035550100",
+      },
+      [],
+    );
+    assert.equal(match.customerId, undefined);
+  });
+
+  it("does not suggest by phone when two customers share the number", () => {
+    const sharedPhone = "5035550100";
+    const customers: Customer[] = [
+      {
+        customerId: "jasmin-final",
+        firstName: "Jasmin",
+        lastName: "Final test",
+        phone: sharedPhone,
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        updatedBy: "test",
+      },
+      {
+        customerId: "jasmin-again",
+        firstName: "Jasmin",
+        lastName: "Test Again",
+        phone: sharedPhone,
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        updatedBy: "test",
+      },
+    ];
+    const match = suggestCustomerForCalendarImport(
+      customers,
+      { suggestedFirstName: "Jasmin", suggestedPhone: sharedPhone },
+      [],
+    );
+    assert.equal(match.customerId, undefined);
+  });
+
+  it("suggests by phone when exactly one customer has that number", () => {
+    const customers: Customer[] = [
+      {
+        customerId: "cust-1",
+        firstName: "Rebecca",
+        lastName: "Smith",
+        phone: "5035551212",
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        updatedBy: "test",
+      },
+    ];
+    const match = suggestCustomerForCalendarImport(
+      customers,
+      { suggestedPhone: "5035551212" },
+      [{ propertyId: "prop-1", customerId: "cust-1", streetAddress: "123 Main St", marketId: "portland" }],
+    );
+    assert.equal(match.customerId, "cust-1");
+    assert.equal(match.propertyId, "prop-1");
   });
 
   it("suggests a customer when the profile includes a quoted nickname", () => {

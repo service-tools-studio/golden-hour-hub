@@ -204,6 +204,8 @@ export type CalendarImportParsedHints = {
   squareFeet?: number;
   /** Apt / unit / suite label from event location or details (e.g. "Apt 2"). */
   unit?: string;
+  /** Admin customer notes prefill from the Gmail event description (not shown to cleaners). */
+  suggestedNotes?: string;
 };
 
 export type CalendarImport = {
