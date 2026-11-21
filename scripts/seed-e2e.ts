@@ -298,14 +298,17 @@ export async function seedE2eHub(): Promise<void> {
     "OR",
     "97205",
   );
-  const returningProperty = property(
-    E2E.propertyReturning,
-    E2E.customerReturning,
-    "portland",
-    "Portland",
-    "OR",
-    "97206",
-  );
+  const returningProperty = {
+    ...property(
+      E2E.propertyReturning,
+      E2E.customerReturning,
+      "portland",
+      "Portland",
+      "OR",
+      "97206",
+    ),
+    streetAddress: "200 E2E St",
+  };
 
   const importApproveDate = addDays(today, 14);
   const importDismissDate = addDays(today, 15);
