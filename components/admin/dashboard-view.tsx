@@ -24,12 +24,15 @@ import {
   visibleDashboardCalendarImports,
 } from "@/lib/domain/calendar-import";
 import {
+  cleanerNeedsScheduleReinvite,
   cleanerRemovedFromJobSms,
   crewLine,
   customerFirstNameForCleaner,
   formatLongDate,
   formatTimeLabel,
+  jobHasCleanerScheduleReinvite,
   relativeDay,
+  reinviteFlagText,
   serviceLabel,
 } from "@/lib/format";
 
@@ -100,7 +103,15 @@ export function DashboardView() {
     const people = calculateConfirmedHeadcount(hub.assignments.filter((item) => item.jobId === job.jobId));
     return people < job.headcountNeeded;
   });
-  const needsAttention = unstaffed.filter((job) => job.date <= staffingHorizon);
+  const unstaffedInHorizon = unstaffed.filter((job) => job.date <= staffingHorizon);
+  const scheduleReinviteInHorizon = upcoming.filter(
+    (job) => job.date <= staffingHorizon && jobHasCleanerScheduleReinvite(job, hub.assignments),
+  );
+  const needsAttentionById = new Map<string, (typeof upcoming)[number]>();
+  for (const job of [...unstaffedInHorizon, ...scheduleReinviteInHorizon]) {
+    needsAttentionById.set(job.jobId, job);
+  }
+  const needsAttention = [...needsAttentionById.values()].sort((a, b) => a.date.localeCompare(b.date));
   const missingPhone = hub.customers
     .filter(
       (customer) =>
@@ -110,6 +121,7 @@ export function DashboardView() {
     .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
   const staffed = upcoming
     .filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon)
+    .filter((job) => !needsAttentionById.has(job.jobId))
     .filter((job) => !dismissedJobIds.has(job.jobId));
   const calendarImports = visibleDashboardCalendarImports(hub.calendarImports, viewingToday, marketFilter);
 
@@ -270,7 +282,7 @@ export function DashboardView() {
                         ) : null}
                       </div>
                     ) : null}
-                    {matchedJobId && !canceledOnGmail ? (
+                    {showFooter ? (
                       <button
                         type="button"
                         disabled={dismissing || dismissingImportId !== null}
@@ -299,7 +311,14 @@ export function DashboardView() {
                         </p>
                       </Link>
                     ) : (
-                      <Link href={`/admin/calendar-imports/${item.importId}`} className="block">
+                      <Link
+                        href={
+                          matchedJobId && canceledOnGmail
+                            ? `/admin/jobs/${matchedJobId}?from=dashboard`
+                            : `/admin/calendar-imports/${item.importId}`
+                        }
+                        className="block"
+                      >
                         <p className="text-lg font-semibold">
                           {normalizeCalendarEventTitle(item.raw.title) ||
                             [item.parsed.suggestedFirstName, item.parsed.suggestedLastName]
@@ -391,10 +410,17 @@ function JobStaffingCard({
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   const availabilityFollowUp = assignments.some((item) => item.availabilityConflictWeekStart);
+  const scheduleReinvite = jobHasCleanerScheduleReinvite(job, hub.assignments);
+  const reinviteText = reinviteFlagText(
+    assignments
+      .filter((item) => cleanerNeedsScheduleReinvite(item, job))
+      .map((item) => hub.cleaners.find((cleaner) => cleaner.cleanerId === item.cleanerId)?.firstName)
+      .filter((name): name is string => Boolean(name)),
+  );
   const showDismiss = dismissable && jobCleaningHasEnded(job, hub.assignments, viewingToday, now);
   return (
     <Card
-      className={`relative ${showDismiss ? "pb-10" : ""} ${full ? "ring-2 ring-mint" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}`}
+      className={`relative ${showDismiss ? "pb-10" : ""} ${full ? "ring-2 ring-mint" : scheduleReinvite ? "ring-2 ring-gold/50" : availabilityFollowUp ? "ring-2 ring-red-600/35" : ""}`}
     >
       {showDismiss ? (
         <button
@@ -414,6 +440,11 @@ function JobStaffingCard({
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
+            {scheduleReinvite ? (
+              <span className="rounded-full bg-gold/25 px-2.5 py-0.5 text-xs font-semibold text-ink ring-1 ring-inset ring-gold/40">
+                Re-invite cleaners
+              </span>
+            ) : null}
             {availabilityFollowUp ? (
               <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-800 ring-1 ring-inset ring-red-600/35">
                 Availability follow-up
@@ -427,6 +458,7 @@ function JobStaffingCard({
         <p className="mt-3 text-base font-medium">
           {draft ? "Draft" : `Headcount: ${confirmed} / ${job.headcountNeeded} confirmed`}
         </p>
+        {reinviteText ? <p className="mt-2 text-sm font-semibold text-red-700">{reinviteText}</p> : null}
         <ul className="mt-2 space-y-1 text-sm text-ink/80">
           {assignments.length === 0 && pendingCleaners.length === 0 ? <li>No cleaners assigned yet</li> : null}
           {pendingCleaners.map((cleaner) => (

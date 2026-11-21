@@ -389,13 +389,11 @@ export function cleanerStartTimeUpdateSms(input: {
   return `Hi ${input.cleanerFirstName}! Golden Hour Hub here.\n\nYour cleaning for ${input.customerFirstName} on ${formatLongDate(input.date)} has an updated start time of ${timeLabel}.\n\nDetails for this cleaning are in the Hub: ${link}`;
 }
 
-export function dateReinviteNeeded(
-  assignment: Pick<JobAssignment, "status" | "serviceDate" | "notifiedServiceDate">,
-  date: string,
-): boolean {
-  if (assignment.status !== "INVITED" && assignment.status !== "CONFIRMED") return false;
-  return date !== (assignment.notifiedServiceDate ?? assignment.serviceDate);
-}
+export {
+  cleanerNeedsScheduleReinvite,
+  dateReinviteNeeded,
+  jobHasCleanerScheduleReinvite,
+} from "./domain/schedule-reinvite.ts";
 
 export function reinviteFlagText(firstNames: string[]): string | null {
   if (firstNames.length === 0) return null;
@@ -405,7 +403,7 @@ export function reinviteFlagText(firstNames: string[]): string | null {
       : firstNames.length === 2
         ? `${firstNames[0]} and ${firstNames[1]}`
         : `${firstNames.slice(0, -1).join(", ")}, and ${firstNames[firstNames.length - 1]}`;
-  return `${list} ${firstNames.length === 1 ? "needs" : "need"} to be reinvited for the new date.`;
+  return `${list} ${firstNames.length === 1 ? "needs" : "need"} to be reinvited for the new date or time.`;
 }
 
 export function arrivalMismatchText(scheduledTime: string, firstName: string, arrivalTime: string): string {

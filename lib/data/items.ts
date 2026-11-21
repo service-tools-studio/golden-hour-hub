@@ -144,6 +144,7 @@ export function readCalendarImport(item: DynamoItem): CalendarImport {
       ? item.calendarCanceledNotifyCleanerIds.filter((value): value is string => typeof value === "string")
       : undefined,
     cleanerRemovalNotifiedAt: optionalString(item, "cleanerRemovalNotifiedAt"),
+    gcalRescheduleStaffingAt: optionalString(item, "gcalRescheduleStaffingAt"),
     rejectedReason: optionalString(item, "rejectedReason"),
     createdAt: stringField(item, "createdAt"),
     updatedAt: stringField(item, "updatedAt"),

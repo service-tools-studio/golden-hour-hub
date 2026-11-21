@@ -230,6 +230,8 @@ export type CalendarImport = {
   /** Confirmed cleaners to text after the Google event was canceled (captured at sync). */
   calendarCanceledNotifyCleanerIds?: string[];
   cleanerRemovalNotifiedAt?: string;
+  /** Set when Gmail moves an approved job that still has confirmed cleaners — dashboard staffing alert. */
+  gcalRescheduleStaffingAt?: string;
   rejectedReason?: string;
   createdAt: string;
   updatedAt: string;

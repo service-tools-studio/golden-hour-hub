@@ -186,7 +186,7 @@ Typical path: **New cleaning** or **Edit cleaning** → **Save cleaning**.
 |--------|------|
 | **{Name} has not been notified of this assignment/changes.** (`noticeFlagText`) | Invited/confirmed/pending assignment; assignment or edits not texted yet. |
 | **{Name} submitted availability for the week of…** / **conflicts with another confirmed cleaning** (`liveAvailabilityAttentionMessage` / `availabilityFollowUpReason`) | `NEEDS_ATTENTION` + availability conflict; updates as you change times in the form. |
-| **{Name} needs to be reinvited for the new date.** (`reinviteFlagText`) | Job date changed vs `notifiedServiceDate`. |
+| **{Name} needs to be reinvited for the new date or time.** (`reinviteFlagText`) | Job date/time changed vs what cleaners were last notified. |
 
 ---
 

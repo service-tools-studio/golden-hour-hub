@@ -2,13 +2,14 @@
 
 ## Phase 1 (import)
 
-When `GOOGLE_CALENDAR_ENABLED=true` and OAuth env vars are set, Hub imports events from `GOOGLE_CALENDAR_ID` for **today through +90 days**, upserts `calendar_import` rows in Dynamo, and surfaces **Pending** imports on the admin dashboard under **Jobs imported from Gmail**.
+When `GOOGLE_CALENDAR_ENABLED=true` and OAuth env vars are set, Hub imports events from `GOOGLE_CALENDAR_ID` for **today through +60 days**, upserts `calendar_import` rows in Dynamo, and surfaces **Pending** imports on the admin dashboard under **Jobs imported from Gmail**.
 
 Admins review at `/admin/calendar-imports/[importId]`, match or create a customer, edit visit details, then **Approve** (creates a draft Hub job with `googleCalendarEventId`) or **Dismiss**.
 
-**Check Gmail** (and the import cron/webhook) re-fetches Google Calendar for the same 90-day window. Hub then:
+**Check Gmail** (and the import cron/webhook) re-fetches Google Calendar for the same 60-day window. Hub then:
 
 - Updates pending import rows when an event’s date or arrival changes (reschedule).
+- When an **approved** import’s date or arrival changes and the linked job still has **invited or confirmed** cleaners, Hub updates assignment dates, sets **needs re-invite** on those rows, and the linked job shows under **Jobs needing attention** on the dashboard (re-invite cleaners flag) until you text staff from the job.
 - Marks pending imports **withdrawn** when an event is cancelled or deleted from Google.
 - Treats Calendly-style **`Canceled:`** / **`Cancelled:`** event titles as cancellations even when Google still returns `status: confirmed`.
 - Loads **approved** import rows from Dynamo during sync (they are not kept in the admin hub slice) so deleted events still cancel linked jobs.

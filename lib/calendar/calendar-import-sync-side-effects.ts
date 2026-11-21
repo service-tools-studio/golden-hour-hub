@@ -47,6 +47,19 @@ export function calendarCanceledCleanerIdsFromHub(hub: HubData, jobId: string): 
     .map((item) => item.cleanerId);
 }
 
+/** Cleaners still on the job (invited or confirmed) when Gmail reschedules — needs admin re-invite follow-up. */
+export function calendarRescheduleStaffingCleanerIdsFromHub(hub: HubData, jobId: string): string[] {
+  return hub.assignments
+    .filter(
+      (item) =>
+        item.jobId === jobId &&
+        item.status !== "CANCELED" &&
+        item.status !== "EXPIRED_JOB_FILLED" &&
+        (item.status === "INVITED" || item.status === "CONFIRMED" || item.status === "NEEDS_ATTENTION"),
+    )
+    .map((item) => item.cleanerId);
+}
+
 export function cancelJobFromCalendarSync(hub: HubData, jobId: string): HubData {
   const job = hub.jobs.find((item) => item.jobId === jobId);
   if (!job || job.status === "CANCELED") return hub;
@@ -66,6 +79,21 @@ export function cancelJobFromCalendarSync(hub: HubData, jobId: string): HubData 
   };
 }
 
+export function mergeJobPartitionIntoHub(hub: HubData, slice: HubData, jobId: string): HubData {
+  const job = slice.jobs.find((item) => item.jobId === jobId);
+  if (!job) return hub;
+  const jobs = hub.jobs.some((item) => item.jobId === jobId)
+    ? hub.jobs.map((item) => (item.jobId === jobId ? job : item))
+    : [...hub.jobs, job];
+  const sliceAssignments = slice.assignments.filter((item) => item.jobId === jobId);
+  const otherAssignments = hub.assignments.filter((item) => item.jobId !== jobId);
+  return {
+    ...hub,
+    jobs,
+    assignments: [...otherAssignments, ...sliceAssignments],
+  };
+}
+
 export function rescheduleJobFromCalendarSync(
   hub: HubData,
   jobId: string,
@@ -74,6 +102,34 @@ export function rescheduleJobFromCalendarSync(
   const job = hub.jobs.find((item) => item.jobId === jobId);
   if (!job || job.status === "CANCELED") return hub;
   const now = new Date().toISOString();
+  const assignments = hub.assignments.map((item) => {
+    if (item.jobId !== jobId || item.status === "CANCELED" || item.status === "EXPIRED_JOB_FILLED") {
+      return item;
+    }
+    const tracksDate = item.status === "INVITED" || item.status === "CONFIRMED";
+    const baseline = item.notifiedServiceDate ?? item.serviceDate;
+    let needsReinvite = tracksDate && patch.date !== baseline;
+    if (tracksDate && !needsReinvite) {
+      const norm = (value: string | undefined) => value?.trim() || undefined;
+      const jobArrival = norm(patch.arrivalWindowStart ?? item.arrivalWindowStart);
+      const lastTexted = norm(item.lastNotified?.arrivalWindowStart);
+      const assignArrival = norm(item.arrivalWindowStart);
+      const arrivalBaseline = lastTexted ?? assignArrival;
+      if (jobArrival && arrivalBaseline && jobArrival !== arrivalBaseline) {
+        needsReinvite = true;
+      }
+    }
+    const notifiedServiceDate = tracksDate ? baseline : item.notifiedServiceDate;
+    return {
+      ...item,
+      serviceDate: patch.date,
+      arrivalWindowStart: patch.arrivalWindowStart ?? item.arrivalWindowStart,
+      arrivalWindowEnd: patch.arrivalWindowEnd ?? item.arrivalWindowEnd,
+      notifiedServiceDate,
+      needsDateReinvite: needsReinvite ? true : undefined,
+      updatedAt: now,
+    };
+  });
   return {
     ...hub,
     jobs: hub.jobs.map((item) =>
@@ -88,5 +144,6 @@ export function rescheduleJobFromCalendarSync(
           }
         : item,
     ),
+    assignments,
   };
 }

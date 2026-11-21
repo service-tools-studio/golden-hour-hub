@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   calendarCanceledCleanerIdsFromHub,
+  calendarRescheduleStaffingCleanerIdsFromHub,
   calendarImportMissingFromGoogleSync,
   calendarImportShouldWithdrawFromGoogleSync,
   cancelJobFromCalendarSync,
+  mergeJobPartitionIntoHub,
   rescheduleJobFromCalendarSync,
 } from "./calendar-import-sync-side-effects.ts";
 import type { CalendarImport, Job } from "../domain/types.ts";
@@ -159,6 +161,7 @@ describe("calendar import sync side effects", () => {
       ],
     };
     assert.deepEqual(calendarCanceledCleanerIdsFromHub(hub, "job-1"), ["cleaner-1"]);
+    assert.deepEqual(calendarRescheduleStaffingCleanerIdsFromHub(hub, "job-1"), ["cleaner-1", "cleaner-2"]);
   });
 
   it("cancels a linked hub job when the calendar event is removed", () => {
@@ -188,8 +191,56 @@ describe("calendar import sync side effects", () => {
     assert.equal(next.assignments[0]!.status, "CANCELED");
   });
 
+  it("merges a job partition into hub for staffing checks", () => {
+    const hub = { ...emptyHub("2026-11-20"), jobs: [], assignments: [] };
+    const slice = {
+      ...emptyHub("2026-11-20"),
+      jobs: [stubJob()],
+      assignments: [
+        {
+          assignmentId: "a-1",
+          jobId: "job-1",
+          cleanerId: "cleaner-1",
+          serviceDate: "2026-11-20",
+          status: "INVITED" as const,
+          proposedCrewSize: 1,
+          payType: "FLAT" as const,
+          payPerPersonCents: 10000,
+          proposedTotalPayCents: 10000,
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+    };
+    const merged = mergeJobPartitionIntoHub(hub, slice, "job-1");
+    assert.deepEqual(calendarRescheduleStaffingCleanerIdsFromHub(merged, "job-1"), ["cleaner-1"]);
+  });
+
   it("moves job date and arrival when calendar reschedules", () => {
-    const hub = { ...emptyHub("2026-11-20"), jobs: [stubJob()] };
+    const hub = {
+      ...emptyHub("2026-11-20"),
+      jobs: [stubJob()],
+      assignments: [
+        {
+          assignmentId: "a-1",
+          jobId: "job-1",
+          cleanerId: "cleaner-1",
+          serviceDate: "2026-11-20",
+          notifiedServiceDate: "2026-11-20",
+          status: "INVITED" as const,
+          proposedCrewSize: 1,
+          payType: "FLAT" as const,
+          payPerPersonCents: 10000,
+          proposedTotalPayCents: 10000,
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+    };
     const next = rescheduleJobFromCalendarSync(hub, "job-1", {
       date: "2026-11-22",
       arrivalWindowStart: "13:00",
@@ -197,5 +248,7 @@ describe("calendar import sync side effects", () => {
     });
     assert.equal(next.jobs[0]!.date, "2026-11-22");
     assert.equal(next.jobs[0]!.arrivalWindowStart, "13:00");
+    assert.equal(next.assignments[0]!.serviceDate, "2026-11-22");
+    assert.equal(next.assignments[0]!.needsDateReinvite, true);
   });
 });

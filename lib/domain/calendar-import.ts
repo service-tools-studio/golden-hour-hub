@@ -25,7 +25,7 @@ export type GoogleCalendarEventShape = {
   end?: { date?: string; dateTime?: string; timeZone?: string };
 };
 
-export const CALENDAR_IMPORT_HORIZON_DAYS = 90;
+export const CALENDAR_IMPORT_HORIZON_DAYS = 60;
 /** DynamoDB TTL: delete import rows ~1 year after last update (requires table TTL on attribute `ttl`). */
 export const CALENDAR_IMPORT_TTL_SECONDS = 365 * 24 * 60 * 60;
 
@@ -841,17 +841,54 @@ export function findExistingJobForCalendarImport(
   return onDate[0];
 }
 
+function normalizeCalendarImportArrival(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+/** True when Google event date/arrival differs from the import row and/or the linked hub job. */
+export function calendarImportScheduleMovedFromGoogle(
+  hub: Pick<HubData, "jobs" | "customers" | "properties">,
+  row: CalendarImport,
+  serviceDate: string,
+  arrivalWindowStart: string | undefined,
+  arrivalWindowEnd: string | undefined,
+): boolean {
+  const importMoved =
+    row.serviceDate !== serviceDate ||
+    normalizeCalendarImportArrival(row.arrivalWindowStart) !== normalizeCalendarImportArrival(arrivalWindowStart) ||
+    normalizeCalendarImportArrival(row.arrivalWindowEnd) !== normalizeCalendarImportArrival(arrivalWindowEnd);
+  const jobId = calendarImportLinkedJobId(hub, row);
+  if (!jobId) return importMoved;
+  const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
+  if (!job) return importMoved;
+  return (
+    importMoved ||
+    job.date !== serviceDate ||
+    normalizeCalendarImportArrival(job.arrivalWindowStart) !== normalizeCalendarImportArrival(arrivalWindowStart) ||
+    normalizeCalendarImportArrival(job.arrivalWindowEnd) !== normalizeCalendarImportArrival(arrivalWindowEnd)
+  );
+}
+
 /** Active hub job tied to this import (approved, matched, or same Google event id). */
 export function calendarImportLinkedJobId(
   hub: Pick<HubData, "jobs" | "customers" | "properties">,
   row: CalendarImport,
 ): string | undefined {
-  if (row.approvedJobId) {
-    const approved = hub.jobs.find((job) => job.jobId === row.approvedJobId && job.status !== "CANCELED");
+  const approvedId = row.approvedJobId?.trim();
+  if (approvedId) {
+    const approved = hub.jobs.find((job) => job.jobId === approvedId && job.status !== "CANCELED");
     if (approved) return approved.jobId;
+    return approvedId;
   }
-  const matched = resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, row);
-  if (matched) return matched;
+  const matchedId = row.matchedJobId?.trim();
+  if (matchedId) {
+    const linked = hub.jobs.find((job) => job.jobId === matchedId && job.status !== "CANCELED");
+    if (linked) return linked.jobId;
+    return matchedId;
+  }
+  const resolved = resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, row);
+  if (resolved) return resolved;
   const byEvent = hub.jobs.find(
     (job) => job.googleCalendarEventId === row.googleCalendarEventId && job.status !== "CANCELED",
   );
@@ -956,6 +993,10 @@ export function isCalendarImportInReviewWindow(item: CalendarImport, today: stri
   return item.serviceDate >= today && item.serviceDate <= end;
 }
 
+export function calendarImportShowsOnAdminDashboard(item: Pick<CalendarImport, "status">): boolean {
+  return item.status === "PENDING_REVIEW" || item.status === "CALENDAR_CANCELED";
+}
+
 /** Pending Gmail imports shown on the admin dashboard (by market tab). */
 export function visibleDashboardCalendarImports(
   imports: CalendarImport[],
@@ -963,7 +1004,7 @@ export function visibleDashboardCalendarImports(
   filter: import("./markets.ts").AdminMarketFilter,
 ): CalendarImport[] {
   return imports
-    .filter((item) => item.status === "PENDING_REVIEW" || item.status === "CALENDAR_CANCELED")
+    .filter((item) => calendarImportShowsOnAdminDashboard(item))
     .filter((item) => isCalendarImportInReviewWindow(item, today))
     .filter((item) => calendarImportMatchesAdminMarket(item, filter))
     .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate));

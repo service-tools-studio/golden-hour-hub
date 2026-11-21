@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   buildCalendarImportNewCustomerHref,
   calendarImportCustomerPrefillFromRow,
+  calendarImportScheduleMovedFromGoogle,
+  calendarImportShowsOnAdminDashboard,
   findExistingJobForCalendarImport,
   extractFirstEmailFromEventText,
   extractInviteeEmailFromGoogleAttendees,
@@ -28,7 +30,7 @@ import {
   calendarImportRawEventDetailsText,
   suggestCustomerForCalendarImport,
 } from "./calendar-import.ts";
-import type { Customer, Job } from "./types.ts";
+import type { CalendarImport, Customer, Job } from "./types.ts";
 
 describe("calendar import parser", () => {
   it("treats Calendly-style Canceled: titles as hub cancels", () => {
@@ -517,6 +519,54 @@ describe("calendar import parser", () => {
     if (!parsed.ok) return;
     assert.equal(parsed.fields.parsed.suggestedEmail, "jane.guest@gmail.com");
     assert.equal(parsed.fields.raw.inviteeEmail, "jane.guest@gmail.com");
+  });
+
+  it("detects Gmail reschedule when the hub job date is still behind the import row", () => {
+    const row = {
+      importId: "cal-1",
+      googleCalendarEventId: "gcal-1",
+      status: "APPROVED" as const,
+      serviceDate: "2026-11-25",
+      arrivalWindowStart: "09:00",
+      arrivalWindowEnd: "09:00",
+      approvedJobId: "job-1",
+      serviceType: "RECURRING" as const,
+      headcountNeeded: 1,
+      specialInstructions: "",
+      marketId: "portland" as const,
+      raw: { title: "", description: "", location: "" },
+      parsed: {},
+      createdAt: "",
+      updatedAt: "",
+      lastSyncedAt: "",
+    } satisfies CalendarImport;
+    const hub = {
+      jobs: [
+        {
+          jobId: "job-1",
+          customerId: "c1",
+          propertyId: "p1",
+          serviceType: "RECURRING" as const,
+          date: "2026-11-20",
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+          headcountNeeded: 1,
+          snapshot: {} as import("./types.ts").Job["snapshot"],
+          specialInstructions: "",
+          status: "SCHEDULED" as const,
+          createdAt: "",
+          createdBy: "",
+          updatedAt: "",
+          updatedBy: "",
+        },
+      ],
+      customers: [],
+      properties: [],
+    };
+    assert.equal(
+      calendarImportScheduleMovedFromGoogle(hub, row, "2026-11-25", "09:00", "09:00"),
+      true,
+    );
   });
 
   it("prefills property unit from calendar import details", () => {

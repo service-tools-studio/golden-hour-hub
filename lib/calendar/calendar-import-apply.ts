@@ -25,8 +25,8 @@ import {
   calendarImportShouldWithdrawFromGoogleSync,
   calendarImportSyncHorizonEnd,
   cancelJobFromCalendarSync,
-  rescheduleJobFromCalendarSync,
 } from "./calendar-import-sync-side-effects.ts";
+import { applyApprovedImportScheduleFromGoogle } from "./calendar-import-apply-reschedule.ts";
 
 export type CalendarImportApplyResult = {
   created: number;
@@ -161,18 +161,16 @@ export async function applyCalendarEventsToHub(
     }
 
     if (existing?.status === "APPROVED") {
-      const dateMoved =
-        existing.serviceDate !== parsed.fields.serviceDate ||
-        existing.arrivalWindowStart !== parsed.fields.arrivalWindowStart ||
-        existing.arrivalWindowEnd !== parsed.fields.arrivalWindowEnd;
-      if (existing.approvedJobId && dateMoved) {
-        workingHub = rescheduleJobFromCalendarSync(workingHub, existing.approvedJobId, {
-          date: parsed.fields.serviceDate,
-          arrivalWindowStart: parsed.fields.arrivalWindowStart,
-          arrivalWindowEnd: parsed.fields.arrivalWindowEnd,
-        });
-        jobsRescheduled += 1;
-      }
+      const reschedule = applyApprovedImportScheduleFromGoogle(
+        workingHub,
+        existing,
+        parsed.fields.serviceDate,
+        parsed.fields.arrivalWindowStart,
+        parsed.fields.arrivalWindowEnd,
+      );
+      workingHub = reschedule.hub;
+      jobsRescheduled += reschedule.jobsRescheduled;
+      const linkedJobId = calendarImportLinkedJobId(workingHub, existing);
       upsertImport({
         ...existing,
         serviceDate: parsed.fields.serviceDate,
@@ -180,6 +178,7 @@ export async function applyCalendarEventsToHub(
         arrivalWindowEnd: parsed.fields.arrivalWindowEnd,
         raw: parsed.fields.raw,
         parsed: parsed.fields.parsed,
+        approvedJobId: existing.approvedJobId ?? linkedJobId,
         lastSyncedAt: now,
         updatedAt: now,
       });
@@ -212,6 +211,7 @@ export async function applyCalendarEventsToHub(
         ...syncedFields
       } = parsed.fields;
       const suggestedCustomerId = suggestions.customerId ?? existing.suggestedCustomerId;
+      const linkedJobId = matchedJob?.jobId ?? existing.matchedJobId ?? existing.approvedJobId;
       const next: CalendarImport = {
         ...existing,
         ...syncedFields,
@@ -229,7 +229,8 @@ export async function applyCalendarEventsToHub(
         expectedDurationMinutes: calendarImportPreservedDurationMinutes(existing, event),
         suggestedCustomerId,
         suggestedPropertyId: suggestions.propertyId ?? existing.suggestedPropertyId,
-        matchedJobId: matchedJob?.jobId,
+        matchedJobId: existing.matchedJobId?.trim() || linkedJobId,
+        approvedJobId: existing.approvedJobId,
         status: "PENDING_REVIEW",
         updatedAt: now,
         lastSyncedAt: now,
