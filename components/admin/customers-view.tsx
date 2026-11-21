@@ -27,6 +27,7 @@ import {
 } from "@/lib/domain/calendar-import";
 import type { CalendarImportParsedHints } from "@/lib/domain/types";
 import { searchCustomers } from "@/lib/domain/customers";
+import { isMarketId } from "@/lib/domain/markets";
 import { formatMoney } from "@/lib/domain/compensation";
 import { seriesSummary } from "@/lib/mock/seed";
 import {
@@ -497,7 +498,17 @@ export function CustomerDetail({
                   const match = hub.properties.find(
                     (item) =>
                       item.customerId === savedCustomerId &&
-                      propertyMatchesCalendarImportAddress(item, importAppendHint),
+                      propertyMatchesCalendarImportAddress(item, {
+                        streetAddress: importAppendHint.streetAddress,
+                        city: importAppendHint.city,
+                        state: importAppendHint.state,
+                        zip: importAppendHint.zip,
+                        unit: importAppendHint.unit,
+                        marketId:
+                          importAppendHint.marketId && isMarketId(importAppendHint.marketId)
+                            ? importAppendHint.marketId
+                            : undefined,
+                      }),
                   );
                   if (match) url.searchParams.set("propertyId", match.propertyId);
                 }

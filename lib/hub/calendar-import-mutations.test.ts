@@ -28,7 +28,7 @@ function stubImport(overrides: Partial<CalendarImport> = {}): CalendarImport {
 
 describe("reopenCalendarImportOnHub", () => {
   it("returns REJECTED import to PENDING_REVIEW", () => {
-    const hub = { ...emptyHub(), calendarImports: [stubImport()] };
+    const hub = { ...emptyHub("2026-11-20"), calendarImports: [stubImport()] };
     const result = reopenCalendarImportOnHub(hub, "calimp-1");
     assert.equal(result.ok, true);
     if (!result.ok) return;
@@ -38,7 +38,7 @@ describe("reopenCalendarImportOnHub", () => {
   });
 
   it("returns WITHDRAWN import to PENDING_REVIEW", () => {
-    const hub = { ...emptyHub(), calendarImports: [stubImport({ status: "WITHDRAWN" })] };
+    const hub = { ...emptyHub("2026-11-20"), calendarImports: [stubImport({ status: "WITHDRAWN" })] };
     const result = reopenCalendarImportOnHub(hub, "calimp-1");
     assert.equal(result.ok, true);
     if (!result.ok) return;
@@ -48,7 +48,7 @@ describe("reopenCalendarImportOnHub", () => {
 
   it("refuses when the same Google event is already pending", () => {
     const hub = {
-      ...emptyHub(),
+      ...emptyHub("2026-11-20"),
       calendarImports: [
         stubImport(),
         stubImport({

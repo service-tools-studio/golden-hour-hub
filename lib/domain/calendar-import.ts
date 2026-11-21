@@ -1208,7 +1208,7 @@ export function calendarImportIdFromReturnTo(returnTo: string | undefined): stri
 
 /** True when a hub property is the same place as the Gmail / Calendly address. */
 export function propertyMatchesCalendarImportAddress(
-  property: Pick<Property, "streetAddress" | "unit" | "city" | "zip">,
+  property: Pick<Property, "streetAddress"> & Partial<Pick<Property, "unit" | "city" | "zip">>,
   hints: CalendarImportParsedHints,
 ): boolean {
   const importStreet = hints.streetAddress?.trim();
@@ -1219,7 +1219,8 @@ export function propertyMatchesCalendarImportAddress(
   if (hubStreet === eventStreet) return true;
   if (hubStreet.includes(eventStreet) || eventStreet.includes(hubStreet)) return true;
   const importZip = hints.zip?.replace(/\D/g, "").slice(0, 5);
-  if (importZip && property.zip.replace(/\D/g, "").slice(0, 5) === importZip) {
+  const hubZip = property.zip?.replace(/\D/g, "").slice(0, 5);
+  if (importZip && hubZip && hubZip === importZip) {
     const hubLead = hubStreet.split(" ").slice(0, 2).join(" ");
     const eventLead = eventStreet.split(" ").slice(0, 2).join(" ");
     if (hubLead && eventLead && hubLead === eventLead) return true;

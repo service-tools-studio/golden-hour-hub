@@ -222,26 +222,26 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     if (!match) return;
     setCustomerId(match.customerId);
     const returnedPropertyId = searchParams.get("propertyId")?.trim();
-    const returnedProperty =
-      returnedPropertyId &&
-      hub.properties.find(
-        (property) =>
-          property.propertyId === returnedPropertyId &&
-          property.customerId === match.customerId &&
-          property.status === "ACTIVE",
-      );
+    const returnedProperty = returnedPropertyId
+      ? hub.properties.find(
+          (property) =>
+            property.propertyId === returnedPropertyId &&
+            property.customerId === match.customerId &&
+            property.status === "ACTIVE",
+        )
+      : undefined;
     const currentRow = hub.calendarImports.find((item) => item.importId === importId);
-    const mergedForAddress =
-      currentRow &&
-      mergeCalendarImportCustomerHints(currentRow.parsed, calendarImportDetailText(currentRow.raw, ""));
-    const importProperty =
-      mergedForAddress &&
-      hub.properties.find(
-        (property) =>
-          property.customerId === match.customerId &&
-          property.status === "ACTIVE" &&
-          propertyMatchesCalendarImportAddress(property, mergedForAddress),
-      );
+    const mergedForAddress = currentRow
+      ? mergeCalendarImportCustomerHints(currentRow.parsed, calendarImportDetailText(currentRow.raw, ""))
+      : undefined;
+    const importProperty = mergedForAddress
+      ? hub.properties.find(
+          (property) =>
+            property.customerId === match.customerId &&
+            property.status === "ACTIVE" &&
+            propertyMatchesCalendarImportAddress(property, mergedForAddress),
+        )
+      : undefined;
     const firstProperty = hub.properties.find(
       (property) => property.customerId === match.customerId && property.status === "ACTIVE",
     );
@@ -274,8 +274,10 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     );
   }
 
+  const reviewRow = row;
+
   async function reopenDismissed(refreshFromGmail = false) {
-    const removedBySync = row.status === "WITHDRAWN";
+    const removedBySync = reviewRow.status === "WITHDRAWN";
     setPending("reopen");
     const result = await hub.reopenCalendarImport(importId);
     if (!result.ok) {
@@ -318,7 +320,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
                 : "You dismissed this Gmail import. Reopen it to match a customer and add it to the schedule."}
             </p>
           </div>
-          {message ? <FormSubmitNotice tone="error">{message}</FormSubmitNotice> : null}
+          <FormSubmitNotice message={message} tone="error" />
           <PrimaryButton
             type="button"
             disabled={pending !== null}
