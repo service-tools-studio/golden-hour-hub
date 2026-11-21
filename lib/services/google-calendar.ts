@@ -9,8 +9,9 @@ export type CalendarEventInput = {
 };
 
 /**
- * One-way sync hook. Golden Hour Hub stays the source of truth.
- * Failures must not block scheduling. Live sync is not enabled yet.
+ * Hub → Google Calendar (Phase 2). Import is implemented separately via calendar import cron.
+ * Golden Hour Hub stays the source of truth for staffing; Calendar is a mirror when enabled.
+ * Failures must not block scheduling saves.
  */
 export async function syncJobToGoogleCalendar(event: CalendarEventInput): Promise<void> {
   if (process.env.GOOGLE_CALENDAR_ENABLED !== "true") return;

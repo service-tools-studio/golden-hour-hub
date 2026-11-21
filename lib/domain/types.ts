@@ -169,10 +169,77 @@ export type JobCustomerSnapshot = {
   preferences: string;
 };
 
+export type CalendarImportStatus =
+  | "PENDING_REVIEW"
+  | "APPROVED"
+  | "REJECTED"
+  | "WITHDRAWN"
+  | "CALENDAR_CANCELED";
+
+export type CalendarImportRaw = {
+  title: string;
+  description: string;
+  location: string;
+  htmlLink?: string;
+  /** Invitee from Google Calendar attendees when not repeated in description. */
+  inviteeEmail?: string;
+  bookingSource?: "calendly";
+  /** Original Google description (HTML) for Calendly field parsing after plain-text snapshot. */
+  descriptionHtml?: string;
+};
+
+export type CalendarImportParsedHints = {
+  suggestedFirstName?: string;
+  suggestedLastName?: string;
+  suggestedPhone?: string;
+  /** Invitee email from Calendly / event details (first non-organizer when several). */
+  suggestedEmail?: string;
+  streetAddress?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  marketId?: MarketId;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFeet?: number;
+};
+
+export type CalendarImport = {
+  importId: string;
+  googleCalendarEventId: string;
+  googleCalendarIcalUid?: string;
+  status: CalendarImportStatus;
+  serviceDate: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
+  expectedDurationMinutes?: number;
+  serviceType: ServiceType;
+  headcountNeeded: number;
+  specialInstructions: string;
+  pricePerVisitCents?: number;
+  marketId: MarketId;
+  raw: CalendarImportRaw;
+  parsed: CalendarImportParsedHints;
+  suggestedCustomerId?: string;
+  suggestedPropertyId?: string;
+  /** Hub job that already covers this calendar date (often a recurring occurrence). */
+  matchedJobId?: string;
+  approvedJobId?: string;
+  /** Confirmed cleaners to text after the Google event was canceled (captured at sync). */
+  calendarCanceledNotifyCleanerIds?: string[];
+  cleanerRemovalNotifiedAt?: string;
+  rejectedReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastSyncedAt: string;
+};
+
 export type Job = {
   jobId: string;
   customerId: string;
   propertyId: string;
+  /** Set when this job was approved from Google Calendar or synced outbound (Phase 2). */
+  googleCalendarEventId?: string;
   /** Present only when this occurrence belongs to a recurring series. */
   seriesId?: string;
   serviceType: ServiceType;

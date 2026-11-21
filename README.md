@@ -68,6 +68,8 @@ E2E tests are **not** run on Vercel’s build image (they need DynamoDB, Chromiu
 
 Failed E2E runs upload `playwright-report/` as a workflow artifact for debugging.
 
+**Google Calendar import:** enable the vars below, set `NEXT_PUBLIC_APP_URL` and `CRON_SECRET`, and deploy so `/api/cron/calendar-import-watch` registers push and `/api/cron/calendar-import` runs daily as a backstop (see [`docs/google-calendar-sync.md`](docs/google-calendar-sync.md)). New calendar events usually surface on the dashboard within minutes via webhook; pending rows still require admin approve.
+
 With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER=twilio` and the Twilio variables to send for real (cleaner invite/assign, reminders, and removal notices only — customer texts are always manual from the admin UI). Point your Twilio number’s **incoming message webhook** at `https://<your-host>/api/twilio/sms/inbound` (POST) so replies **START**, **YES**, and **UNSTOP** re-enable scheduling texts, **STOP** / **HELP** stay in sync with Hub, and other inbound texts get a short “not monitored” auto-reply. After upgrade, US SMS usually requires an **approved primary compliance profile** in [Twilio Trust Hub](https://console.twilio.com/us1/account/trust-hub) and often **A2P 10DLC** brand/campaign registration before messages deliver. Google Calendar sync is a no-op unless `GOOGLE_CALENDAR_ENABLED=true`, and it must never block a scheduling save.
 
 ## AWS setup
@@ -75,10 +77,11 @@ With `SMS_PROVIDER=mock`, SMS is logged in the server console. Set `SMS_PROVIDER
 The DynamoDB repository is wired. Cognito is not.
 
 1. Create a DynamoDB table named `GoldenHourHub` in `us-west-2` with `pk` and `sk`, plus GSI1 (`gsi1pk`, `gsi1sk`) and GSI2 (`gsi2pk`, `gsi2sk`), as in [docs/data-model.md](docs/data-model.md).
-2. Put `AWS_REGION` and `DYNAMODB_TABLE_NAME` in `.env.local` using [.env.example](.env.example). Leave the table name empty to stay on the preview store.
-3. Give the Next.js server permission to read and write the table. The browser must not hold those credentials.
-4. To start from real cleaner profiles only: `npm run dynamo:clear` (wipes the table), then `npm run seed:cleaners`, then open the app. The seed script does not create jobs; if you opened the app earlier on an empty table, an older build may have written the full mock dataset—clear and seed again. Edit `scripts/seed-cleaners.ts` to change names, rates, or crew limits.
-5. Finish **Cognito setup** below and add the env vars from [.env.example](.env.example).
+2. **TTL (recommended):** In the table → **Additional settings** → **Time to Live (TTL)** → enable attribute **`ttl`**. Hub sets `ttl` on calendar import rows only (~1 year after each row’s last `updatedAt`). No IAM change beyond existing table write access. Existing imports without `ttl` are not deleted until the next sync or admin save rewrites them.
+3. Put `AWS_REGION` and `DYNAMODB_TABLE_NAME` in `.env.local` using [.env.example](.env.example). Leave the table name empty to stay on the preview store.
+4. Give the Next.js server permission to read and write the table. The browser must not hold those credentials.
+5. To start from real cleaner profiles only: `npm run dynamo:clear` (wipes the table), then `npm run seed:cleaners`, then open the app. The seed script does not create jobs; if you opened the app earlier on an empty table, an older build may have written the full mock dataset—clear and refresh. Edit `scripts/seed-cleaners.ts` to change names, rates, or crew limits.
+6. Finish **Cognito setup** below and add the env vars from [.env.example](.env.example).
 
 ## Cognito setup
 
@@ -128,12 +131,16 @@ See [.env.example](.env.example).
 | `TWILIO_FROM_NUMBER` | Twilio sender in E.164, e.g. `+15035551234` |
 | `TWILIO_INBOUND_WEBHOOK_URL` | Optional. Full public URL for inbound SMS (e.g. `https://hub.example.com/api/twilio/sms/inbound`). Set this if your app sits behind a proxy so Twilio signature validation uses the same URL configured in the console. |
 | `TWILIO_STATUS_CALLBACK_URL` | Optional. Delivery status webhook (defaults to `{NEXT_PUBLIC_APP_URL}/api/twilio/sms/status`). Used to update assignment text logs when Twilio reports delivered/failed. |
-| `CRON_SECRET` | Optional. Bearer token for `/api/cron/assignment-sms-log-retention` and `/api/cron/availability-week-open` (required in production unless you rely only on admin saves). Vercel Cron sends `Authorization: Bearer …` when this is set. |
+| `CRON_SECRET` | Optional. Bearer token for Vercel cron routes under `/api/cron/*` (required in production). Vercel Cron sends `Authorization: Bearer …` when this is set. |
 | `NEXT_PUBLIC_APP_URL` | Link included in reminders |
 | `KELSEY_PHONE` | Digits or formatted US number for cleaner Call/Text Kelsey links and admin ops texts |
 | `JASMIN_PHONE` | Same format as `KELSEY_PHONE`; with Kelsey, receives invite-accepted and availability ops texts; also receives business-information submitted/updated texts (Kelsey does not). Set on Vercel/hosting too, not only `.env.local` |
 | `BUSINESS_CONTACT_EMAIL` | Optional. Server-side inbox for Certificate of Insurance emails referenced in the business questionnaire |
 | `NEXT_PUBLIC_BUSINESS_CONTACT_EMAIL` | Optional. Same address exposed to the cleaner business form for COI instructions (falls back to `BUSINESS_CONTACT_EMAIL` on the server helper) |
 | `GOOGLE_MAPS_API_KEY` | Server-only key for customer address typeahead (**Places API (New)** only). Hub calls Autocomplete on keystrokes and **Place Details once per selection** with an Essentials field mask (`addressComponents`, `formattedAddress` only—no reviews/ratings/`generativeSummary`). Use **session tokens** so Google bills autocomplete + details as one session. Restrict the key to Places API (New) + your server IPs/domains; disable unused Maps client SDKs so nothing else can trigger Enterprise SKUs. |
-| `GOOGLE_CALENDAR_ENABLED` | Leave `false` until sync is built |
-| `GOOGLE_CALENDAR_ID` | Target calendar, later |
+| `GOOGLE_CALENDAR_ENABLED` | Set `true` to enable Calendar **import** (push + daily cron) and OAuth client |
+| `GOOGLE_CALENDAR_ID` | Calendar ID to read (usually an email address) |
+| `GOOGLE_CLIENT_ID` | OAuth client for Calendar API |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
+| `GOOGLE_CALENDAR_REFRESH_TOKEN` | Long-lived token from one-time admin consent (server cron) |
+| `GOOGLE_CALENDAR_WEBHOOK_TOKEN` | Optional. Shared secret on the Calendar push channel; webhook rejects mismatched `X-Goog-Channel-Token` |

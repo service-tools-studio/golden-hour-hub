@@ -7,12 +7,14 @@ import type {
   AvailabilityWindow,
   CleanerProfile,
   Customer,
+  CalendarImport,
   DraftCleanerDetail,
   Job,
   JobAssignment,
   Property,
   RecurringSeries,
 } from "../domain/types.ts";
+import { calendarImportStatusGsiKey, calendarImportTtlEpoch } from "../domain/calendar-import.ts";
 import { buildCustomerSearchKeys } from "../domain/customers.ts";
 import { readMarketId, timeZoneForMarket } from "../domain/markets.ts";
 import { normalizeLegacyAssignment, type LegacyAssignmentRow } from "../domain/assignment-legacy.ts";
@@ -45,6 +47,7 @@ export function hubToItems(data: HubData): DynamoItem[] {
     ...data.jobs.filter((job) => job.seriesId).map(occurItem),
     ...data.assignments.map(assignmentItem),
     ...data.contractorQuestionnaireSubmissions.map(contractorQuestionnaireSubmissionToItem),
+    ...data.calendarImports.map(calendarImportToItem),
   ];
   return items;
 }
@@ -61,6 +64,7 @@ export function itemsToHub(items: DynamoItem[], today: string): HubData {
     availability: [],
     submissions: [],
     contractorQuestionnaireSubmissions: [],
+    calendarImports: [],
   };
   for (const item of items) {
     if (item.entity === "cleaner") data.cleaners.push(readCleaner(item));
@@ -75,8 +79,76 @@ export function itemsToHub(items: DynamoItem[], today: string): HubData {
       const row = readQuestionnaireSubmissionFromRecord(item);
       if (row) data.contractorQuestionnaireSubmissions.push(row);
     }
+    if (item.entity === "calendar_import") data.calendarImports.push(readCalendarImport(item));
   }
   return data;
+}
+
+function readCalendarImportRaw(value: unknown): CalendarImport["raw"] {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  return {
+    title: typeof raw.title === "string" ? raw.title : "",
+    description: typeof raw.description === "string" ? raw.description : "",
+    location: typeof raw.location === "string" ? raw.location : "",
+    htmlLink: typeof raw.htmlLink === "string" ? raw.htmlLink : undefined,
+    inviteeEmail: typeof raw.inviteeEmail === "string" ? raw.inviteeEmail : undefined,
+    bookingSource: raw.bookingSource === "calendly" ? "calendly" : undefined,
+    descriptionHtml: typeof raw.descriptionHtml === "string" ? raw.descriptionHtml : undefined,
+  };
+}
+
+export function calendarImportToItem(row: CalendarImport): DynamoItem {
+  return {
+    pk: `CAL_IMPORT#${row.importId}`,
+    sk: "PROFILE",
+    entity: "calendar_import",
+    gsi1pk: calendarImportStatusGsiKey(row.status),
+    gsi1sk: `${row.serviceDate}#${row.importId}`,
+    gsi2pk: `GCAL_EVENT#${row.googleCalendarEventId}`,
+    gsi2sk: row.importId,
+    ttl: calendarImportTtlEpoch(row.updatedAt),
+    ...row,
+  };
+}
+
+export function readCalendarImport(item: DynamoItem): CalendarImport {
+  return {
+    importId: stringField(item, "importId"),
+    googleCalendarEventId: stringField(item, "googleCalendarEventId"),
+    googleCalendarIcalUid: optionalString(item, "googleCalendarIcalUid"),
+    status:
+      item.status === "APPROVED" ||
+      item.status === "REJECTED" ||
+      item.status === "WITHDRAWN" ||
+      item.status === "CALENDAR_CANCELED"
+        ? item.status
+        : "PENDING_REVIEW",
+    serviceDate: stringField(item, "serviceDate"),
+    arrivalWindowStart: optionalString(item, "arrivalWindowStart"),
+    arrivalWindowEnd: optionalString(item, "arrivalWindowEnd"),
+    expectedDurationMinutes: optionalNumber(item, "expectedDurationMinutes"),
+    serviceType: (item.serviceType as CalendarImport["serviceType"]) ?? "OTHER",
+    headcountNeeded: numberField(item, "headcountNeeded"),
+    specialInstructions: stringField(item, "specialInstructions"),
+    pricePerVisitCents: optionalNumber(item, "pricePerVisitCents"),
+    marketId: readMarketId(item.marketId),
+    raw: readCalendarImportRaw(item.raw),
+    parsed: (typeof item.parsed === "object" && item.parsed !== null
+      ? item.parsed
+      : {}) as CalendarImport["parsed"],
+    suggestedCustomerId: optionalString(item, "suggestedCustomerId"),
+    suggestedPropertyId: optionalString(item, "suggestedPropertyId"),
+    matchedJobId: optionalString(item, "matchedJobId"),
+    approvedJobId: optionalString(item, "approvedJobId"),
+    calendarCanceledNotifyCleanerIds: Array.isArray(item.calendarCanceledNotifyCleanerIds)
+      ? item.calendarCanceledNotifyCleanerIds.filter((value): value is string => typeof value === "string")
+      : undefined,
+    cleanerRemovalNotifiedAt: optionalString(item, "cleanerRemovalNotifiedAt"),
+    rejectedReason: optionalString(item, "rejectedReason"),
+    createdAt: stringField(item, "createdAt"),
+    updatedAt: stringField(item, "updatedAt"),
+    lastSyncedAt: stringField(item, "lastSyncedAt"),
+  };
 }
 
 export function cleanerToItem(cleaner: CleanerProfile): DynamoItem {
@@ -409,6 +481,7 @@ function readJob(item: DynamoItem): Job {
     createdBy: stringField(item, "createdBy"),
     updatedAt: stringField(item, "updatedAt"),
     updatedBy: stringField(item, "updatedBy"),
+    googleCalendarEventId: optionalString(item, "googleCalendarEventId"),
   };
 }
 

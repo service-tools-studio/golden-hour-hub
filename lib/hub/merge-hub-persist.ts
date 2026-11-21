@@ -78,5 +78,11 @@ export function mergeHubPersistAttempt(server: HubData, localAttempt: HubData): 
       server.contractorQuestionnaireSubmissions,
       localAttempt.contractorQuestionnaireSubmissions,
     ),
+    calendarImports: mergeByUpdatedAt(
+      server.calendarImports,
+      localAttempt.calendarImports,
+      (row) => row.importId,
+      (row) => row.updatedAt,
+    ),
   };
 }

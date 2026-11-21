@@ -23,9 +23,14 @@ export function withOrigin(path: string, from: CleaningOrigin | undefined, param
   return query ? `${path}${path.includes("?") ? "&" : "?"}${query}` : path;
 }
 
+export function isCalendarImportReturnToPath(pathname: string): boolean {
+  return /^\/admin\/calendar-imports\/[^/]+$/.test(pathname);
+}
+
 export function isCleaningReturnToPath(pathname: string): boolean {
   if (pathname === "/admin/jobs/new") return true;
-  return /^\/admin\/jobs\/[^/]+\/edit$/.test(pathname);
+  if (/^\/admin\/jobs\/[^/]+\/edit$/.test(pathname)) return true;
+  return isCalendarImportReturnToPath(pathname);
 }
 
 /** Resolve `returnTo` from the customer form URL (handles nested query and a top-level `from` param). */
@@ -45,7 +50,8 @@ export function normalizeCleaningReturnTo(raw: string, orphanedFrom?: CleaningOr
 }
 
 export function cleaningReturnLabel(href: string): string {
-  const path = href.split("?")[0];
+  const path = href.split("?")[0] ?? href;
+  if (isCalendarImportReturnToPath(path)) return "Import review";
   if (/^\/admin\/jobs\/[^/]+\/edit$/.test(path)) return "Cleaning";
   if (path === "/admin/jobs/new") return "New cleaning";
   return "Back";

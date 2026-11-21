@@ -7,6 +7,7 @@ import { useHub } from "@/components/hub-provider";
 import { useHubSyncBlocker } from "@/components/hub-sync";
 import { UnsavedChangesDialog, useUnsavedNavigation } from "@/components/unsaved-changes";
 import { EstimatedDurationPicker } from "@/components/admin/estimated-duration-picker";
+import { HeadcountStepper } from "@/components/admin/headcount-stepper";
 import { Field, FormSubmitNotice, Notice, PrimaryButton, fieldClass } from "@/components/ui";
 import {
   availabilityAgainstSpan,
@@ -609,27 +610,7 @@ export function CleaningForm({
             {property ? (
               <div>
                 <p className="mb-1.5 text-sm font-medium text-ink/80">Headcount</p>
-                <div className="flex min-h-12 items-center justify-between rounded-2xl bg-white px-2 ring-1 ring-ink/15">
-                  <button
-                    type="button"
-                    aria-label="Decrease Headcount"
-                    disabled={headcount <= 1}
-                    onClick={() => changeHeadcount(headcount - 1)}
-                    className="flex size-10 items-center justify-center rounded-full bg-mint text-lg font-semibold disabled:bg-ink/8 disabled:text-ink/25"
-                  >
-                    −
-                  </button>
-                  <span className="text-base font-semibold tabular-nums">{headcount}</span>
-                  <button
-                    type="button"
-                    aria-label="Increase Headcount"
-                    disabled={headcount >= 12}
-                    onClick={() => changeHeadcount(headcount + 1)}
-                    className="flex size-10 items-center justify-center rounded-full bg-mint text-lg font-semibold disabled:bg-ink/8 disabled:text-ink/25"
-                  >
-                    +
-                  </button>
-                </div>
+                <HeadcountStepper value={headcount} onChange={changeHeadcount} />
                 {quote && estimate ? (
                   <>
                     {propertySizeLine ? <p className="mt-2 text-sm text-ink/70">{propertySizeLine}</p> : null}

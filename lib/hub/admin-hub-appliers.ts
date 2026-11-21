@@ -218,7 +218,7 @@ export function undoDeleteCustomerOnHub(
 export function deleteCustomerOnHub(hub: HubData, customerId: string): AdminHubApplierResult {
   const customer = hub.customers.find((item) => item.customerId === customerId);
   if (!customer) return { ok: false, message: "That customer could not be found." };
-  if (hub.jobs.some((job) => job.customerId === customerId)) {
+  if (hub.jobs.some((job) => job.customerId === customerId && job.status !== "CANCELED")) {
     return { ok: false, message: "Remove or reassign this customer's cleanings before deleting them." };
   }
   if (hub.series.some((series) => series.customerId === customerId)) {

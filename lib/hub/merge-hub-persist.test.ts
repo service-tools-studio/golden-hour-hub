@@ -16,6 +16,7 @@ function baseHub(overrides: Partial<HubData> = {}): HubData {
     availability: [],
     submissions: [],
     contractorQuestionnaireSubmissions: [],
+    calendarImports: [],
     ...overrides,
   };
 }
