@@ -303,6 +303,10 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       [row.parsed.suggestedFirstName, row.parsed.suggestedLastName].filter(Boolean).join(" ") ||
       "Calendar event";
     const removedBySync = row.status === "WITHDRAWN";
+    const iphoneCalendarDayHref = appleCalendarDayUrl({
+      date: row.serviceDate,
+      time: row.arrivalWindowStart || undefined,
+    });
     return (
       <Screen>
         <PageHeader
@@ -319,6 +323,11 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
                 ? "Gmail sync removed this import from the queue (often when the event was not returned in a calendar check). Reopen it to continue review."
                 : "You dismissed this Gmail import. Reopen it to match a customer and add it to the schedule."}
             </p>
+            {iphoneCalendarDayHref ? (
+              <a href={iphoneCalendarDayHref} className="mt-2 inline-block text-sm font-semibold underline">
+                Open in iPhone Calendar
+              </a>
+            ) : null}
           </div>
           <FormSubmitNotice message={message} tone="error" />
           <PrimaryButton

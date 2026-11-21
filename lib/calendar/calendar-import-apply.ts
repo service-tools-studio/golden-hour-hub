@@ -11,6 +11,8 @@ import {
   parseGoogleCalendarEvent,
   suggestCustomerForCalendarImport,
 } from "../domain/calendar-import.ts";
+import { readMarketId } from "../domain/markets.ts";
+import type { MarketId } from "../domain/markets.ts";
 import type { CalendarImport } from "../domain/types.ts";
 import {
   findCalendarImportByGoogleEventId,
@@ -32,6 +34,8 @@ import { applyApprovedImportScheduleFromGoogle } from "./calendar-import-apply-r
 
 export type CalendarImportApplyResult = {
   created: number;
+  /** One entry per new PENDING_REVIEW row (same order as sync created them). */
+  createdMarketIds: MarketId[];
   updated: number;
   withdrawn: number;
   jobsCanceled: number;
@@ -62,6 +66,7 @@ export async function applyCalendarEventsToHub(
 ): Promise<CalendarImportApplyResult> {
   const now = new Date().toISOString();
   let created = 0;
+  const createdMarketIds: MarketId[] = [];
   let updated = 0;
   let jobsCanceled = 0;
   let jobsRescheduled = 0;
@@ -276,6 +281,7 @@ export async function applyCalendarEventsToHub(
     };
     upsertImport(row);
     created += 1;
+    createdMarketIds.push(readMarketId(row.marketId));
   }
 
   sweepRescheduleGhostImports();
@@ -320,7 +326,16 @@ export async function applyCalendarEventsToHub(
 
   const plan = buildHubDiffPersistPlan(before, after);
   if (plan.puts.length === 0) {
-    return { created, updated, withdrawn, jobsCanceled, jobsRescheduled, skipped, persisted: false };
+    return {
+      created,
+      createdMarketIds,
+      updated,
+      withdrawn,
+      jobsCanceled,
+      jobsRescheduled,
+      skipped,
+      persisted: false,
+    };
   }
 
   const revision = await readHubRevision();
@@ -328,6 +343,7 @@ export async function applyCalendarEventsToHub(
   if (!saved.ok) {
     return {
       created: 0,
+      createdMarketIds: [],
       updated: 0,
       withdrawn: 0,
       jobsCanceled: 0,
@@ -338,5 +354,14 @@ export async function applyCalendarEventsToHub(
     };
   }
 
-  return { created, updated, withdrawn, jobsCanceled, jobsRescheduled, skipped, persisted: true };
+  return {
+    created,
+    createdMarketIds,
+    updated,
+    withdrawn,
+    jobsCanceled,
+    jobsRescheduled,
+    skipped,
+    persisted: true,
+  };
 }

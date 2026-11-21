@@ -82,7 +82,10 @@ export async function runCalendarImportCron(
 
   const notifyJasmin = options.notifyJasminOnNewImports !== false;
   if (notifyJasmin && applied.persisted && applied.created > 0) {
-    await notifyJasminNewCalendarImports(applied.created);
+    await notifyJasminNewCalendarImports({
+      count: applied.created,
+      marketIds: applied.createdMarketIds,
+    });
   }
 
   return {
