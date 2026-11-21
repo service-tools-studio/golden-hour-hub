@@ -1,3 +1,4 @@
+import { minutesFromTime } from "./time.ts";
 import type { Job, JobAssignment } from "./types.ts";
 
 export function dateReinviteNeeded(
@@ -11,6 +12,11 @@ export function dateReinviteNeeded(
 function normalizeNotifiedArrival(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
+}
+
+/** Later than client visit start — staggered staffing, not a pending job-time sync. */
+function assignmentStartsAfterJob(assignmentStart: string, jobStart: string): boolean {
+  return minutesFromTime(assignmentStart) > minutesFromTime(jobStart);
 }
 
 export function cleanerScheduleAttentionKind(
@@ -48,6 +54,11 @@ export function cleanerNeedsScheduleReinvite(
   if (!jobArrival) return false;
   const lastTexted = normalizeNotifiedArrival(assignment.lastNotified?.arrivalWindowStart);
   const assignArrival = normalizeNotifiedArrival(assignment.arrivalWindowStart);
+  if (!assignArrival) return false;
+  if (assignArrival !== jobArrival && assignmentStartsAfterJob(assignArrival, jobArrival)) {
+    if (!lastTexted) return false;
+    return lastTexted !== assignArrival;
+  }
   const baseline = lastTexted ?? assignArrival;
   return Boolean(baseline && baseline !== jobArrival);
 }

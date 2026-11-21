@@ -58,4 +58,36 @@ describe("schedule re-invite helpers", () => {
     } as JobAssignment;
     assert.equal(cleanerNeedsScheduleReinvite(assignment, job), true);
   });
+
+  it("does not flag a late cleaner when their start still matches the last text", () => {
+    const lateJob = { ...job, arrivalWindowStart: "09:00" as const };
+    const assignment = {
+      assignmentId: "a-1",
+      jobId: "job-1",
+      cleanerId: "c-1",
+      status: "CONFIRMED",
+      serviceDate: "2026-11-25",
+      notifiedServiceDate: "2026-11-25",
+      arrivalWindowStart: "12:00",
+      arrivalWindowEnd: "12:00",
+      lastNotified: { arrivalWindowStart: "12:00", arrivalWindowEnd: "12:00" },
+    } as JobAssignment;
+    assert.equal(cleanerNeedsScheduleReinvite(assignment, lateJob), false);
+  });
+
+  it("flags a late cleaner when their start changed since the last text", () => {
+    const lateJob = { ...job, arrivalWindowStart: "09:00" as const };
+    const assignment = {
+      assignmentId: "a-1",
+      jobId: "job-1",
+      cleanerId: "c-1",
+      status: "INVITED",
+      serviceDate: "2026-11-25",
+      notifiedServiceDate: "2026-11-25",
+      arrivalWindowStart: "13:00",
+      arrivalWindowEnd: "13:00",
+      lastNotified: { arrivalWindowStart: "12:00", arrivalWindowEnd: "12:00" },
+    } as JobAssignment;
+    assert.equal(cleanerNeedsScheduleReinvite(assignment, lateJob), true);
+  });
 });
