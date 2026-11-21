@@ -203,6 +203,8 @@ export const VISIT_START_TIME_TBD_LABEL = "Time TBD";
 export const CLEANER_INVITE_START_TIME_TBD_NOTE =
   "The start time will be confirmed and sent to you. We plan to schedule it within your submitted availability.";
 
+export { cleanerOtherCleanersNote } from "./cleaner/headcount-copy.ts";
+
 export function formatDurationSelectLabel(minutes: number): string {
   const hours = minutes / 60;
   if (hours === 1) return "1 hour";

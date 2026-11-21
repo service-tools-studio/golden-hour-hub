@@ -60,6 +60,7 @@ import {
   serviceEmoji,
   cleanerRemovedFromJobSms,
   customerFirstNameForCleaner,
+  cleanerOtherCleanersNote,
   cleanerServiceLabel,
   cleanerTextKelseyAboutJobBody,
   serviceLabel,
@@ -849,6 +850,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           assignment.expectedDurationMinutes,
         )
       : null;
+  const otherCleanersNote = cleanerOtherCleanersNote(job.headcountNeeded);
   const kelseyContact = kelseyContactLinks(
     kelseyPhoneDigits,
     cleanerTextKelseyAboutJobBody({
@@ -875,6 +877,7 @@ export function CleanerJobDetail({ jobId }: { jobId: string }) {
           <ServiceLine serviceType={job.serviceType} forCleaner />
           <p className="mt-3 text-sm text-ink/60">Start time</p>
           <p className="text-lg font-semibold">{formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}</p>
+          {otherCleanersNote ? <p className="mt-2 text-sm text-ink/70">{otherCleanersNote}</p> : null}
           {job.seriesId && hasKnownDurationMinutes(assignment.expectedDurationMinutes) ? (
             <>
               <p className="mt-1 text-sm text-ink/60">{CLEANER_ESTIMATED_DURATION_LABEL}</p>
