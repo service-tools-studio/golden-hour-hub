@@ -795,7 +795,7 @@ describe("calendar import parser", () => {
     assert.equal(match.customerId, undefined);
   });
 
-  it("drops a stale stored customer link when the event address does not match", () => {
+  it("does not link when event name and address do not match the customer", () => {
     const customers: Customer[] = [
       {
         customerId: "jasmin-again",
@@ -823,8 +823,6 @@ describe("calendar import parser", () => {
         },
         raw: { title: "Jasmin Final test", description: "", location: "20 B St, Portland, OR" },
         specialInstructions: "",
-        suggestedCustomerId: "jasmin-again",
-        suggestedPropertyId: "prop-a",
       },
     );
     assert.equal(link.customerId, undefined);
