@@ -47,14 +47,14 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       : "DEEP_CLEAN",
   );
   const [headcount, setHeadcount] = useState(row && row.headcountNeeded > 0 ? row.headcountNeeded : 1);
-  const [instructions, setInstructions] = useState("");
   const resolvedInstructions = row ? resolvedCalendarImportSpecialInstructions(row) : "";
+  const [instructions, setInstructions] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
 
   useEffect(() => {
-    if (!row || !resolvedInstructions.trim()) return;
-    setInstructions((current) => (current.trim() ? current : resolvedInstructions));
-  }, [row?.importId, row?.updatedAt, resolvedInstructions]);
+    if (!row) return;
+    setInstructions(resolvedCalendarImportSpecialInstructions(row));
+  }, [row?.importId]);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<"approve" | "draft" | "dismiss" | null>(null);
   const [refreshingDetails, setRefreshingDetails] = useState(false);
@@ -398,7 +398,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
         >
           <textarea
             className={`${fieldClass} min-h-24`}
-            value={instructions.trim() || resolvedInstructions}
+            value={instructions}
             onChange={(event) => setInstructions(event.target.value)}
           />
           {rawEventDetails ? (
