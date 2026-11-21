@@ -86,12 +86,16 @@ function MarketTabImportBadge({ count }: { count: number }) {
 
 export function AdminMarketTabs() {
   const { marketFilter, setMarketFilter, viewingToday } = useAdminMarket();
-  const { calendarImports } = useHub();
+  const { calendarImports, jobs, customers, properties } = useHub();
   return (
     <div className="flex border-b border-ink/12" role="tablist" aria-label="Market">
       {ADMIN_MARKET_FILTERS.map((filter) => {
         const selected = marketFilter === filter;
-        const pendingImports = visibleDashboardCalendarImports(calendarImports, viewingToday, filter).length;
+        const pendingImports = visibleDashboardCalendarImports(calendarImports, viewingToday, filter, {
+          jobs,
+          customers,
+          properties,
+        }).length;
         const tabLabel = ADMIN_MARKET_FILTER_LABELS[filter];
         return (
           <button

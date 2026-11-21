@@ -24,15 +24,14 @@ import {
   visibleDashboardCalendarImports,
 } from "@/lib/domain/calendar-import";
 import {
-  cleanerNeedsScheduleReinvite,
   cleanerRemovedFromJobSms,
   crewLine,
   customerFirstNameForCleaner,
   formatLongDate,
   formatTimeLabel,
   jobHasCleanerScheduleReinvite,
+  jobScheduleAttentionFlagLines,
   relativeDay,
-  reinviteFlagText,
   serviceLabel,
 } from "@/lib/format";
 
@@ -123,7 +122,12 @@ export function DashboardView() {
     .filter((job) => !unstaffed.includes(job) && job.date <= staffingHorizon)
     .filter((job) => !needsAttentionById.has(job.jobId))
     .filter((job) => !dismissedJobIds.has(job.jobId));
-  const calendarImports = visibleDashboardCalendarImports(hub.calendarImports, viewingToday, marketFilter);
+  const calendarImports = visibleDashboardCalendarImports(
+    hub.calendarImports,
+    viewingToday,
+    marketFilter,
+    hub,
+  );
 
   async function notifyCalendarCanceledCleaners(item: CalendarImport) {
     const jobId = calendarImportCanceledJobId(hub, item);
@@ -411,11 +415,8 @@ function JobStaffingCard({
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
   const availabilityFollowUp = assignments.some((item) => item.availabilityConflictWeekStart);
   const scheduleReinvite = jobHasCleanerScheduleReinvite(job, hub.assignments);
-  const reinviteText = reinviteFlagText(
-    assignments
-      .filter((item) => cleanerNeedsScheduleReinvite(item, job))
-      .map((item) => hub.cleaners.find((cleaner) => cleaner.cleanerId === item.cleanerId)?.firstName)
-      .filter((name): name is string => Boolean(name)),
+  const scheduleAttentionLines = jobScheduleAttentionFlagLines(job, assignments, (cleanerId) =>
+    hub.cleaners.find((cleaner) => cleaner.cleanerId === cleanerId)?.firstName,
   );
   const showDismiss = dismissable && jobCleaningHasEnded(job, hub.assignments, viewingToday, now);
   return (
@@ -458,7 +459,11 @@ function JobStaffingCard({
         <p className="mt-3 text-base font-medium">
           {draft ? "Draft" : `Headcount: ${confirmed} / ${job.headcountNeeded} confirmed`}
         </p>
-        {reinviteText ? <p className="mt-2 text-sm font-semibold text-red-700">{reinviteText}</p> : null}
+        {scheduleAttentionLines.map((line) => (
+          <p key={line} className="mt-2 text-sm font-semibold text-red-700">
+            {line}
+          </p>
+        ))}
         <ul className="mt-2 space-y-1 text-sm text-ink/80">
           {assignments.length === 0 && pendingCleaners.length === 0 ? <li>No cleaners assigned yet</li> : null}
           {pendingCleaners.map((cleaner) => (

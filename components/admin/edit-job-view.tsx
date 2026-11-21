@@ -54,7 +54,7 @@ import {
   inviteFollowUpSms,
   noticeFlagText,
   noticeGap,
-  reinviteFlagText,
+  cleanerDateReinviteFlagText,
 } from "@/lib/format";
 
 const DEFAULT_PAY_TYPE: PayType = "HOURLY";
@@ -386,7 +386,7 @@ export function EditJobView({
       : null;
   const dateReinviteWarning =
     assignment && cleaner && job && dateReinviteNeeded(assignment, job.date)
-      ? reinviteFlagText([cleaner.firstName])
+      ? cleanerDateReinviteFlagText([cleaner.firstName])
       : null;
   const showSettledScheduleConflictActions = Boolean(
     assignment &&
@@ -855,7 +855,7 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
         customerEditReturnTo={withOrigin(`/admin/jobs/${job.jobId}/edit`, from)}
         onSubmit={submit}
         afterDate={(date) => {
-          const flag = reinviteFlagText(
+          const flag = cleanerDateReinviteFlagText(
             hub.assignments
               .filter((assignment) => assignment.jobId === job.jobId && dateReinviteNeeded(assignment, date))
               .map((assignment) => hub.cleaners.find((cleaner) => cleaner.cleanerId === assignment.cleanerId)?.firstName)

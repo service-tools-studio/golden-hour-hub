@@ -108,7 +108,8 @@ export function rescheduleJobFromCalendarSync(
     }
     const tracksDate = item.status === "INVITED" || item.status === "CONFIRMED";
     const baseline = item.notifiedServiceDate ?? item.serviceDate;
-    let needsReinvite = tracksDate && patch.date !== baseline;
+    const dateMoved = tracksDate && patch.date !== baseline;
+    let needsReinvite = dateMoved;
     if (tracksDate && !needsReinvite) {
       const norm = (value: string | undefined) => value?.trim() || undefined;
       const jobArrival = norm(patch.arrivalWindowStart ?? item.arrivalWindowStart);
@@ -120,6 +121,7 @@ export function rescheduleJobFromCalendarSync(
       }
     }
     const notifiedServiceDate = tracksDate ? baseline : item.notifiedServiceDate;
+    const reopenInvite = dateMoved && item.status === "CONFIRMED";
     return {
       ...item,
       serviceDate: patch.date,
@@ -127,6 +129,11 @@ export function rescheduleJobFromCalendarSync(
       arrivalWindowEnd: patch.arrivalWindowEnd ?? item.arrivalWindowEnd,
       notifiedServiceDate,
       needsDateReinvite: needsReinvite ? true : undefined,
+      status: reopenInvite ? "INVITED" : item.status,
+      confirmedCrewSize: reopenInvite ? undefined : item.confirmedCrewSize,
+      confirmedTotalPayCents: reopenInvite ? undefined : item.confirmedTotalPayCents,
+      respondedAt: reopenInvite ? undefined : item.respondedAt,
+      invitedAt: reopenInvite ? now : item.invitedAt,
       updatedAt: now,
     };
   });

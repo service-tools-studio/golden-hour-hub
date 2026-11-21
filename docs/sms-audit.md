@@ -54,7 +54,13 @@ Placeholders: `{cleanerFirstName}`, `{customerName}`, `{streetAddress}`, `{date}
 >
 > {address}
 
-**Arrival time changed**
+**Date moved (re-invite)** — job detail **Send re-invite** when the service date changed; sets assignment back to `INVITED`.
+
+> Hi {cleanerFirstName}! Golden Hour Hub here.
+>
+> Your cleaning for {customerName} was moved from {previousDate} to {newDate} at {time}. Please accept or decline in the Hub: {link}
+
+**Arrival time changed (same day)** — job detail **Notify by text**
 
 >
 > Instructions:

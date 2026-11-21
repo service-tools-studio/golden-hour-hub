@@ -13,6 +13,23 @@ function normalizeNotifiedArrival(value: string | undefined): string | undefined
   return trimmed || undefined;
 }
 
+export function cleanerScheduleAttentionKind(
+  assignment: Pick<
+    JobAssignment,
+    | "status"
+    | "serviceDate"
+    | "notifiedServiceDate"
+    | "needsDateReinvite"
+    | "lastNotified"
+    | "arrivalWindowStart"
+  >,
+  job: Pick<Job, "date" | "arrivalWindowStart">,
+): "date" | "time" | null {
+  if (!cleanerNeedsScheduleReinvite(assignment, job)) return null;
+  if (dateReinviteNeeded(assignment, job.date)) return "date";
+  return "time";
+}
+
 export function cleanerNeedsScheduleReinvite(
   assignment: Pick<
     JobAssignment,
@@ -26,7 +43,6 @@ export function cleanerNeedsScheduleReinvite(
   job: Pick<Job, "date" | "arrivalWindowStart">,
 ): boolean {
   if (assignment.status !== "INVITED" && assignment.status !== "CONFIRMED") return false;
-  if (assignment.needsDateReinvite) return true;
   if (dateReinviteNeeded(assignment, job.date)) return true;
   const jobArrival = normalizeNotifiedArrival(job.arrivalWindowStart);
   if (!jobArrival) return false;

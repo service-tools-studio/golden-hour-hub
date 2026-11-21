@@ -14,6 +14,7 @@ import {
 import { hasKnownDurationMinutes, parseOptionalDurationMinutes, validateOptionalDurationMinutes } from "../domain/duration.ts";
 import { CROSS_MARKET_STAFFING_MESSAGE, DEFAULT_MARKET_ID, cleanerMatchesJobMarket } from "../domain/markets.ts";
 import { expireJobInvitesIfHeadcountMet } from "../domain/invitations.ts";
+import { dateReinviteNeeded } from "../domain/schedule-reinvite.ts";
 import {
   dateMatchesRule,
   effectiveWeekRecurrence,
@@ -982,6 +983,46 @@ export function moveAssignmentTimeOnHub(
   };
 }
 
+export function markAssignmentScheduleNotifiedOnHub(hub: HubData, assignmentId: string): AdminHubApplierResult {
+  const assignment = hub.assignments.find((item) => item.assignmentId === assignmentId);
+  if (
+    !assignment ||
+    assignment.status === "CANCELED" ||
+    assignment.status === "DECLINED" ||
+    assignment.status === "EXPIRED_JOB_FILLED"
+  ) {
+    return { ok: false, message: "That assignment could not be updated." };
+  }
+  const job = hub.jobs.find((item) => item.jobId === assignment.jobId);
+  const dateChange = job ? dateReinviteNeeded(assignment, job.date) : false;
+  const now = new Date().toISOString();
+  if (dateChange) {
+    return {
+      ok: true,
+      hub: {
+        ...hub,
+        assignments: hub.assignments.map((item) =>
+          item.assignmentId === assignment.assignmentId
+            ? {
+                ...item,
+                status: "INVITED",
+                confirmedCrewSize: undefined,
+                confirmedTotalPayCents: undefined,
+                respondedAt: undefined,
+                invitedAt: now,
+                lastNotified: assignmentNotice(item),
+                notifiedServiceDate: item.serviceDate,
+                needsDateReinvite: undefined,
+                updatedAt: now,
+              }
+            : item,
+        ),
+      },
+    };
+  }
+  return markAssignmentNotifiedOnHub(hub, assignmentId);
+}
+
 export function markAssignmentNotifiedOnHub(hub: HubData, assignmentId: string): AdminHubApplierResult {
   const assignment = hub.assignments.find((item) => item.assignmentId === assignmentId);
   if (
@@ -1003,6 +1044,7 @@ export function markAssignmentNotifiedOnHub(hub: HubData, assignmentId: string):
               ...item,
               lastNotified: assignmentNotice(item),
               notifiedServiceDate: item.serviceDate,
+              needsDateReinvite: undefined,
               updatedAt: now,
             }
           : item,

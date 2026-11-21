@@ -4,6 +4,8 @@ import {
   calendarImportDefaultServiceType,
   calendarImportLinkedJobId,
   calendarImportPreservedDurationMinutes,
+  calendarImportRescheduleStaleImportRow,
+  withdrawRescheduleGhostCalendarImportList,
   syncedCalendarImportSpecialInstructions,
   findExistingJobForCalendarImport,
   parseGoogleCalendarEvent,
@@ -61,15 +63,24 @@ export async function applyCalendarEventsToHub(
   const now = new Date().toISOString();
   let created = 0;
   let updated = 0;
-  let withdrawn = 0;
   let jobsCanceled = 0;
   let jobsRescheduled = 0;
   let skipped = 0;
+  let withdrawn = 0;
   let workingHub = hub;
   const nextImports = [...hub.calendarImports];
   const seenGoogleEventIds = new Set<string>();
   const today = hub.today;
   const horizonEnd = calendarImportSyncHorizonEnd(today);
+
+  function sweepRescheduleGhostImports() {
+    const swept = withdrawRescheduleGhostCalendarImportList(workingHub, nextImports, now);
+    if (swept.withdrawn === 0) return;
+    withdrawn += swept.withdrawn;
+    nextImports.length = 0;
+    nextImports.push(...swept.imports);
+    workingHub = { ...workingHub, calendarImports: swept.imports };
+  }
 
   function upsertImport(row: CalendarImport) {
     const index = nextImports.findIndex((item) => item.importId === row.importId);
@@ -79,14 +90,15 @@ export async function applyCalendarEventsToHub(
 
   function withdrawLinkedImport(existing: CalendarImport) {
     const jobId = calendarImportLinkedJobId(workingHub, existing);
+    const rescheduleStale = calendarImportRescheduleStaleImportRow(workingHub, existing);
     let notifyCleanerIds = existing.calendarCanceledNotifyCleanerIds;
-    if (jobId) {
+    if (jobId && !rescheduleStale) {
       const freshIds = calendarCanceledCleanerIdsFromHub(workingHub, jobId);
       if (freshIds.length > 0) notifyCleanerIds = freshIds;
       workingHub = cancelJobFromCalendarSync(workingHub, jobId);
       jobsCanceled += 1;
     }
-    const canceledOnCalendar = Boolean(jobId);
+    const canceledOnCalendar = Boolean(jobId) && !rescheduleStale;
     upsertImport(
       withdrawCalendarImportRow(existing, now, {
         status: canceledOnCalendar ? "CALENDAR_CANCELED" : "WITHDRAWN",
@@ -101,6 +113,7 @@ export async function applyCalendarEventsToHub(
   for (const item of syncImportItems) {
     upsertImport(readCalendarImport(item));
   }
+  sweepRescheduleGhostImports();
 
   for (const event of events) {
     const eventId = event.id?.trim();
@@ -262,7 +275,10 @@ export async function applyCalendarEventsToHub(
     created += 1;
   }
 
+  sweepRescheduleGhostImports();
+
   for (const row of nextImports) {
+    if (row.status === "WITHDRAWN") continue;
     if (!calendarImportMissingFromGoogleSync(row, seenGoogleEventIds, today, horizonEnd)) continue;
     const activeJobId = calendarImportLinkedJobId(workingHub, row);
     if (calendarImportShouldWithdrawFromGoogleSync(row, activeJobId)) {

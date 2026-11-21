@@ -31,6 +31,7 @@ import {
   deleteJobAction,
   deleteSeriesAction,
   markAssignmentNotifiedAction,
+  markAssignmentScheduleNotifiedAction,
   moveAssignmentTimeAction,
   removeJobCleanerAction,
   saveCleanerDetailsAction,
@@ -70,6 +71,7 @@ import {
   deleteJobOnHub,
   deleteSeriesOnHub,
   markAssignmentNotifiedOnHub,
+  markAssignmentScheduleNotifiedOnHub,
   moveAssignmentTimeOnHub,
   removeJobCleanerOnHub,
   saveCleanerDetailsOnHub,
@@ -223,6 +225,7 @@ type HubContextValue = HubState & {
   updateJob: (input: UpdateJobInput) => AsyncActionResult;
   moveAssignmentTime: (assignmentId: string, arrivalWindowStart: string, arrivalWindowEnd: string) => AsyncActionResult;
   markAssignmentNotified: (assignmentId: string) => AsyncActionResult;
+  markAssignmentScheduleNotified: (assignmentId: string) => AsyncActionResult;
   deleteJob: (jobId: string) => AsyncActionResult;
   deleteSeries: (seriesId: string) => AsyncActionResult;
   rejectCalendarImport: (importId: string, reason?: string) => AsyncActionResult;
@@ -1448,6 +1451,11 @@ export function HubProvider({
     return applyPreviewMutation(markAssignmentNotifiedOnHub(data, assignmentId));
   }
 
+  async function markAssignmentScheduleNotified(assignmentId: string): AsyncActionResult {
+    if (isDynamoAdmin()) return applyAdminActionResult(await markAssignmentScheduleNotifiedAction(assignmentId));
+    return applyPreviewMutation(markAssignmentScheduleNotifiedOnHub(data, assignmentId));
+  }
+
   async function undoDeleteJob(): AsyncActionResult {
     if (!deletedJobUndo) return { ok: false, message: "That cleaning could not be restored." };
     const snapshot = deletedJobUndo;
@@ -1669,6 +1677,7 @@ export function HubProvider({
     updateJob,
     moveAssignmentTime,
     markAssignmentNotified,
+    markAssignmentScheduleNotified,
     deleteJob,
     deleteSeries,
     rejectCalendarImport,

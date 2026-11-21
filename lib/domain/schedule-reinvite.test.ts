@@ -28,6 +28,22 @@ describe("schedule re-invite helpers", () => {
     assert.equal(jobHasCleanerScheduleReinvite(job, [assignment]), true);
   });
 
+  it("ignores stale needsDateReinvite when notified date and arrival match the job", () => {
+    const assignment = {
+      assignmentId: "a-1",
+      jobId: "job-1",
+      cleanerId: "c-1",
+      status: "CONFIRMED",
+      serviceDate: "2026-11-25",
+      notifiedServiceDate: "2026-11-25",
+      needsDateReinvite: true,
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      lastNotified: { arrivalWindowStart: "10:00", arrivalWindowEnd: "10:00" },
+    } as JobAssignment;
+    assert.equal(cleanerNeedsScheduleReinvite(assignment, job), false);
+  });
+
   it("flags confirmed cleaners when arrival time changed", () => {
     const assignment = {
       assignmentId: "a-1",

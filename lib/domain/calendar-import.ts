@@ -896,9 +896,11 @@ export function calendarImportLinkedJobId(
 }
 
 export function calendarImportCanceledJobId(
-  hub: Pick<HubData, "jobs">,
+  hub: Pick<HubData, "jobs" | "customers" | "properties">,
   row: CalendarImport,
 ): string | undefined {
+  const active = calendarImportActiveJobForCancelRow(hub, row);
+  if (active) return active.jobId;
   if (row.approvedJobId && hub.jobs.some((job) => job.jobId === row.approvedJobId)) {
     return row.approvedJobId;
   }
@@ -906,6 +908,67 @@ export function calendarImportCanceledJobId(
     return row.matchedJobId;
   }
   return hub.jobs.find((job) => job.googleCalendarEventId === row.googleCalendarEventId)?.jobId;
+}
+
+/** Active hub job this cancel import row is about (reschedule may split event ids / dates). */
+export function calendarImportActiveJobForCancelRow(
+  hub: Pick<HubData, "jobs" | "customers" | "properties">,
+  row: CalendarImport,
+): Job | undefined {
+  for (const jobId of [row.approvedJobId?.trim(), row.matchedJobId?.trim()].filter(Boolean)) {
+    const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
+    if (job) return job;
+  }
+  const eventId = row.googleCalendarEventId?.trim();
+  if (eventId) {
+    const byEvent = hub.jobs.find((item) => item.googleCalendarEventId === eventId && item.status !== "CANCELED");
+    if (byEvent) return byEvent;
+  }
+  const matched = findExistingJobForCalendarImport(hub.jobs, hub.customers, hub.properties, {
+    googleCalendarEventId: row.googleCalendarEventId,
+    serviceDate: row.serviceDate,
+    suggestedCustomerId: row.suggestedCustomerId,
+    suggestedPropertyId: row.suggestedPropertyId,
+    parsed: row.parsed,
+  });
+  if (matched && matched.status !== "CANCELED") return matched;
+  const first = row.parsed.suggestedFirstName?.trim() ?? "";
+  const last = row.parsed.suggestedLastName?.trim() ?? "";
+  if (!first && !last) return undefined;
+  const customer = findCustomerByCalendarEventName(hub.customers, first, last);
+  if (!customer) return undefined;
+  const activeForCustomer = hub.jobs.filter(
+    (item) => item.customerId === customer.customerId && item.status !== "CANCELED",
+  );
+  if (activeForCustomer.length === 0) return undefined;
+  if (eventId) {
+    const withEvent = activeForCustomer.find((item) => item.googleCalendarEventId === eventId);
+    if (withEvent) return withEvent;
+  }
+  const moved = activeForCustomer.find((item) => item.date !== row.serviceDate);
+  return moved ?? activeForCustomer[0];
+}
+
+/**
+ * Gmail reschedule sometimes leaves a staging row on the old service date (or CALENDAR_CANCELED)
+ * while the linked hub job already moved — not a real cancel for admins.
+ */
+export function calendarImportRescheduleStaleImportRow(
+  hub: Pick<HubData, "jobs" | "customers" | "properties">,
+  row: CalendarImport,
+): boolean {
+  const job = calendarImportActiveJobForCancelRow(hub, row);
+  if (!job) return false;
+  return job.date !== row.serviceDate;
+}
+
+/** Whether a CALENDAR_CANCELED card belongs on the dashboard (job truly canceled on hub). */
+export function calendarImportCanceledCardRelevant(
+  hub: Pick<HubData, "jobs" | "customers" | "properties">,
+  row: CalendarImport,
+): boolean {
+  if (row.status !== "CALENDAR_CANCELED") return true;
+  return !calendarImportRescheduleStaleImportRow(hub, row);
 }
 
 export function resolveCalendarImportMatchedJobId(
@@ -1002,12 +1065,54 @@ export function visibleDashboardCalendarImports(
   imports: CalendarImport[],
   today: string,
   filter: import("./markets.ts").AdminMarketFilter,
+  hub?: Pick<HubData, "jobs" | "customers" | "properties">,
 ): CalendarImport[] {
   return imports
     .filter((item) => calendarImportShowsOnAdminDashboard(item))
+    .filter((item) => (hub ? calendarImportCanceledCardRelevant(hub, item) : true))
     .filter((item) => isCalendarImportInReviewWindow(item, today))
     .filter((item) => calendarImportMatchesAdminMarket(item, filter))
     .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate));
+}
+
+function withdrawRescheduleGhostImportRow(
+  hub: Pick<HubData, "jobs" | "customers" | "properties">,
+  row: CalendarImport,
+  now: string,
+): CalendarImport {
+  if (row.status !== "CALENDAR_CANCELED" && row.status !== "PENDING_REVIEW") return row;
+  if (!calendarImportRescheduleStaleImportRow(hub, row)) return row;
+  return {
+    ...row,
+    status: "WITHDRAWN",
+    updatedAt: now,
+    lastSyncedAt: now,
+  };
+}
+
+/** Withdraw ghost rows in an import list (e.g. after loading the full sync range from Dynamo). */
+export function withdrawRescheduleGhostCalendarImportList(
+  hub: Pick<HubData, "jobs" | "customers" | "properties">,
+  imports: CalendarImport[],
+  now: string,
+): { imports: CalendarImport[]; withdrawn: number } {
+  let withdrawn = 0;
+  const next = imports.map((row) => {
+    const swept = withdrawRescheduleGhostImportRow(hub, row, now);
+    if (swept.status !== row.status) withdrawn += 1;
+    return swept;
+  });
+  return { imports: next, withdrawn };
+}
+
+/** Withdraw CALENDAR_CANCELED / pending rows that only reflect an old date after a Gmail reschedule. */
+export function withdrawRescheduleGhostCalendarImports(
+  hub: HubData,
+  now: string,
+): { hub: HubData; withdrawn: number } {
+  const { imports, withdrawn } = withdrawRescheduleGhostCalendarImportList(hub, hub.calendarImports, now);
+  if (withdrawn === 0) return { hub, withdrawn: 0 };
+  return { hub: { ...hub, calendarImports: imports }, withdrawn };
 }
 
 export function calendarImportIdFromReturnTo(returnTo: string | undefined): string | undefined {

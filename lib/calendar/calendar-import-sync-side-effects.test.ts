@@ -251,4 +251,39 @@ describe("calendar import sync side effects", () => {
     assert.equal(next.assignments[0]!.serviceDate, "2026-11-22");
     assert.equal(next.assignments[0]!.needsDateReinvite, true);
   });
+
+  it("reopens confirmed cleaners to invited when the job date moves", () => {
+    const hub = {
+      ...emptyHub("2026-11-20"),
+      jobs: [stubJob()],
+      assignments: [
+        {
+          assignmentId: "a-1",
+          jobId: "job-1",
+          cleanerId: "cleaner-1",
+          serviceDate: "2026-11-20",
+          notifiedServiceDate: "2026-11-20",
+          status: "CONFIRMED" as const,
+          confirmedCrewSize: 1,
+          proposedCrewSize: 1,
+          payType: "FLAT" as const,
+          payPerPersonCents: 10000,
+          proposedTotalPayCents: 10000,
+          confirmedTotalPayCents: 10000,
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+    };
+    const next = rescheduleJobFromCalendarSync(hub, "job-1", {
+      date: "2026-11-22",
+      arrivalWindowStart: "09:00",
+      arrivalWindowEnd: "09:00",
+    });
+    assert.equal(next.assignments[0]!.status, "INVITED");
+    assert.equal(next.assignments[0]!.confirmedCrewSize, undefined);
+    assert.equal(next.assignments[0]!.needsDateReinvite, true);
+  });
 });

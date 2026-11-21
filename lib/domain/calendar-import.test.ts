@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   buildCalendarImportNewCustomerHref,
   calendarImportCustomerPrefillFromRow,
+  calendarImportCanceledCardRelevant,
+  calendarImportRescheduleStaleImportRow,
   calendarImportScheduleMovedFromGoogle,
   calendarImportShowsOnAdminDashboard,
   findExistingJobForCalendarImport,
@@ -567,6 +569,60 @@ describe("calendar import parser", () => {
       calendarImportScheduleMovedFromGoogle(hub, row, "2026-11-25", "09:00", "09:00"),
       true,
     );
+  });
+
+  it("treats CALENDAR_CANCELED on the old date as stale when the hub job moved", () => {
+    const hub = {
+      jobs: [
+        {
+          jobId: "job-1",
+          googleCalendarEventId: "gcal-new",
+          customerId: "c1",
+          propertyId: "p1",
+          serviceType: "DEEP_CLEAN" as const,
+          date: "2026-11-27",
+          headcountNeeded: 1,
+          snapshot: {} as import("./types.ts").Job["snapshot"],
+          status: "SCHEDULED" as const,
+          createdAt: "",
+          createdBy: "",
+          updatedAt: "",
+          updatedBy: "",
+          specialInstructions: "",
+        },
+      ],
+      customers: [
+        {
+          customerId: "c1",
+          firstName: "Jasmin",
+          lastName: "Test Again",
+          phone: "5035550100",
+          status: "ACTIVE" as const,
+          createdAt: "",
+          createdBy: "",
+          updatedAt: "",
+          updatedBy: "",
+        },
+      ],
+      properties: [],
+    };
+    const row = {
+      importId: "imp-1",
+      googleCalendarEventId: "gcal-old",
+      serviceDate: "2026-11-22",
+      status: "CALENDAR_CANCELED" as const,
+      serviceType: "DEEP_CLEAN" as const,
+      headcountNeeded: 1,
+      specialInstructions: "",
+      marketId: "portland" as const,
+      raw: { title: "Jasmin Test Again", description: "", location: "" },
+      parsed: { suggestedFirstName: "Jasmin", suggestedLastName: "Test Again", marketId: "portland" as const },
+      createdAt: "",
+      updatedAt: "",
+      lastSyncedAt: "",
+    } satisfies CalendarImport;
+    assert.equal(calendarImportRescheduleStaleImportRow(hub, row), true);
+    assert.equal(calendarImportCanceledCardRelevant(hub, row), false);
   });
 
   it("prefills property unit from calendar import details", () => {

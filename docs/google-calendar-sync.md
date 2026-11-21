@@ -14,6 +14,7 @@ Admins review at `/admin/calendar-imports/[importId]`, match or create a custome
 - Treats Calendly-style **`Canceled:`** / **`Cancelled:`** event titles as cancellations even when Google still returns `status: confirmed`.
 - Loads **approved** import rows from Dynamo during sync (they are not kept in the admin hub slice) so deleted events still cancel linked jobs.
 - For **approved** imports, moves the linked Hub job to the new date/time or **cancels** it when the calendar event is removed or cancelled; sets import status to **`CALENDAR_CANCELED`** for dashboard follow-up (notify cleaners, then dismiss).
+- **Reschedule** (same linked job, new date) must not show a cancel card on the **old** import date — stale `CALENDAR_CANCELED` / pending rows are withdrawn quietly when the hub job is still scheduled on a different day.
 
 ### Near-real-time push
 
