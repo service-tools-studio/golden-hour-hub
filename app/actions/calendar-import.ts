@@ -18,7 +18,7 @@ import {
   type UpdateCalendarImportInput,
 } from "@/lib/hub/calendar-import-mutations";
 import type { HubData } from "@/lib/mock/seed";
-import type { HubPatchRemove } from "@/lib/hub/merge-hub-patch";
+import { hubMutationPatch, type HubPatchRemove } from "@/lib/hub/merge-hub-patch";
 
 export type CalendarImportActionResult =
   | {
@@ -60,10 +60,12 @@ export async function syncCalendarImportsAction(): Promise<CalendarImportActionR
       return { ok: false, message: formatCalendarSyncMessage(result) };
     }
     const after = await loadAdminHubSlices({ persistReconciliation: false });
+    const { patch, remove } = hubMutationPatch(hub, after);
     const revision = await readHubRevision();
     return {
       ok: true,
-      hub: after,
+      hub: patch,
+      remove,
       revision,
       message: formatCalendarSyncMessage(result),
     };

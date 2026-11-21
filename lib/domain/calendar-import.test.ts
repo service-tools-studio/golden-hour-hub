@@ -134,6 +134,13 @@ describe("calendar import parser", () => {
     );
   });
 
+  it("skips blocked personal titles by exact match", () => {
+    assert.equal(calendarEventIsExcludedFromImport({ summary: "Dentist" }), true);
+    assert.equal(calendarEventIsExcludedFromImport({ summary: "DENTIST" }), true);
+    assert.equal(calendarEventIsExcludedFromImport({ summary: "NARPM Greater Portland Chapter Meeting" }), true);
+    assert.equal(calendarEventIsExcludedFromImport({ summary: "Dentist appointment" }), false);
+  });
+
   it("skips kelsey therapy events case-insensitively", () => {
     assert.equal(calendarEventIsExcludedFromImport({ summary: "Kelsey Therapy" }), true);
     assert.equal(calendarEventIsExcludedFromImport({ summary: "Friday kelsey therapy block" }), true);

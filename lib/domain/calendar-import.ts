@@ -38,11 +38,18 @@ export function calendarImportTtlEpoch(updatedAtIso: string, nowMs = Date.now())
 const US_PHONE = /(?:\+?1[-.\s]?)?\(?(\d{3})\)?[-.\s]?(\d{3})[-.\s]?(\d{4})/;
 const CALENDAR_IMPORT_EXCLUDED_TITLE = /kelsey\s+therapy/i;
 
+/** Full event titles (after normalizeCalendarEventTitle) that must never become imports. */
+const CALENDAR_IMPORT_EXCLUDED_EXACT_TITLES = new Set([
+  "dentist",
+  "narpm greater portland chapter meeting",
+]);
+
 function calendarEventSummaryIsExcluded(summary: string): boolean {
   const trimmed = summary.trim();
   if (!trimmed) return false;
   const title = normalizeCalendarEventTitle(trimmed) || trimmed;
   const lower = title.toLowerCase();
+  if (CALENDAR_IMPORT_EXCLUDED_EXACT_TITLES.has(lower)) return true;
   if (/^water\s+plants$/.test(lower)) return true;
   if (/\bunavailable\b/i.test(title)) return true;
   if (/\bavailable\b/i.test(title)) return true;

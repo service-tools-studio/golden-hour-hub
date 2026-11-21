@@ -1479,8 +1479,7 @@ export function HubProvider({
     if (!remote.ok) return remote;
     skipPersistForRemoteSyncRef.current = true;
     hubRevisionRef.current = remote.revision;
-    const { patch, remove } = hubMutationPatch(data, remote.hub);
-    applyAdminHubPatch(patch, remote.remove ?? remove);
+    applyAdminHubPatch(remote.hub, remote.remove);
     return { ok: true, message: remote.message, jobId: remote.jobId };
   }
 
