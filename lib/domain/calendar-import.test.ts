@@ -813,6 +813,21 @@ describe("calendar import property on customer", () => {
     assert.match(href, /addPropertyFromImport=1/);
   });
 
+  it("treats abbreviated Gmail streets as the same hub property", () => {
+    const hints = { streetAddress: "6875 SW Nyberg St", city: "Tualatin", state: "OR" };
+    const property = {
+      propertyId: "p1",
+      customerId: "c1",
+      streetAddress: "6875 Southwest Nyberg Street",
+      city: "Tualatin",
+      state: "OR",
+      zip: "97062",
+      status: "ACTIVE",
+    } as import("./types.ts").Property;
+    assert.equal(propertyMatchesCalendarImportAddress(property, hints), true);
+    assert.equal(customerHasCalendarImportProperty([property], "c1", hints), true);
+  });
+
   it("detects when the import address is not on the customer", () => {
     const hints = { streetAddress: "12505 NW Bayonne Ln", city: "Portland", state: "OR", zip: "97229" };
     const properties = [

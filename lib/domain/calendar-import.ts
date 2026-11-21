@@ -1206,6 +1206,44 @@ export function calendarImportIdFromReturnTo(returnTo: string | undefined): stri
   return match?.[1];
 }
 
+const STREET_WORD_ABBREVIATIONS: Record<string, string> = {
+  n: "north",
+  s: "south",
+  e: "east",
+  w: "west",
+  ne: "northeast",
+  nw: "northwest",
+  se: "southeast",
+  sw: "southwest",
+  st: "street",
+  str: "street",
+  ave: "avenue",
+  av: "avenue",
+  blvd: "boulevard",
+  dr: "drive",
+  rd: "road",
+  ln: "lane",
+  ct: "court",
+  pl: "place",
+  hwy: "highway",
+  pkwy: "parkway",
+  cir: "circle",
+  ter: "terrace",
+  sq: "square",
+  ste: "suite",
+  apt: "apartment",
+};
+
+/** Compare Gmail/Calendly lines to hub property streets (abbreviations, punctuation). */
+export function normalizeStreetAddressForMatch(value: string): string {
+  const base = normalizeSearchText(value);
+  if (!base) return "";
+  return base
+    .split(" ")
+    .map((word) => STREET_WORD_ABBREVIATIONS[word] ?? word)
+    .join(" ");
+}
+
 /** True when a hub property is the same place as the Gmail / Calendly address. */
 export function propertyMatchesCalendarImportAddress(
   property: Pick<Property, "streetAddress"> & Partial<Pick<Property, "unit" | "city" | "zip">>,
@@ -1213,17 +1251,29 @@ export function propertyMatchesCalendarImportAddress(
 ): boolean {
   const importStreet = hints.streetAddress?.trim();
   if (!importStreet) return false;
-  const hubStreet = normalizeSearchText(property.streetAddress);
-  const eventStreet = normalizeSearchText(importStreet);
+  const hubStreet = normalizeStreetAddressForMatch(property.streetAddress);
+  const eventStreet = normalizeStreetAddressForMatch(importStreet);
   if (!hubStreet || !eventStreet) return false;
   if (hubStreet === eventStreet) return true;
   if (hubStreet.includes(eventStreet) || eventStreet.includes(hubStreet)) return true;
+  const importCity = hints.city?.trim();
+  const hubCity = property.city?.trim();
+  if (importCity && hubCity && normalizeSearchText(importCity) !== normalizeSearchText(hubCity)) {
+    return false;
+  }
   const importZip = hints.zip?.replace(/\D/g, "").slice(0, 5);
   const hubZip = property.zip?.replace(/\D/g, "").slice(0, 5);
   if (importZip && hubZip && hubZip === importZip) {
     const hubLead = hubStreet.split(" ").slice(0, 2).join(" ");
     const eventLead = eventStreet.split(" ").slice(0, 2).join(" ");
     if (hubLead && eventLead && hubLead === eventLead) return true;
+  }
+  const hubNumber = hubStreet.match(/^\d+/)?.[0];
+  const eventNumber = eventStreet.match(/^\d+/)?.[0];
+  if (hubNumber && eventNumber && hubNumber === eventNumber) {
+    const hubTail = hubStreet.split(" ").slice(-2).join(" ");
+    const eventTail = eventStreet.split(" ").slice(-2).join(" ");
+    if (hubTail && eventTail && hubTail === eventTail) return true;
   }
   return false;
 }
