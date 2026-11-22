@@ -138,3 +138,30 @@ export function calendarImportsMatchingGoogleEvent(
 ): CalendarImport[] {
   return imports.filter((row) => googleCalendarEventIdsMatch(row.googleCalendarEventId, googleCalendarEventId));
 }
+
+/** Withdraw superseded staging rows after link/approve without canceling hub jobs. */
+export function retireConflictingCalendarImports(
+  imports: CalendarImport[],
+  keepImportId: string,
+  jobId: string,
+  eventId: string,
+  now: string,
+): CalendarImport[] {
+  const trimmedJob = jobId.trim();
+  return imports.map((row) => {
+    if (row.importId === keepImportId) return row;
+    if (row.status === "WITHDRAWN" || row.status === "REJECTED") return row;
+    const sameEvent = googleCalendarEventIdsMatch(row.googleCalendarEventId, eventId);
+    const sameJobDifferentEvent =
+      row.status === "APPROVED" &&
+      row.approvedJobId?.trim() === trimmedJob &&
+      !googleCalendarEventIdsMatch(row.googleCalendarEventId, eventId);
+    if (!sameEvent && !sameJobDifferentEvent) return row;
+    return {
+      ...row,
+      status: "WITHDRAWN" as const,
+      updatedAt: now,
+      lastSyncedAt: now,
+    };
+  });
+}

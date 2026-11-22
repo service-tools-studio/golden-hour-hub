@@ -1,3 +1,4 @@
+import { retireConflictingCalendarImports } from "../calendar/calendar-import-canonical.ts";
 import { findExistingJobForCalendarImport } from "../domain/calendar-import.ts";
 import { validateOptionalVisitArrival } from "../domain/arrival.ts";
 import { snapshotVisit } from "../domain/customers.ts";
@@ -248,12 +249,23 @@ export function approveCalendarImportOnHub(hub: HubData, input: ApproveCalendarI
     lastSyncedAt: now,
   };
 
+  const importsWithApproved = created.hub.calendarImports.map((item) =>
+    item.importId === row.importId ? approved : item,
+  );
+  const importsRetired = retireConflictingCalendarImports(
+    importsWithApproved,
+    row.importId,
+    created.jobId,
+    updated.googleCalendarEventId,
+    now,
+  );
+
   return {
     ok: true,
     hub: {
       ...created.hub,
       jobs: created.hub.jobs.map((job) => (job.jobId === created.jobId ? jobWithLink : job)),
-      calendarImports: created.hub.calendarImports.map((item) => (item.importId === row.importId ? approved : item)),
+      calendarImports: importsRetired,
     },
     message: "Cleaning added to the schedule.",
     jobId: created.jobId,

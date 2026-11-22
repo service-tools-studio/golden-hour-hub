@@ -1,12 +1,46 @@
-import { CALENDAR_IMPORT_HORIZON_DAYS } from "../domain/calendar-import.ts";
+import {
+  CALENDAR_IMPORT_HORIZON_DAYS,
+  calendarImportActiveJobForStrictEventLink,
+} from "../domain/calendar-import.ts";
 import { addDays } from "../domain/time.ts";
 import type { CalendarImport, Job } from "../domain/types.ts";
 import type { HubData } from "../mock/seed.ts";
+import { googleCalendarEventIdsMatch } from "./google-calendar-event-match.ts";
 
 export const CALENDAR_SYNC_ACTOR = "calendar-sync";
 
 export function calendarImportSyncHorizonEnd(today: string): string {
   return addDays(today, CALENDAR_IMPORT_HORIZON_DAYS);
+}
+
+/** Whether the current sync feed included this Google event id (handles encoding variants). */
+export function seenGoogleEventIdsContains(seenGoogleEventIds: Set<string>, eventId: string | undefined): boolean {
+  const target = eventId?.trim();
+  if (!target) return false;
+  if (seenGoogleEventIds.has(target)) return true;
+  for (const id of seenGoogleEventIds) {
+    if (googleCalendarEventIdsMatch(id, target)) return true;
+  }
+  return false;
+}
+
+/**
+ * When an import row's stored event id is gone from Google, cancel the hub job only if that job
+ * still points at the same missing id (not when the job was relinked to a live event).
+ */
+export function importRowMissingFromGoogleShouldCancelJob(
+  hub: HubData,
+  row: CalendarImport,
+  seenGoogleEventIds: Set<string>,
+): boolean {
+  const job = calendarImportActiveJobForStrictEventLink(hub, row);
+  if (!job) return false;
+  const jobEventId = job.googleCalendarEventId?.trim();
+  if (!jobEventId) return false;
+  if (seenGoogleEventIdsContains(seenGoogleEventIds, jobEventId)) return false;
+  const rowEventId = row.googleCalendarEventId?.trim();
+  if (!rowEventId) return false;
+  return googleCalendarEventIdsMatch(jobEventId, rowEventId);
 }
 
 /** Pending or approved staging row no longer returned by Google Calendar for this window. */
@@ -16,7 +50,7 @@ export function calendarImportMissingFromGoogleSync(
   today: string,
   horizonEnd: string,
 ): boolean {
-  if (seenGoogleEventIds.has(row.googleCalendarEventId)) return false;
+  if (seenGoogleEventIdsContains(seenGoogleEventIds, row.googleCalendarEventId)) return false;
   if (row.serviceDate < today || row.serviceDate > horizonEnd) return false;
   return (
     row.status === "PENDING_REVIEW" ||

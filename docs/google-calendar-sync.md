@@ -8,6 +8,8 @@ Admins review at `/admin/calendar-imports/[importId]`, match or create a custome
 
 Hub stores **one staging row per Google event id** (`calimp-gcal-…` derived from the event id). Overlapping sync runs upsert the same row; any legacy duplicates are merged and deleted on the next import pass.
 
+**1:1 by live Google event id:** each active Hub cleaning links to at most one Gmail event id (`Job.googleCalendarEventId`). Deleting or cancelling that event in Gmail **cancels** the linked job (status `CANCELED`). Creating a **new** Gmail event (new id, even for the same customer and date) yields a new **Pending** import; approving or linking creates a **new** job. Stale import rows that still reference an old id must not cancel a job that was relinked to a current event—sync withdraws those rows quietly instead.
+
 **Check Gmail** (and the import cron/webhook) re-fetches Google Calendar for the same 60-day window. Hub then:
 
 - Updates pending import rows when an event’s date or arrival changes (reschedule).
@@ -15,7 +17,7 @@ Hub stores **one staging row per Google event id** (`calimp-gcal-…` derived fr
 - Marks pending imports **withdrawn** when an event is cancelled or deleted from Google.
 - Treats Calendly-style **`Canceled:`** / **`Cancelled:`** event titles as cancellations even when Google still returns `status: confirmed`.
 - Loads **approved** import rows from Dynamo during sync (they are not kept in the admin hub slice) so deleted events still cancel linked jobs.
-- For **approved** imports, moves the linked Hub job to the new date/time or **cancels** it when the calendar event is removed or cancelled; sets import status to **`CALENDAR_CANCELED`** for dashboard follow-up (notify cleaners, then dismiss).
+- For **approved** imports, moves the linked Hub job to the new date/time or **cancels** it when the calendar event is removed or cancelled; sets import status to **`CALENDAR_CANCELED`** for dashboard follow-up (notify cleaners, then dismiss). Job cancel on removal uses the job’s current `googleCalendarEventId` (not fuzzy customer matching on stale import rows).
 - **Reschedule** (same linked job, new date) must not show a cancel card on the **old** import date — stale `CALENDAR_CANCELED` / pending rows are withdrawn quietly when the hub job is still scheduled on a different day.
 
 ### Near-real-time push

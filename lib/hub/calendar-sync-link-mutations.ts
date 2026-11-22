@@ -1,4 +1,7 @@
-import { calendarImportIdForGoogleEvent } from "../calendar/calendar-import-canonical.ts";
+import {
+  calendarImportIdForGoogleEvent,
+  retireConflictingCalendarImports,
+} from "../calendar/calendar-import-canonical.ts";
 import {
   calendarImportDefaultServiceType,
   findExistingJobForCalendarImport,
@@ -118,11 +121,14 @@ export function linkCalendarEventToJobOnHub(
     lastSyncedAt: now,
   };
 
+  const importsWithLinked = existing
+    ? hub.calendarImports.map((row) => (row.importId === importId ? linkedImport : row))
+    : [...hub.calendarImports, linkedImport];
+  const importsRetired = retireConflictingCalendarImports(importsWithLinked, importId, jobId, eventId, now);
+
   let nextHub: HubData = {
     ...hub,
-    calendarImports: existing
-      ? hub.calendarImports.map((row) => (row.importId === importId ? linkedImport : row))
-      : [...hub.calendarImports, linkedImport],
+    calendarImports: importsRetired,
     jobs: hub.jobs.map((item) =>
       item.jobId === jobId
         ? {

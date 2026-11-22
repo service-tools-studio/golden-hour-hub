@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  calendarImportActiveJobForCancelRow,
+  calendarImportActiveJobForStrictEventLink,
+} from "../domain/calendar-import.ts";
+import {
   calendarCanceledCleanerIdsFromHub,
   calendarRescheduleStaffingCleanerIdsFromHub,
   calendarImportMissingFromGoogleSync,
   calendarImportShouldWithdrawFromGoogleSync,
   cancelJobFromCalendarSync,
+  importRowMissingFromGoogleShouldCancelJob,
   mergeJobPartitionIntoHub,
   rescheduleJobFromCalendarSync,
+  seenGoogleEventIdsContains,
 } from "./calendar-import-sync-side-effects.ts";
 import type { CalendarImport, Job } from "../domain/types.ts";
 import { emptyHub } from "../mock/seed.ts";
@@ -126,6 +132,7 @@ describe("calendar import sync side effects", () => {
       ),
       false,
     );
+    assert.equal(seenGoogleEventIdsContains(new Set(["abc%40x"]), "abc@x"), true);
     assert.equal(
       calendarImportMissingFromGoogleSync(
         stubImport({ serviceDate: "2027-01-01" }),
@@ -264,6 +271,67 @@ describe("calendar import sync side effects", () => {
     assert.equal(next.jobs[0]!.arrivalWindowStart, "13:00");
     assert.equal(next.assignments[0]!.serviceDate, "2026-11-22");
     assert.equal(next.assignments[0]!.needsDateReinvite, true);
+  });
+
+  it("does not cancel when stale import id is gone but the job is linked to a live event", () => {
+    const hub = {
+      ...emptyHub("2026-11-20"),
+      customers: [],
+      properties: [],
+      jobs: [
+        stubJob({
+          jobId: "job-jim",
+          googleCalendarEventId: "evt-live",
+          status: "DRAFT",
+        }),
+      ],
+      calendarImports: [],
+    };
+    const row = stubImport({
+      googleCalendarEventId: "evt-dead",
+      status: "APPROVED",
+      approvedJobId: "job-jim",
+    });
+    const seen = new Set(["evt-live"]);
+    assert.equal(importRowMissingFromGoogleShouldCancelJob(hub, row, seen), false);
+    assert.equal(
+      calendarImportActiveJobForStrictEventLink(hub, row)?.jobId,
+      "job-jim",
+    );
+    const otherCustomerJob = stubJob({
+      jobId: "job-other",
+      customerId: "cust-other",
+      googleCalendarEventId: "evt-dead",
+      date: "2026-12-15",
+    });
+    const hubWithStray = {
+      ...hub,
+      jobs: [...hub.jobs, otherCustomerJob],
+    };
+    assert.equal(calendarImportActiveJobForCancelRow(hubWithStray, row)?.jobId, "job-jim");
+  });
+
+  it("cancels when the linked job still points at the missing event id", () => {
+    const hub = {
+      ...emptyHub("2026-11-20"),
+      customers: [],
+      properties: [],
+      jobs: [
+        stubJob({
+          jobId: "job-a",
+          googleCalendarEventId: "evt-a",
+          status: "DRAFT",
+        }),
+      ],
+      calendarImports: [],
+    };
+    const row = stubImport({
+      googleCalendarEventId: "evt-a",
+      status: "APPROVED",
+      approvedJobId: "job-a",
+    });
+    const seen = new Set<string>();
+    assert.equal(importRowMissingFromGoogleShouldCancelJob(hub, row, seen), true);
   });
 
   it("reopens confirmed cleaners to invited when the job date moves", () => {

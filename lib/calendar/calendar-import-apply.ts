@@ -2,6 +2,7 @@ import {
   calendarEventIndicatesHubCancel,
   calendarEventIsExcludedFromImport,
   calendarImportDefaultServiceType,
+  calendarImportActiveJobForStrictEventLink,
   calendarImportLinkedJobId,
   calendarImportPreservedDurationMinutes,
   calendarImportRescheduleStaleImportRow,
@@ -37,6 +38,8 @@ import {
   calendarImportShouldWithdrawFromGoogleSync,
   calendarImportSyncHorizonEnd,
   cancelJobFromCalendarSync,
+  importRowMissingFromGoogleShouldCancelJob,
+  seenGoogleEventIdsContains,
 } from "./calendar-import-sync-side-effects.ts";
 import { applyApprovedImportScheduleFromGoogle } from "./calendar-import-apply-reschedule.ts";
 
@@ -121,12 +124,21 @@ export async function applyCalendarEventsToHub(
     return pickCanonicalCalendarImport(matches);
   }
 
+  function withdrawStaleImportOnly(existing: CalendarImport) {
+    if (existing.status === "WITHDRAWN") return;
+    upsertImport(withdrawCalendarImportRow(existing, now));
+    withdrawn += 1;
+  }
+
   function withdrawLinkedImport(existing: CalendarImport) {
-    const jobId = calendarImportLinkedJobId(workingHub, existing);
+    const rescheduleStale = calendarImportRescheduleStaleImportRow(workingHub, existing);
+    const jobId = rescheduleStale
+      ? undefined
+      : (calendarImportActiveJobForStrictEventLink(workingHub, existing)?.jobId ??
+        calendarImportLinkedJobId(workingHub, existing));
     if (existing.status === "WITHDRAWN" && !jobId) {
       return;
     }
-    const rescheduleStale = calendarImportRescheduleStaleImportRow(workingHub, existing);
     let notifyCleanerIds = existing.calendarCanceledNotifyCleanerIds;
     if (jobId && !rescheduleStale) {
       const freshIds = calendarCanceledCleanerIdsFromHub(workingHub, jobId);
@@ -333,8 +345,11 @@ export async function applyCalendarEventsToHub(
     if (row.status === "PENDING_REVIEW") continue;
     if (!calendarImportMissingFromGoogleSync(row, seenGoogleEventIds, today, horizonEnd)) continue;
     const activeJobId = calendarImportLinkedJobId(workingHub, row);
-    if (calendarImportShouldWithdrawFromGoogleSync(row, activeJobId)) {
+    if (!calendarImportShouldWithdrawFromGoogleSync(row, activeJobId)) continue;
+    if (importRowMissingFromGoogleShouldCancelJob(workingHub, row, seenGoogleEventIds)) {
       withdrawLinkedImport(row);
+    } else {
+      withdrawStaleImportOnly(row);
     }
   }
 
@@ -342,21 +357,10 @@ export async function applyCalendarEventsToHub(
     const eventId = job.googleCalendarEventId?.trim();
     if (!eventId || job.status === "CANCELED") continue;
     if (job.date < today || job.date > horizonEnd) continue;
-    if (seenGoogleEventIds.has(eventId)) continue;
+    if (seenGoogleEventIdsContains(seenGoogleEventIds, eventId)) continue;
 
-    const existing = await loadCanonicalCalendarImportForEvent(eventId);
-    if (existing) {
-      const activeJobId = calendarImportLinkedJobId(workingHub, existing);
-      if (calendarImportShouldWithdrawFromGoogleSync(existing, activeJobId)) {
-        withdrawLinkedImport(existing);
-      }
-      continue;
-    }
-
-    const notifyIds = calendarCanceledCleanerIdsFromHub(workingHub, job.jobId);
     workingHub = cancelJobFromCalendarSync(workingHub, job.jobId);
     jobsCanceled += 1;
-    if (notifyIds.length === 0) continue;
   }
 
   const before = hub;

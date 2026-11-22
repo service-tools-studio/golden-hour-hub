@@ -10,6 +10,7 @@ import type { CalendarImport, CalendarImportParsedHints, Customer, Job, Property
 import type { HubData } from "../mock/seed.ts";
 import { addDays, formatHm, formatYmd, isValidDate, minutesFromTime, todayInBusinessZone } from "./time.ts";
 import { BUSINESS_TIME_ZONE } from "./types.ts";
+import { googleCalendarEventIdsMatch } from "../calendar/google-calendar-event-match.ts";
 
 export type GoogleCalendarAttendee = {
   email?: string;
@@ -1075,9 +1076,32 @@ export function calendarImportLinkedJobId(
   const resolved = resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, row);
   if (resolved) return resolved;
   const byEvent = hub.jobs.find(
-    (job) => job.googleCalendarEventId === row.googleCalendarEventId && job.status !== "CANCELED",
+    (job) =>
+      job.googleCalendarEventId &&
+      row.googleCalendarEventId &&
+      googleCalendarEventIdsMatch(job.googleCalendarEventId, row.googleCalendarEventId) &&
+      job.status !== "CANCELED",
   );
   return byEvent?.jobId;
+}
+
+/** Active job tied only by approved/matched id or matching Google event id (no customer/date fuzzy match). */
+export function calendarImportActiveJobForStrictEventLink(
+  hub: Pick<HubData, "jobs">,
+  row: CalendarImport,
+): Job | undefined {
+  for (const jobId of [row.approvedJobId?.trim(), row.matchedJobId?.trim()].filter(Boolean)) {
+    const job = hub.jobs.find((item) => item.jobId === jobId && item.status !== "CANCELED");
+    if (job) return job;
+  }
+  const eventId = row.googleCalendarEventId?.trim();
+  if (!eventId) return undefined;
+  return hub.jobs.find(
+    (item) =>
+      item.status !== "CANCELED" &&
+      item.googleCalendarEventId &&
+      googleCalendarEventIdsMatch(item.googleCalendarEventId, eventId),
+  );
 }
 
 export function calendarImportCanceledJobId(
@@ -1106,7 +1130,12 @@ export function calendarImportActiveJobForCancelRow(
   }
   const eventId = row.googleCalendarEventId?.trim();
   if (eventId) {
-    const byEvent = hub.jobs.find((item) => item.googleCalendarEventId === eventId && item.status !== "CANCELED");
+    const byEvent = hub.jobs.find(
+      (item) =>
+        item.googleCalendarEventId &&
+        googleCalendarEventIdsMatch(item.googleCalendarEventId, eventId) &&
+        item.status !== "CANCELED",
+    );
     if (byEvent) return byEvent;
   }
   const matched = findCalendarImportVisitJobForImport(hub.jobs, hub.customers, hub.properties, {
@@ -1119,6 +1148,15 @@ export function calendarImportActiveJobForCancelRow(
     parsed: row.parsed,
   });
   if (matched && matched.status !== "CANCELED") return matched;
+  return undefined;
+}
+
+/** Reschedule-only: match active visit by customer name when Gmail event id on the row is stale. */
+function calendarImportActiveJobForRescheduleHeuristic(
+  hub: Pick<HubData, "jobs" | "customers">,
+  row: CalendarImport,
+): Job | undefined {
+  const eventId = row.googleCalendarEventId?.trim();
   const first = row.parsed.suggestedFirstName?.trim() ?? "";
   const last = row.parsed.suggestedLastName?.trim() ?? "";
   if (!first && !last) return undefined;
@@ -1129,7 +1167,9 @@ export function calendarImportActiveJobForCancelRow(
   );
   if (activeForCustomer.length === 0) return undefined;
   if (eventId) {
-    const withEvent = activeForCustomer.find((item) => item.googleCalendarEventId === eventId);
+    const withEvent = activeForCustomer.find(
+      (item) => item.googleCalendarEventId && googleCalendarEventIdsMatch(item.googleCalendarEventId, eventId),
+    );
     if (withEvent) return withEvent;
   }
   const moved = activeForCustomer.find((item) => item.date !== row.serviceDate);
@@ -1144,7 +1184,8 @@ export function calendarImportRescheduleStaleImportRow(
   hub: Pick<HubData, "jobs" | "customers" | "properties">,
   row: CalendarImport,
 ): boolean {
-  const job = calendarImportActiveJobForCancelRow(hub, row);
+  const job =
+    calendarImportActiveJobForCancelRow(hub, row) ?? calendarImportActiveJobForRescheduleHeuristic(hub, row);
   if (!job) return false;
   return job.date !== row.serviceDate;
 }
