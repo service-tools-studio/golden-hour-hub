@@ -161,6 +161,7 @@ export function DashboardView() {
     hub.calendarImports,
     viewingToday,
     marketFilter,
+    hub,
   );
 
   function reviewSyncRemovedImports() {

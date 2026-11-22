@@ -175,10 +175,13 @@ export function rejectCalendarImportOnHub(
     return { ok: false, message: "That import was already handled." };
   }
   const now = new Date().toISOString();
+  const dismissedFromSync = row.status === "WITHDRAWN";
   const next: CalendarImport = {
     ...row,
     status: "REJECTED",
-    rejectedReason: reason?.trim() || (row.status === "WITHDRAWN" ? "Dismissed after sync removal" : undefined),
+    rejectedReason:
+      reason?.trim() ||
+      (dismissedFromSync ? "Dismissed after sync removal" : undefined),
     updatedAt: now,
     lastSyncedAt: now,
   };

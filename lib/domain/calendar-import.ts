@@ -1334,11 +1334,44 @@ export function visibleRecentlyDismissedCalendarImports(
   );
 }
 
+/** Stale withdrawn row for a dead Gmail id while another APPROVED import + live job covers the same visit. */
+export function calendarImportWithdrawnGhostSuperseded(
+  hub: Pick<HubData, "jobs">,
+  row: CalendarImport,
+  imports: CalendarImport[],
+): boolean {
+  if (row.status !== "WITHDRAWN" && row.status !== "CALENDAR_CANCELED") return false;
+  const customerId = row.suggestedCustomerId?.trim();
+  if (!customerId) return false;
+  return imports.some((other) => {
+    if (other.importId === row.importId || other.status !== "APPROVED") return false;
+    if (other.serviceDate !== row.serviceDate) return false;
+    const otherCustomer =
+      other.suggestedCustomerId?.trim() ??
+      (other.approvedJobId
+        ? hub.jobs.find((job) => job.jobId === other.approvedJobId && job.status !== "CANCELED")?.customerId
+        : undefined);
+    if (otherCustomer !== customerId) return false;
+    if (
+      other.googleCalendarEventId &&
+      row.googleCalendarEventId &&
+      googleCalendarEventIdsMatch(other.googleCalendarEventId, row.googleCalendarEventId)
+    ) {
+      return false;
+    }
+    const job = other.approvedJobId
+      ? hub.jobs.find((item) => item.jobId === other.approvedJobId && item.status !== "CANCELED")
+      : undefined;
+    return Boolean(job?.googleCalendarEventId?.trim());
+  });
+}
+
 /** Imports Gmail sync withdrew (`WITHDRAWN`) in the last N days — recoverable via reopen. */
 export function visibleRecentlySyncRemovedCalendarImports(
   imports: CalendarImport[],
   today: string,
   filter: import("./markets.ts").AdminMarketFilter,
+  hub?: Pick<HubData, "jobs">,
   recentDays = RECENTLY_DISMISSED_CALENDAR_IMPORT_DAYS,
 ): CalendarImport[] {
   return visibleRecentlyRecoverableCalendarImports(
@@ -1347,7 +1380,9 @@ export function visibleRecentlySyncRemovedCalendarImports(
     filter,
     new Set(["WITHDRAWN"]),
     recentDays,
-  );
+  )
+    .filter((item) => item.rejectedReason?.trim() !== "Dismissed after sync removal")
+    .filter((item) => (hub ? !calendarImportWithdrawnGhostSuperseded(hub, item, imports) : true));
 }
 
 /** Pending Gmail imports shown on the admin dashboard (by market tab). */

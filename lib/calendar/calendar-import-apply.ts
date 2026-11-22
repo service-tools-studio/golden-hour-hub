@@ -42,6 +42,7 @@ import {
   seenGoogleEventIdsContains,
   supplementSeenGoogleEventIdsFromLinkedJobs,
 } from "./calendar-import-sync-side-effects.ts";
+import { retireCalendarImportGhostsForLiveApprovals } from "./calendar-import-ghost-retire.ts";
 import { googleCalendarEventIdsMatch } from "./google-calendar-event-match.ts";
 import { applyApprovedImportScheduleFromGoogle } from "./calendar-import-apply-reschedule.ts";
 
@@ -66,6 +67,7 @@ function withdrawCalendarImportRow(
   return {
     ...existing,
     status: "WITHDRAWN",
+    rejectedReason: undefined,
     updatedAt: now,
     lastSyncedAt: now,
     ...patch,
@@ -344,8 +346,21 @@ export async function applyCalendarEventsToHub(
 
   await supplementSeenGoogleEventIdsFromLinkedJobs(workingHub, seenGoogleEventIds, today, horizonEnd);
 
+  const ghostRetire = retireCalendarImportGhostsForLiveApprovals(
+    workingHub,
+    nextImports,
+    seenGoogleEventIds,
+    now,
+  );
+  if (ghostRetire.retired > 0) {
+    nextImports.length = 0;
+    nextImports.push(...ghostRetire.imports);
+    workingHub = { ...workingHub, calendarImports: ghostRetire.imports };
+  }
+
   for (const row of nextImports) {
     if (row.status === "WITHDRAWN") continue;
+    if (row.status === "REJECTED") continue;
     if (row.status === "PENDING_REVIEW") continue;
     if (!calendarImportMissingFromGoogleSync(row, seenGoogleEventIds, today, horizonEnd)) continue;
     const activeJobId = calendarImportLinkedJobId(workingHub, row);

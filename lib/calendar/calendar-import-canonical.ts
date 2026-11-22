@@ -150,7 +150,7 @@ export function retireConflictingCalendarImports(
   const trimmedJob = jobId.trim();
   return imports.map((row) => {
     if (row.importId === keepImportId) return row;
-    if (row.status === "WITHDRAWN" || row.status === "REJECTED") return row;
+    if (row.status === "REJECTED") return row;
     const sameEvent = googleCalendarEventIdsMatch(row.googleCalendarEventId, eventId);
     const sameJobDifferentEvent =
       row.status === "APPROVED" &&
@@ -159,7 +159,8 @@ export function retireConflictingCalendarImports(
     if (!sameEvent && !sameJobDifferentEvent) return row;
     return {
       ...row,
-      status: "WITHDRAWN" as const,
+      status: "REJECTED" as const,
+      rejectedReason: "Superseded by live Gmail link",
       updatedAt: now,
       lastSyncedAt: now,
     };

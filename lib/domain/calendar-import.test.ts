@@ -1114,4 +1114,44 @@ describe("visibleRecentlyDismissedCalendarImports", () => {
     assert.equal(syncRemoved.length, 1);
     assert.equal(syncRemoved[0]?.importId, "calimp-w");
   });
+
+  it("hides withdrawn ghosts when the same visit already has a live approved Gmail link", () => {
+    const ghost = {
+      ...base,
+      importId: "calimp-ghost",
+      googleCalendarEventId: "gcal-dead",
+      status: "WITHDRAWN" as const,
+      suggestedCustomerId: "cust-jim",
+      serviceDate: "2026-12-15",
+      updatedAt: "2026-11-19T12:00:00.000Z",
+    };
+    const live = {
+      ...base,
+      importId: "calimp-live",
+      googleCalendarEventId: "gcal-live",
+      status: "APPROVED" as const,
+      suggestedCustomerId: "cust-jim",
+      approvedJobId: "job-live",
+      serviceDate: "2026-12-15",
+      updatedAt: "2026-11-20T12:00:00.000Z",
+    };
+    const hub = {
+      jobs: [
+        {
+          jobId: "job-live",
+          customerId: "cust-jim",
+          googleCalendarEventId: "gcal-live",
+          status: "DRAFT" as const,
+          date: "2026-12-15",
+        },
+      ],
+    } as import("../mock/seed.ts").HubData;
+    const syncRemoved = visibleRecentlySyncRemovedCalendarImports(
+      [ghost, live],
+      "2026-11-20",
+      "all",
+      hub,
+    );
+    assert.equal(syncRemoved.length, 0);
+  });
 });

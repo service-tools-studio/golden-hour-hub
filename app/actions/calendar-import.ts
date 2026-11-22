@@ -135,7 +135,7 @@ export async function rejectCalendarImportAction(
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
     return persistCalendarImportMutation(
-      () => loadAdminHubSlices({ persistReconciliation: false }),
+      () => loadHubForCalendarImportApply(),
       (hub) => rejectCalendarImportOnHub(hub, importId, reason),
     );
   } catch (error) {
@@ -152,7 +152,7 @@ export async function reopenCalendarImportAction(
     await requireAdmin();
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
     return persistCalendarImportMutation(
-      () => loadAdminHubSlices({ persistReconciliation: false }),
+      () => loadHubForCalendarImportApply(),
       (hub) => reopenCalendarImportOnHub(hub, importId),
     );
   } catch (error) {
