@@ -5,7 +5,10 @@ import { hubDataForCleaner } from "@/lib/auth/hub-scope";
 import { dynamoConfigured } from "@/lib/data/repository";
 import { persistAvailabilityWeekMutation } from "@/lib/data/persist-availability-week";
 import { notifyAdminsCleanerAvailabilitySubmitted } from "@/lib/cleaner/admin-availability-notify";
-import { notifyAdminsCleanerAcceptedInvite } from "@/lib/cleaner/admin-invite-notify";
+import {
+  notifyAdminsCleanerAcceptedInvite,
+  notifyAdminsCleanerDeclinedInvite,
+} from "@/lib/cleaner/admin-invite-notify";
 import {
   acceptInvitationOnHub,
   declineInvitationOnHub,
@@ -17,7 +20,7 @@ import { AVAILABILITY_SAVE_FAILED_MESSAGE } from "@/lib/domain/availability";
 import type { AvailabilityWindow } from "@/lib/domain/types";
 
 type CleanerHubMutationResult =
-  | { ok: true; message?: string; data: HubData; revision: number }
+  | { ok: true; message?: string; data: HubData; hub: HubData; revision: number }
   | { ok: false; message: string };
 
 type AvailabilityMutationResult =
@@ -47,6 +50,7 @@ async function persistCleanerHubMutation(
     ok: true,
     message: saved.message,
     revision: saved.revision,
+    hub: saved.hub,
     data: hubDataForCleaner(saved.hub, cleanerId),
   };
 }
@@ -88,10 +92,10 @@ export async function acceptInvitationAction(
     );
     if (!saved.ok) return saved;
 
-    const assignment = saved.data.assignments.find((item) => item.assignmentId === assignmentId);
-    const job = assignment ? saved.data.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
-    const cleaner = saved.data.cleaners.find((item) => item.cleanerId === session.cleanerId);
-    if (assignment && job && cleaner && assignment.status !== "INVITED") {
+    const assignment = saved.hub.assignments.find((item) => item.assignmentId === assignmentId);
+    const job = assignment ? saved.hub.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
+    const cleaner = saved.hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
+    if (assignment && job && cleaner && assignment.status === "CONFIRMED") {
       try {
         await notifyAdminsCleanerAcceptedInvite({ cleaner, job, assignment });
       } catch (error) {
@@ -99,7 +103,7 @@ export async function acceptInvitationAction(
       }
     }
 
-    return saved;
+    return { ok: true, message: saved.message, revision: saved.revision, data: saved.data, hub: saved.hub };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("cleaner hub mutation failed.", error);
@@ -112,9 +116,23 @@ export async function declineInvitationAction(assignmentId: string): Promise<Cle
     const session = await requireCleaner();
     if (!session.cleanerId) return { ok: false, message: "Your cleaner profile is not linked in Hub." };
     if (!dynamoConfigured()) return { ok: false, message: "Hub is in preview mode." };
-    return persistCleanerHubMutation(session.cleanerId, (hub, cleanerId) =>
+    const saved = await persistCleanerHubMutation(session.cleanerId, (hub, cleanerId) =>
       declineInvitationOnHub(hub, cleanerId, assignmentId),
     );
+    if (!saved.ok) return saved;
+
+    const assignment = saved.hub.assignments.find((item) => item.assignmentId === assignmentId);
+    const job = assignment ? saved.hub.jobs.find((item) => item.jobId === assignment.jobId) : undefined;
+    const cleaner = saved.hub.cleaners.find((item) => item.cleanerId === session.cleanerId);
+    if (assignment && job && cleaner && assignment.status === "DECLINED") {
+      try {
+        await notifyAdminsCleanerDeclinedInvite({ cleaner, job, assignment });
+      } catch (error) {
+        console.error("[admin:invite-decline] notify failed", error);
+      }
+    }
+
+    return { ok: true, message: saved.message, revision: saved.revision, data: saved.data, hub: saved.hub };
   } catch (error) {
     if (error instanceof AuthError) return { ok: false, message: error.message };
     console.error("cleaner hub mutation failed.", error);

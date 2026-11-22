@@ -5,7 +5,7 @@ import {
   jasminNotifyPhoneDigitsFromEnv,
   kelseyPhoneDigitsFromEnv,
 } from "../contact.ts";
-import { adminInviteAcceptedSms } from "./admin-invite-sms.ts";
+import { adminInviteAcceptedSms, adminInviteDeclinedSms } from "./admin-invite-sms.ts";
 
 describe("kelseyPhoneDigitsFromEnv", () => {
   it("normalizes to 10-digit US", () => {
@@ -60,6 +60,24 @@ describe("adminInviteAcceptedSms", () => {
     assert.match(body, /123 Main St/);
     assert.match(body, /Portland/);
     assert.doesNotMatch(body, /Golden Hour Hub here/);
+  });
+
+  it("formats decline alert", () => {
+    const body = adminInviteDeclinedSms({
+      cleanerFirstName: "Sam",
+      clientFullName: "Jane Doe",
+      details: {
+        date: "2026-10-29",
+        arrivalWindowStart: "09:00",
+        serviceType: "RECURRING",
+        streetAddress: "123 Main St",
+        city: "Portland",
+        state: "OR",
+        zip: "97201",
+      },
+    });
+    assert.match(body, /^Sam has declined the invite for this job:/);
+    assert.match(body, /Jane Doe - Standard clean/);
   });
 
   it("uses TBD wording when start time is unset", () => {

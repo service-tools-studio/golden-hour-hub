@@ -57,3 +57,20 @@ export function adminInviteAcceptedSms(input: {
     cleaningSmsAddress(input.details),
   ].join("\n");
 }
+
+/** Ops alert when a cleaner declines an invite (Kelsey / Jasmin via Twilio). */
+export function adminInviteDeclinedSms(input: {
+  cleanerFirstName: string;
+  clientFullName: string;
+  details: AdminInviteAcceptedSmsDetails;
+}): string {
+  return [
+    `${input.cleanerFirstName} has declined the invite for this job:`,
+    "",
+    cleaningSmsDateTime(input.details),
+    "",
+    `${input.clientFullName.trim()} - ${cleanerServiceLabel(input.details.serviceType)}`,
+    "",
+    cleaningSmsAddress(input.details),
+  ].join("\n");
+}
