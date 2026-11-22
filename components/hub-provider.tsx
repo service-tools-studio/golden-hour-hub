@@ -130,7 +130,7 @@ import {
   withAssignmentDeclined,
 } from "@/lib/domain/invitations";
 import { normalizeLegacyAssignments } from "@/lib/domain/assignment-legacy";
-import { mergeRecurringHorizon } from "@/lib/domain/recurrence";
+import { HUB_RECURRING_SCHEDULES_ENABLED, mergeRecurringHorizon } from "@/lib/domain/recurrence";
 import { reconcileScheduleConflictWarnings } from "@/lib/domain/scheduling";
 import {
   addDays,
@@ -889,6 +889,7 @@ export function HubProvider({
   }, [setState]);
 
   const refreshRecurringHorizon = useCallback(() => {
+    if (!HUB_RECURRING_SCHEDULES_ENABLED) return;
     const today = todayInBusinessZone();
     const nowIso = new Date().toISOString();
     setState((prev) => {

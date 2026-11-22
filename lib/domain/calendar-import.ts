@@ -1168,6 +1168,28 @@ export function resolveCalendarImportMatchedJobId(
   return match.kind === "on_schedule" ? match.jobId : undefined;
 }
 
+export function calendarImportJobIsLinkedToGmail(
+  job: Pick<Job, "googleCalendarEventId" | "status"> | undefined,
+  row: Pick<CalendarImport, "googleCalendarEventId">,
+): boolean {
+  if (!job || job.status === "CANCELED") return false;
+  const linked = job.googleCalendarEventId?.trim();
+  const eventId = row.googleCalendarEventId?.trim();
+  return Boolean(linked && eventId && linked === eventId);
+}
+
+/** Matched visit exists on hub but this Gmail event is not attached to the job yet. */
+export function calendarImportMatchedJobNeedsGmailLink(
+  jobs: Job[],
+  row: CalendarImport,
+  matchedJobId: string | undefined,
+): boolean {
+  if (!matchedJobId || row.status !== "PENDING_REVIEW") return false;
+  const job = jobs.find((item) => item.jobId === matchedJobId && item.status !== "CANCELED");
+  if (!job) return false;
+  return !calendarImportJobIsLinkedToGmail(job, row);
+}
+
 export function suggestCustomerForCalendarImport(
   customers: Customer[],
   parsed: CalendarImportParsedHints,

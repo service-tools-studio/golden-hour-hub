@@ -40,6 +40,12 @@ import {
 /** How far ahead recurring series occurrences are generated in hub (no fixed cap on schedule display). */
 export const RECURRING_HORIZON_DAYS = 365;
 
+/** Hub recurring series are disabled; repeat visits come from Gmail imports only. */
+export const HUB_RECURRING_SCHEDULES_ENABLED = false;
+
+export const RECURRING_SCHEDULES_GMAIL_ONLY_MESSAGE =
+  "Recurring cleanings are managed in Gmail. Check Gmail to import each visit.";
+
 const DAY_LABEL: Record<DayOfWeek, string> = {
   MONDAY: "Monday",
   TUESDAY: "Tuesday",
@@ -459,7 +465,11 @@ export function mergeRecurringHorizon(input: {
   submissions: AvailabilitySubmission[];
   assignments: JobAssignment[];
   nowIso: string;
-}): { series: RecurringSeries[]; jobs: Job[]; assignments: JobAssignment[] } {
+}, options?: { enableGeneration?: boolean }): { series: RecurringSeries[]; jobs: Job[]; assignments: JobAssignment[] } {
+  const enabled = options?.enableGeneration ?? HUB_RECURRING_SCHEDULES_ENABLED;
+  if (!enabled) {
+    return { series: input.series, jobs: input.jobs, assignments: input.assignments };
+  }
   const pruned = removeUpcomingJobsForInactiveSeries({
     today: input.today,
     series: input.series,

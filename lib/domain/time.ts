@@ -216,6 +216,14 @@ export function todayInBusinessZone(now = new Date()): string {
   return todayInTimeZone(BUSINESS_TIME_ZONE, now);
 }
 
+/** Calendar date (YYYY-MM-DD) for an ISO timestamp in the business time zone. */
+export function dateFromIsoInBusinessZone(iso: string, timeZone = BUSINESS_TIME_ZONE): string {
+  const trimmed = iso.trim();
+  if (!trimmed) return "";
+  const parts = zonedParts(new Date(trimmed), timeZone);
+  return formatYmd(parts.year, parts.month, parts.day);
+}
+
 export function zonedParts(instant: Date, timeZone = BUSINESS_TIME_ZONE): ZonedParts {
   const formatted = new Intl.DateTimeFormat("en-US", {
     timeZone,

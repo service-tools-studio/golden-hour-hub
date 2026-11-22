@@ -13,13 +13,15 @@ import {
   jobCleaningInProgress,
   jobCountsAsUpcoming,
 } from "@/lib/domain/scheduling";
-import { editableAvailabilityHorizonEnd } from "@/lib/domain/time";
+import { dateFromIsoInBusinessZone, editableAvailabilityHorizonEnd } from "@/lib/domain/time";
 import { customerMatchesAdminMarket, jobMatchesAdminMarket } from "@/lib/domain/markets";
 import { deliverSchedulingCleanerSms } from "@/lib/cleaner/deliver-scheduling-sms";
 import type { CalendarImport } from "@/lib/domain/types";
 import {
   calendarImportCanceledJobId,
   normalizeCalendarEventTitle,
+  calendarImportJobIsLinkedToGmail,
+  calendarImportMatchedJobNeedsGmailLink,
   resolveCalendarImportScheduleMatch,
   visibleDashboardCalendarImports,
   visibleRecentlyDismissedCalendarImports,
@@ -50,6 +52,7 @@ export function DashboardView() {
     flash,
     flashLoading,
     clearActionLoading,
+    linkCalendarSync,
     ...hub
   } = useHub();
   const { marketFilter, viewingToday } = useAdminMarket();
@@ -59,9 +62,23 @@ export function DashboardView() {
   const [dismissingImportId, setDismissingImportId] = useState<string | null>(null);
   const [reopeningImportId, setReopeningImportId] = useState<string | null>(null);
   const [notifyingImportId, setNotifyingImportId] = useState<string | null>(null);
+  const [linkingImportId, setLinkingImportId] = useState<string | null>(null);
   const [showSyncRemoved, setShowSyncRemoved] = useState(false);
   const [showRecentlyDismissed, setShowRecentlyDismissed] = useState(false);
   const syncRemovedRef = useRef<HTMLDivElement>(null);
+
+  async function linkImportToMatchedJob(item: CalendarImport, jobId: string) {
+    setLinkingImportId(item.importId);
+    try {
+      const result = await linkCalendarSync(item.googleCalendarEventId, jobId, false, null, {
+        serviceDate: item.serviceDate,
+        title: item.raw.title,
+      });
+      if (result.message) flash(result.message);
+    } finally {
+      setLinkingImportId(null);
+    }
+  }
 
   async function dismissCalendarImport(importId: string) {
     setDismissingImportId(importId);
@@ -174,7 +191,7 @@ export function DashboardView() {
             {item.arrivalWindowStart ? ` · ${formatTimeLabel(item.arrivalWindowStart)}` : null}
           </p>
           <p className="mt-1 text-xs text-ink/50">
-            {statusLabel} {relativeDay(item.updatedAt.slice(0, 10), viewingToday)}
+            {statusLabel} · withdrawn {relativeDay(dateFromIsoInBusinessZone(item.updatedAt), viewingToday)}
           </p>
         </Link>
         <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-ink/8 pt-3">
@@ -382,7 +399,13 @@ export function DashboardView() {
                 const notifying = notifyingImportId === item.importId;
                 const notifyIds = item.calendarCanceledNotifyCleanerIds ?? [];
                 const needsCleanerNotice = canceledOnGmail && notifyIds.length > 0 && !item.cleanerRemovalNotifiedAt;
-                const showFooter = matchedJobId && !canceledOnGmail;
+                const matchedJob = matchedJobId
+                  ? hub.jobs.find((job) => job.jobId === matchedJobId && job.status !== "CANCELED")
+                  : undefined;
+                const gmailLinked = matchedJob ? calendarImportJobIsLinkedToGmail(matchedJob, item) : false;
+                const needsGmailLink = calendarImportMatchedJobNeedsGmailLink(hub.jobs, item, matchedJobId);
+                const linking = linkingImportId === item.importId;
+                const showFooter = (matchedJobId && !canceledOnGmail) || needsGmailLink;
                 return (
                   <Card
                     key={item.importId}
@@ -399,14 +422,28 @@ export function DashboardView() {
                       </div>
                     ) : null}
                     {showFooter ? (
-                      <button
-                        type="button"
-                        disabled={dismissing || dismissingImportId !== null}
-                        onClick={() => void dismissCalendarImport(item.importId)}
-                        className="absolute bottom-3 right-4 z-10 min-h-10 rounded-xl px-3 text-sm font-semibold text-ink underline decoration-ink/25 underline-offset-2 disabled:opacity-50"
-                      >
-                        {dismissing ? "Dismissing…" : "Dismiss"}
-                      </button>
+                      <div className="absolute bottom-3 right-4 z-10 flex flex-wrap items-center justify-end gap-2">
+                        {needsGmailLink && matchedJobId ? (
+                          <button
+                            type="button"
+                            disabled={linking || dismissing || dismissingImportId !== null || linkingImportId !== null}
+                            onClick={() => void linkImportToMatchedJob(item, matchedJobId)}
+                            className="min-h-10 rounded-xl bg-ink px-3 text-sm font-semibold text-cream disabled:opacity-50"
+                          >
+                            {linking ? "Linking…" : "Link to Hub cleaning"}
+                          </button>
+                        ) : null}
+                        {matchedJobId && !canceledOnGmail ? (
+                          <button
+                            type="button"
+                            disabled={dismissing || linking || dismissingImportId !== null || linkingImportId !== null}
+                            onClick={() => void dismissCalendarImport(item.importId)}
+                            className="min-h-10 rounded-xl px-3 text-sm font-semibold text-ink underline decoration-ink/25 underline-offset-2 disabled:opacity-50"
+                          >
+                            {dismissing ? "Dismissing…" : "Dismiss"}
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
                     {canceledOnGmail && matchedJobId ? (
                       <Link href={`/admin/jobs/${matchedJobId}?from=dashboard`} className="block">
@@ -448,7 +485,9 @@ export function DashboardView() {
                         </p>
                         {item.raw.location ? <p className="mt-1 text-sm text-ink/70">{item.raw.location}</p> : null}
                         {matchedJobId ? (
-                          <p className="mt-2 text-sm font-semibold text-gold">Already on schedule</p>
+                          <p className="mt-2 text-sm font-semibold text-gold">
+                            {gmailLinked ? "Already on schedule · Linked" : "Already on schedule"}
+                          </p>
                         ) : addressMismatchJobId ? (
                           <p className="mt-2 text-sm font-semibold text-amber-800">
                             Possible match in Hub — address differs. Review.

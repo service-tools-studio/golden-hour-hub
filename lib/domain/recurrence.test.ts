@@ -19,6 +19,10 @@ import {
 } from "./recurrence.ts";
 import type { Customer, Job, JobAssignment, Property, RecurrenceRule, RecurringSeries, StaffingTemplateEntry } from "./types.ts";
 
+function testMergeRecurringHorizon(input: Parameters<typeof mergeRecurringHorizon>[0]) {
+  return mergeRecurringHorizon(input, { enableGeneration: true });
+}
+
 const weeklyMonday: RecurrenceRule = {
   frequency: "WEEK",
   interval: 1,
@@ -543,7 +547,7 @@ describe("rolling eight-week horizon", () => {
     const through = recurringHorizonThrough(today);
     assert.equal(through, addDays(today, RECURRING_HORIZON_DAYS));
     assert.equal(RECURRING_HORIZON_DAYS, 365);
-    const result = mergeRecurringHorizon({
+    const result = testMergeRecurringHorizon({
       today,
       series: [series()],
       jobs: [pastJob()],
@@ -566,7 +570,7 @@ describe("rolling eight-week horizon", () => {
 
   it("adds newly eligible dates as time advances and does not duplicate", () => {
     const today = "2026-09-27";
-    const first = mergeRecurringHorizon({
+    const first = testMergeRecurringHorizon({
       today,
       series: [series()],
       jobs: [],
@@ -578,7 +582,7 @@ describe("rolling eight-week horizon", () => {
       assignments: [],
       nowIso: "2026-09-27T00:00:00.000Z",
     });
-    const again = mergeRecurringHorizon({
+    const again = testMergeRecurringHorizon({
       today,
       series: first.series,
       jobs: first.jobs,
@@ -593,7 +597,7 @@ describe("rolling eight-week horizon", () => {
     assert.equal(again.jobs.length, first.jobs.length);
     const dates = again.jobs.map((job) => job.date);
     assert.equal(new Set(dates).size, dates.length);
-    const later = mergeRecurringHorizon({
+    const later = testMergeRecurringHorizon({
       today: "2026-10-04",
       series: again.series,
       jobs: again.jobs,
@@ -611,7 +615,7 @@ describe("rolling eight-week horizon", () => {
   });
 
   it("stops generating after the series is canceled and keeps history", () => {
-    const stopped = mergeRecurringHorizon({
+    const stopped = testMergeRecurringHorizon({
       today: "2026-09-27",
       series: [series({ status: "INACTIVE" })],
       jobs: [pastJob()],
@@ -653,7 +657,7 @@ describe("rolling eight-week horizon", () => {
       createdAt: "2026-10-01T00:00:00.000Z",
       updatedAt: "2026-10-01T00:00:00.000Z",
     };
-    const stopped = mergeRecurringHorizon({
+    const stopped = testMergeRecurringHorizon({
       today,
       series: [series({ status: "INACTIVE" })],
       jobs: [pastJob(), upcoming],
@@ -672,7 +676,7 @@ describe("rolling eight-week horizon", () => {
 
   it("does not recreate a deleted occurrence", () => {
     const today = "2026-09-28";
-    const result = mergeRecurringHorizon({
+    const result = testMergeRecurringHorizon({
       today,
       series: [series({ skippedDates: ["2026-10-05"] })],
       jobs: [],
@@ -706,7 +710,7 @@ describe("rolling eight-week horizon", () => {
     });
     assert.equal(pruned.jobs.some((job) => job.jobId === "job-mon"), false);
     assert.equal(pruned.jobs.some((job) => job.jobId === "job-past"), true);
-    const result = mergeRecurringHorizon({
+    const result = testMergeRecurringHorizon({
       today,
       series: [updated],
       jobs: pruned.jobs,
@@ -726,7 +730,7 @@ describe("rolling eight-week horizon", () => {
 
   it("creates later cleanings on the weekday of the last one when no weekday is selected", () => {
     const today = "2026-09-28";
-    const result = mergeRecurringHorizon({
+    const result = testMergeRecurringHorizon({
       today,
       series: [
         series({
@@ -754,7 +758,7 @@ describe("rolling eight-week horizon", () => {
 
   it("fills weekly horizon when every week had no weekday chip but a later visit exists", () => {
     const today = "2026-10-26";
-    const result = mergeRecurringHorizon({
+    const result = testMergeRecurringHorizon({
       today,
       series: [
         series({

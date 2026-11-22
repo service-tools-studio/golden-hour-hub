@@ -4,7 +4,7 @@
 
 When `GOOGLE_CALENDAR_ENABLED=true` and OAuth env vars are set, Hub imports events from `GOOGLE_CALENDAR_ID` for **today through +60 days**, upserts `calendar_import` rows in Dynamo, and surfaces **Pending** imports on the admin dashboard under **Jobs imported from Gmail**.
 
-Admins review at `/admin/calendar-imports/[importId]`, match or create a customer, edit visit details, then **Approve** (creates a draft Hub job with `googleCalendarEventId`) or **Dismiss**. Dismissed imports appear under **Recently dismissed**; sync-withdrawn rows appear under **Removed by sync** (listed first). Both are recoverable for 14 days. **Reopen for review** returns them to the pending queue; sync-removed rows also run **Check Gmail** to refresh parsed details. When any imports were withdrawn by sync, the dashboard shows a badge next to **Check Gmail** (e.g. “2 imports removed by sync — review”).
+Admins review at `/admin/calendar-imports/[importId]`, match or create a customer, edit visit details, then **Approve** (creates a draft Hub job with `googleCalendarEventId`) or **Dismiss**. When Gmail matches an existing hub visit (**Already on schedule**), use **Link to Hub cleaning** on the dashboard or review screen to attach `googleCalendarEventId` without creating a duplicate. Dismissed imports appear under **Recently dismissed**; sync-withdrawn rows appear under **Removed by sync** (listed first). Both are recoverable for 14 days. **Reopen for review** returns them to the pending queue; sync-removed rows also run **Check Gmail** to refresh parsed details. When any imports were withdrawn by sync, the dashboard shows a badge next to **Check Gmail** (e.g. “2 imports removed by sync — review”).
 
 **Check Gmail** (and the import cron/webhook) re-fetches Google Calendar for the same 60-day window. Hub then:
 
@@ -31,6 +31,22 @@ Production needs:
 - Optional `GOOGLE_CALENDAR_WEBHOOK_TOKEN` (recommended) — shared secret on the watch channel
 
 Local dev: push notifications need a tunnel to your machine; use the daily cron or call the import cron manually otherwise.
+
+### Recurring visits (Gmail only)
+
+The hub **no longer auto-generates** future visits from `RecurringSeries` (`HUB_RECURRING_SCHEDULES_ENABLED` is off). Existing series, jobs, and admin UI still work (edit schedule, delete future visits, etc.). New repeat visits beyond what’s already in Hub should come from Gmail (**Check Gmail** → approve or link).
+
+Optional Dynamo cleanup (generation is already off):
+
+```bash
+# Remove recurring hub jobs on/after 2027-01-01 (keeps series rows + earlier visits)
+npm run dynamo:clear-recurring-from-date -- --dry-run
+npm run dynamo:clear-recurring-from-date
+
+# Or wipe all series metadata and future generated jobs (aggressive)
+npm run dynamo:clear-recurring -- --dry-run
+npm run dynamo:clear-recurring
+```
 
 ### Reset import staging (Dynamo)
 

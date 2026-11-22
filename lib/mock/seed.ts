@@ -236,7 +236,7 @@ export function buildSeed(today: string): HubData {
     submissions,
     assignments,
     nowIso: STAMP,
-  });
+  }, { enableGeneration: true });
   return {
     today,
     cleaners,

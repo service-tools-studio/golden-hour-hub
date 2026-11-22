@@ -24,6 +24,8 @@ import {
   mergeCalendarImportCustomerHints,
   propertyMatchesCalendarImportAddress,
   normalizeCalendarEventTitle,
+  calendarImportJobIsLinkedToGmail,
+  calendarImportMatchedJobNeedsGmailLink,
   resolveCalendarImportMatchedJobId,
   resolveCalendarImportScheduleMatch,
   suggestCustomerForCalendarImport,
@@ -200,7 +202,7 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     customerId,
   ]);
   const [message, setMessage] = useState<string | null>(null);
-  const [pending, setPending] = useState<"approve" | "dismiss" | "reopen" | "addProperty" | null>(null);
+  const [pending, setPending] = useState<"approve" | "dismiss" | "reopen" | "addProperty" | "link" | null>(null);
   const [refreshingDetails, setRefreshingDetails] = useState(false);
   const busy = pending !== null;
 
@@ -389,6 +391,8 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     scheduleMatch.kind === "visit_address_mismatch"
       ? hub.jobs.find((job) => job.jobId === scheduleMatch.jobId)
       : undefined;
+  const needsGmailLink = calendarImportMatchedJobNeedsGmailLink(hub.jobs, active, matchedJobId);
+  const gmailLinked = matchedJob ? calendarImportJobIsLinkedToGmail(matchedJob, active) : false;
   const suggestedName = [active.parsed.suggestedFirstName, active.parsed.suggestedLastName].filter(Boolean).join(" ");
   const mergedHints = mergeCalendarImportCustomerHints(
     active.parsed,
@@ -547,6 +551,23 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
     }
   }
 
+  async function linkToMatchedJob() {
+    if (!matchedJobId) return;
+    setPending("link");
+    setMessage(null);
+    const result = await hub.linkCalendarSync(active.googleCalendarEventId, matchedJobId, false, null, {
+      serviceDate: active.serviceDate,
+      title: active.raw.title,
+    });
+    setPending(null);
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+    hub.flash(result.message ?? "Linked.");
+    router.push(`/admin/jobs/${matchedJobId}?from=dashboard`);
+  }
+
   async function dismiss() {
     setPending("dismiss");
     const result = await hub.rejectCalendarImport(active.importId);
@@ -561,7 +582,11 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
 
   async function approve() {
     if (matchedJobId) {
-      setMessage("A cleaning is already scheduled for this date.");
+      setMessage(
+        needsGmailLink
+          ? "A matching cleaning is already on the schedule. Link to it instead of approving a duplicate."
+          : "A cleaning is already scheduled for this date.",
+      );
       return;
     }
     if (!customerId || !propertyId) {
@@ -606,10 +631,13 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
       >
         {matchedJob ? (
           <div className="rounded-2xl bg-mint/40 px-4 py-3 ring-1 ring-ink/15">
-            <p className="text-sm font-semibold text-ink">Cleaning already on the schedule</p>
+            <p className="text-sm font-semibold text-ink">
+              {gmailLinked ? "Gmail linked to scheduled cleaning" : "Cleaning already on the schedule"}
+            </p>
             <p className="mt-1 text-sm text-ink/75">
-              This calendar event matches an existing visit
-              {matchedJob.seriesId ? " from a recurring schedule" : ""}. You can open it or dismiss this import.
+              {gmailLinked
+                ? "This event is tied to the hub visit below."
+                : "This Gmail event matches an existing visit. Link it so moves and cancels sync with Hub."}
             </p>
             <Link
               href={`/admin/jobs/${matchedJob.jobId}?from=dashboard`}
@@ -617,6 +645,19 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
             >
               View scheduled cleaning
             </Link>
+            {needsGmailLink ? (
+              <div className="mt-3">
+                <PrimaryButton
+                  type="button"
+                  disabled={busy}
+                  loading={pending === "link"}
+                  loadingLabel="Linking…"
+                  onClick={() => void linkToMatchedJob()}
+                >
+                  Link Gmail to this cleaning
+                </PrimaryButton>
+              </div>
+            ) : null}
           </div>
         ) : addressMismatchJob ? (
           <div className="rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200/80">
