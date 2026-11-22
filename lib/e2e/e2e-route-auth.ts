@@ -2,8 +2,9 @@ import "server-only";
 
 const DEFAULT_E2E_CALENDAR_SECRET = "e2e-calendar-fixtures";
 
+/** Bracket access so Next does not fold E2E flags at compile time (Playwright sets them on `next dev`). */
 export function e2ePreviewAuthEnabled(): boolean {
-  return process.env.E2E_PREVIEW_AUTH === "true";
+  return String(process.env["E2E_PREVIEW_AUTH"] ?? "") === "true";
 }
 
 export function e2eGoogleCalendarStubEnabled(): boolean {

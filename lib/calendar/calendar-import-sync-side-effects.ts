@@ -7,6 +7,8 @@ import type { CalendarImport, Job } from "../domain/types.ts";
 import type { HubData } from "../mock/seed.ts";
 import { calendarEventIndicatesHubCancel } from "../domain/calendar-import.ts";
 import { googleCalendarEventIdsMatch } from "./google-calendar-event-match.ts";
+import { e2eGoogleCalendarStubEnabled } from "../e2e/e2e-route-auth.ts";
+import { getGoogleCalendarEvent, googleCalendarLiveApiConfigured } from "../services/google-calendar-client.ts";
 
 export const CALENDAR_SYNC_ACTOR = "calendar-sync";
 
@@ -36,8 +38,7 @@ export async function supplementSeenGoogleEventIdsFromLinkedJobs(
   today: string,
   horizonEnd: string,
 ): Promise<void> {
-  const { getGoogleCalendarEvent, googleCalendarImportConfigured } = await import("../services/google-calendar-client.ts");
-  if (!googleCalendarImportConfigured()) return;
+  if (!e2eGoogleCalendarStubEnabled() && !googleCalendarLiveApiConfigured()) return;
   for (const job of hub.jobs) {
     const eventId = job.googleCalendarEventId?.trim();
     if (!eventId || job.status === "CANCELED") continue;

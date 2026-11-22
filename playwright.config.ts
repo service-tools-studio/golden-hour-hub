@@ -73,6 +73,12 @@ export default defineConfig({
       SMS_PROVIDER: "mock",
       E2E_DYNAMODB_TABLE_NAME: e2eTable,
       NEXT_DIST_DIR: e2eDistDir,
+      // Avoid org/CI env leaking partial Google OAuth into e2e (live API must stay off).
+      GOOGLE_CALENDAR_ENABLED: "",
+      GOOGLE_CALENDAR_ID: "",
+      GOOGLE_CLIENT_ID: "",
+      GOOGLE_CLIENT_SECRET: "",
+      GOOGLE_CALENDAR_REFRESH_TOKEN: "",
     },
   },
 });

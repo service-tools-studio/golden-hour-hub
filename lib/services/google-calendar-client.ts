@@ -19,14 +19,19 @@ export type GoogleCalendarEvent = {
   end?: { date?: string; dateTime?: string; timeZone?: string };
 };
 
-export function googleCalendarImportConfigured(): boolean {
-  if (e2eGoogleCalendarStubEnabled()) return true;
-  if (process.env.GOOGLE_CALENDAR_ENABLED !== "true") return false;
-  const calendarId = process.env.GOOGLE_CALENDAR_ID?.trim();
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  const refreshToken = process.env.GOOGLE_CALENDAR_REFRESH_TOKEN?.trim();
+/** Live Google OAuth + calendar id — required before any Calendar API HTTP call. */
+export function googleCalendarLiveApiConfigured(): boolean {
+  if (process.env["GOOGLE_CALENDAR_ENABLED"] !== "true") return false;
+  const calendarId = process.env["GOOGLE_CALENDAR_ID"]?.trim();
+  const clientId = process.env["GOOGLE_CLIENT_ID"]?.trim();
+  const clientSecret = process.env["GOOGLE_CLIENT_SECRET"]?.trim();
+  const refreshToken = process.env["GOOGLE_CALENDAR_REFRESH_TOKEN"]?.trim();
   return Boolean(calendarId && clientId && clientSecret && refreshToken);
+}
+
+/** Import/sync available (E2E fixture stub or live Google). */
+export function googleCalendarImportConfigured(): boolean {
+  return e2eGoogleCalendarStubEnabled() || googleCalendarLiveApiConfigured();
 }
 
 async function fetchAccessToken(): Promise<string> {
@@ -75,10 +80,10 @@ export async function watchGoogleCalendarEvents(input: {
   channelToken?: string;
   ttlSeconds?: number;
 }): Promise<GoogleCalendarWatchChannel> {
-  if (!googleCalendarImportConfigured()) {
+  if (!googleCalendarLiveApiConfigured()) {
     throw new Error("Google Calendar import is not configured.");
   }
-  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID!.trim());
+  const calendarId = encodeURIComponent(process.env["GOOGLE_CALENDAR_ID"]!.trim());
   const accessToken = await fetchAccessToken();
   const ttl = Math.min(Math.max(input.ttlSeconds ?? 604800, 3600), 604800);
   const body: Record<string, unknown> = {
@@ -133,8 +138,8 @@ export async function listGoogleCalendarEventsInRange(input: {
     const fixtures = await readE2eGoogleCalendarFixtures();
     return filterE2eGoogleEventsInRange(fixtures, input.timeMinIso, input.timeMaxIso);
   }
-  if (!googleCalendarImportConfigured()) return [];
-  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID!.trim());
+  if (!googleCalendarLiveApiConfigured()) return [];
+  const calendarId = encodeURIComponent(process.env["GOOGLE_CALENDAR_ID"]!.trim());
   const accessToken = await fetchAccessToken();
   const events: GoogleCalendarEvent[] = [];
   let pageToken: string | undefined;
@@ -169,7 +174,9 @@ const EVENT_FIELDS =
   "id,status,summary,description,location,htmlLink,iCalUID,attendees(email,organizer,self,responseStatus),start,end";
 
 async function fetchGoogleCalendarEventByPath(eventPathSegment: string): Promise<GoogleCalendarEvent | null> {
-  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID!.trim());
+  const calendarIdRaw = process.env["GOOGLE_CALENDAR_ID"]?.trim();
+  if (!calendarIdRaw) return null;
+  const calendarId = encodeURIComponent(calendarIdRaw);
   const accessToken = await fetchAccessToken();
   const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventPathSegment}?fields=${EVENT_FIELDS}`;
   const response = await fetch(url, {
@@ -194,7 +201,7 @@ export async function getGoogleCalendarEvent(eventId: string): Promise<GoogleCal
     // Playwright E2E: never call live Google when a fixture id is not in Dynamo.
     return null;
   }
-  if (!googleCalendarImportConfigured()) return null;
+  if (!googleCalendarLiveApiConfigured()) return null;
   const encoded = encodeURIComponent(trimmed);
   const fetched = await fetchGoogleCalendarEventByPath(encoded);
   if (fetched) return fetched;
