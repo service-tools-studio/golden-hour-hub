@@ -191,6 +191,8 @@ export async function getGoogleCalendarEvent(eventId: string): Promise<GoogleCal
     const fixtures = await readE2eGoogleCalendarFixtures();
     const match = fixtures.find((item) => item.id === trimmed);
     if (match) return match;
+    // Playwright E2E: never call live Google when a fixture id is not in Dynamo.
+    return null;
   }
   if (!googleCalendarImportConfigured()) return null;
   const encoded = encodeURIComponent(trimmed);
