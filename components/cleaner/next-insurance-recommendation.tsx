@@ -1,3 +1,5 @@
+import type { MarketId } from "@/lib/domain/markets";
+import { homeMarketServiceStateName } from "@/lib/domain/contractor-questionnaire";
 import {
   NEXT_INSURANCE_PROVIDER_DISCLAIMER,
   NEXT_INSURANCE_REFERRAL_URL,
@@ -56,13 +58,14 @@ export function NextInsuranceExploreLink({ className }: { className?: string }) 
   );
 }
 
-export function NextInsuranceRecommendationCard() {
+export function NextInsuranceRecommendationCard({ homeMarketId }: { homeMarketId: MarketId }) {
+  const state = homeMarketServiceStateName(homeMarketId);
   return (
     <div className="mt-3 rounded-2xl bg-cream/80 p-4 ring-1 ring-ink/8">
       <h3 className="text-base font-semibold text-ink">Need liability insurance?</h3>
       <p className="mt-2 text-sm leading-relaxed text-ink/75">
         We recommend NEXT Insurance for cleaning businesses. You can explore coverage options and request a quote
-        online. Be sure your policy covers residential cleaning services performed in Oregon and meets a minimum
+        online. Be sure your policy covers residential cleaning services performed in {state} and meets a minimum
         coverage limit of $1 million per occurrence.
       </p>
       <div className="mt-4">
@@ -73,12 +76,13 @@ export function NextInsuranceRecommendationCard() {
   );
 }
 
-export function NextInsuranceOregonCoverageHelper() {
+export function NextInsuranceHomeMarketCoverageHelper({ homeMarketId }: { homeMarketId: MarketId }) {
+  const state = homeMarketServiceStateName(homeMarketId);
   return (
     <div className="mt-3 rounded-xl bg-white/80 px-3 py-3 ring-1 ring-ink/8">
       <p className="text-sm leading-relaxed text-ink/75">
-        Please contact your insurance provider to confirm whether your policy covers cleaning services performed in
-        Oregon. If you need different coverage, you can explore options through{" "}
+        Please contact your insurance provider to confirm whether your policy covers cleaning services performed in{" "}
+        {state}. If you need different coverage, you can explore options through{" "}
         <NextInsuranceReferralLink className="font-semibold text-ink underline underline-offset-2">
           NEXT Insurance
         </NextInsuranceReferralLink>{" "}

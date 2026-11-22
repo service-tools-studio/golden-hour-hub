@@ -22,9 +22,9 @@ import {
   formatTeamMemberForAdmin,
   generalLiabilityInsuranceStatusLabel,
   helperPaymentArrangementLabel,
+  insuranceHomeMarketCoverageAdminLabel,
   insuranceOregonCoverageStatusLabel,
   insurancePolicyIsExpired,
-  oregonServiceStatusLabel,
   questionnaireEffectiveReviewStatus,
   questionnaireReviewStatusLabel,
   registrationStatusLabel,
@@ -34,6 +34,7 @@ import {
   workersCompNoReasonLabel,
   workersCompStatusLabel,
 } from "@/lib/domain/contractor-questionnaire";
+import { readMarketId } from "@/lib/domain/markets";
 import { US_STATE_OPTIONS } from "@/lib/domain/us-states";
 
 function stateLabel(code: string | undefined): string {
@@ -73,7 +74,6 @@ function draftHasSavedAnswers(draft: ContractorQuestionnaireInput | undefined): 
   if (trimDisplay(draft.businessStreetAddress)) return true;
   if (trimDisplay(draft.businessPhone)) return true;
   if (trimDisplay(draft.businessEmail)) return true;
-  if (draft.oregonServiceStatus) return true;
   if (draft.generalLiabilityStatus) return true;
   if (trimDisplay(draft.insuranceProviderName)) return true;
   if (trimDisplay(draft.insuranceExpirationDate)) return true;
@@ -154,12 +154,6 @@ function DraftBusinessDetails({
             {trimDisplay(draft.businessPhone) ? `\n${formatPhone(draft.businessPhone)}` : ""}
             {trimDisplay(draft.businessEmail) ? `\n${draft.businessEmail.trim()}` : ""}
           </dd>
-        </div>
-      ) : null}
-      {draft.oregonServiceStatus ? (
-        <div>
-          <dt className="font-medium text-ink/55">Oregon jobs</dt>
-          <dd>{oregonServiceStatusLabel(draft.oregonServiceStatus)}</dd>
         </div>
       ) : null}
       {draft.hasAdditionalWorkers === false ? (
@@ -377,10 +371,6 @@ export function ContractorBusinessAdminPanel({
           </dd>
         </div>
         <div>
-          <dt className="font-medium text-ink/55">Oregon jobs</dt>
-          <dd>{oregonServiceStatusLabel(questionnaire.oregonServiceStatus)}</dd>
-        </div>
-        <div>
           <dt className="font-medium text-ink/55">Team</dt>
           <dd>
             {questionnaire.hasAdditionalWorkers ? (
@@ -468,7 +458,9 @@ export function ContractorBusinessAdminPanel({
                 <dd>{formatInsuranceExpirationDate(questionnaire.insuranceExpirationDate)}</dd>
               </div>
               <div>
-                <dt className="font-medium text-ink/55">Covers Oregon cleaning jobs</dt>
+                <dt className="font-medium text-ink/55">
+                  {insuranceHomeMarketCoverageAdminLabel(readMarketId(cleaner.homeMarketId))}
+                </dt>
                 <dd>
                   {questionnaire.insuranceOregonCoverage
                     ? insuranceOregonCoverageStatusLabel(questionnaire.insuranceOregonCoverage)

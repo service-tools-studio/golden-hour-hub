@@ -1,5 +1,7 @@
 import { normalizePhone } from "./customers.ts";
 import { readWorkersCompComplianceHistoryFromRecord } from "./contractor-workers-comp-compliance.ts";
+import type { MarketId } from "./markets.ts";
+import { readMarketId } from "./markets.ts";
 import { isValidDate, todayInBusinessZone } from "./time.ts";
 import { US_STATE_OPTIONS } from "./us-states.ts";
 
@@ -207,6 +209,46 @@ export function insuranceOregonCoverageStatusLabel(status: InsuranceOregonCovera
     case "UNSURE":
       return "Not sure";
   }
+}
+
+export function homeMarketServiceStateName(homeMarketId: MarketId): "Oregon" | "Arizona" {
+  return readMarketId(homeMarketId) === "phoenix" ? "Arizona" : "Oregon";
+}
+
+/** Short label for review / admin (e.g. "Arizona coverage"). */
+export function insuranceHomeMarketCoverageShortLabel(homeMarketId: MarketId): string {
+  return `${homeMarketServiceStateName(homeMarketId)} coverage`;
+}
+
+export function insuranceHomeMarketCoverageQuestion(homeMarketId: MarketId): string {
+  const state = homeMarketServiceStateName(homeMarketId);
+  return `Does your policy cover cleaning jobs in ${state}?`;
+}
+
+export function insuranceHomeMarketCoverageTooltip(homeMarketId: MarketId): string {
+  const state = homeMarketServiceStateName(homeMarketId);
+  return `If you're unsure, contact your insurance company and ask whether your policy covers the cleaning services you perform in ${state}.`;
+}
+
+export function insuranceHomeMarketCoverageAdminLabel(homeMarketId: MarketId): string {
+  const state = homeMarketServiceStateName(homeMarketId);
+  return `Covers ${state} cleaning jobs`;
+}
+
+/** Legacy field: whether the cleaner intends to work jobs in Oregon (not insurance coverage). */
+export function withHomeMarketQuestionnaireDefaults(
+  input: ContractorQuestionnaireInput,
+  homeMarketId: MarketId,
+): ContractorQuestionnaireInput {
+  const next = { ...input };
+  if (
+    next.oregonServiceStatus !== "YES" &&
+    next.oregonServiceStatus !== "NO" &&
+    next.oregonServiceStatus !== "PLANNED"
+  ) {
+    next.oregonServiceStatus = readMarketId(homeMarketId) === "phoenix" ? "NO" : "YES";
+  }
+  return next;
 }
 
 export function coiVerificationStatusLabel(status: CoiVerificationStatus): string {
@@ -705,13 +747,6 @@ export function prepareQuestionnaireDraftInput(input: ContractorQuestionnaireInp
     next.insuranceProviderName = "";
     next.insuranceExpirationDate = "";
     next.insuranceOregonCoverage = "";
-  }
-  if (
-    next.oregonServiceStatus !== "YES" &&
-    next.oregonServiceStatus !== "NO" &&
-    next.oregonServiceStatus !== "PLANNED"
-  ) {
-    next.oregonServiceStatus = "YES";
   }
   return next;
 }

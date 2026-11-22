@@ -1,12 +1,13 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { CleanerProfile } from "../domain/types.ts";
+import { readMarketId } from "../domain/markets.ts";
 import type { ContractorQuestionnaireSubmissionRecord } from "../domain/contractor-questionnaire-submission.ts";
 import {
   formatTeamMemberForAdmin,
   generalLiabilityInsuranceStatusLabel,
   helperPaymentArrangementLabel,
+  insuranceHomeMarketCoverageShortLabel,
   insuranceOregonCoverageStatusLabel,
-  oregonServiceStatusLabel,
   registrationStatusLabel,
   workersCompNoReasonLabel,
   workersCompStatusLabel,
@@ -61,7 +62,6 @@ export async function buildQuestionnaireSubmissionPdf(input: {
     `Address: ${q.businessStreetAddress}, ${q.businessCity}, ${q.businessState} ${q.businessZip}`,
     `Phone: ${q.businessPhone}`,
     `Email: ${q.businessEmail}`,
-    `Oregon jobs: ${oregonServiceStatusLabel(q.oregonServiceStatus)}`,
   ]);
   if (q.hasAdditionalWorkers && q.teamMembers?.length) {
     contentLines.push("Team members:");
@@ -89,7 +89,9 @@ export async function buildQuestionnaireSubmissionPdf(input: {
       generalLiabilityInsuranceStatusLabel(q.generalLiabilityStatus),
       q.insuranceProviderName ? `Provider: ${q.insuranceProviderName}` : "",
       q.insuranceExpirationDate ? `Expires: ${q.insuranceExpirationDate}` : "",
-      q.insuranceOregonCoverage ? `Oregon coverage: ${insuranceOregonCoverageStatusLabel(q.insuranceOregonCoverage)}` : "",
+      q.insuranceOregonCoverage
+        ? `${insuranceHomeMarketCoverageShortLabel(readMarketId(input.cleaner.homeMarketId))}: ${insuranceOregonCoverageStatusLabel(q.insuranceOregonCoverage)}`
+        : "",
     ].filter(Boolean));
   }
   addSection(contentLines, "Acknowledgment", [

@@ -6,6 +6,7 @@ import {
   businessStructureLabel,
   generalLiabilityInsuranceStatusLabel,
   helperPaymentArrangementLabel,
+  insuranceHomeMarketCoverageShortLabel,
   insuranceOregonCoverageStatusLabel,
   registrationStatusLabel,
   teamMemberWorkingRelationshipLabel,
@@ -13,6 +14,7 @@ import {
   workersCompStatusLabel,
 } from "@/lib/domain/contractor-questionnaire";
 import type { QuestionnaireWizardStep } from "@/lib/domain/contractor-questionnaire-wizard";
+import type { MarketId } from "@/lib/domain/markets";
 import { US_STATE_OPTIONS } from "@/lib/domain/us-states";
 import { formatPhoneInput } from "@/lib/format";
 
@@ -61,9 +63,11 @@ function SummaryRow({ label, value }: { label: string; value: string | null | un
 
 export function ContractorBusinessQuestionnaireReview({
   form,
+  homeMarketId,
   onEditStep,
 }: {
   form: ContractorQuestionnaireInput;
+  homeMarketId: MarketId;
   onEditStep: (step: QuestionnaireWizardStep) => void;
 }) {
   const registrationLine =
@@ -162,7 +166,7 @@ export function ContractorBusinessQuestionnaireReview({
             <SummaryRow label="Insurance company" value={form.insuranceProviderName} />
             <SummaryRow label="Policy expiration" value={form.insuranceExpirationDate} />
             <SummaryRow
-              label="Oregon coverage"
+              label={insuranceHomeMarketCoverageShortLabel(homeMarketId)}
               value={
                 form.insuranceOregonCoverage
                   ? insuranceOregonCoverageStatusLabel(form.insuranceOregonCoverage)

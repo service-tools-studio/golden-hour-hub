@@ -3,7 +3,9 @@ import {
   inputFromQuestionnaire,
   normalizeQuestionnaireInput,
   validateQuestionnaireInput,
+  withHomeMarketQuestionnaireDefaults,
 } from "./contractor-questionnaire.ts";
+import type { MarketId } from "./markets.ts";
 
 export const QUESTIONNAIRE_WIZARD_STEP_COUNT = 4 as const;
 
@@ -91,9 +93,11 @@ export function clearErrorsForWizardStep(
 export function validateQuestionnaireWizardStep(
   step: QuestionnaireWizardStep,
   input: ContractorQuestionnaireInput,
+  homeMarketId?: MarketId,
 ): QuestionnaireFieldErrors {
   if (step === 4) return {};
-  const normalized = normalizeQuestionnaireInput(input);
+  const withMarket = homeMarketId ? withHomeMarketQuestionnaireDefaults(input, homeMarketId) : input;
+  const normalized = normalizeQuestionnaireInput(withMarket);
   const allErrors = validateQuestionnaireInput(normalized);
   return pickStepErrors(step, allErrors);
 }

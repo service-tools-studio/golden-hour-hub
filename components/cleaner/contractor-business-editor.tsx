@@ -88,6 +88,7 @@ export function ContractorBusinessEditor() {
           ref={formRef}
           initialDraft={cleaner.businessQuestionnaireDraft}
           initialQuestionnaire={cleaner.businessQuestionnaire}
+          homeMarketId={cleaner.homeMarketId}
           profileMobilePhone={cleaner.mobilePhone}
           profileEmail={cleaner.email}
           savedAt={cleaner.updatedAt}

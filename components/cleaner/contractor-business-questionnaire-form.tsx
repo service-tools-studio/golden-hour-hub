@@ -20,8 +20,8 @@ import type {
 } from "@/lib/domain/contractor-questionnaire";
 import {
   businessContactEmail,
-  COI_ADDITIONAL_INSURED_ADDRESS,
   COI_ADDITIONAL_INSURED_LEGAL_NAME,
+  coiAdditionalInsuredAddress,
 } from "@/lib/business-contact-email";
 import {
   QUESTIONNAIRE_WIZARD_STEP_COUNT,
@@ -38,9 +38,14 @@ import {
 import {
   emptyTeamMember,
   inputFromSavedState,
+  insuranceHomeMarketCoverageQuestion,
+  insuranceHomeMarketCoverageTooltip,
   questionnaireInputIsComplete,
   questionnaireUiVisibility,
+  withHomeMarketQuestionnaireDefaults,
 } from "@/lib/domain/contractor-questionnaire";
+import type { MarketId } from "@/lib/domain/markets";
+import { readMarketId } from "@/lib/domain/markets";
 import type { ContractorQuestionnaireSubmitAttestation } from "@/lib/domain/contractor-questionnaire-submission";
 import {
   ELECTRONIC_SIGNATURE_CONSENT_TEXT,
@@ -49,7 +54,7 @@ import {
 import { US_STATE_OPTIONS } from "@/lib/domain/us-states";
 import { formatPhoneInput } from "@/lib/format";
 import {
-  NextInsuranceOregonCoverageHelper,
+  NextInsuranceHomeMarketCoverageHelper,
   NextInsuranceRecommendationCard,
 } from "@/components/cleaner/next-insurance-recommendation";
 
@@ -179,6 +184,7 @@ export const ContractorBusinessQuestionnaireForm = forwardRef<
     onDraftSaveError?: (message: string) => void;
     profileMobilePhone?: string;
     profileEmail?: string;
+    homeMarketId?: MarketId;
     cleanerId?: string;
   }
 >(function ContractorBusinessQuestionnaireForm(
@@ -193,10 +199,12 @@ export const ContractorBusinessQuestionnaireForm = forwardRef<
     onDraftSaveError,
     profileMobilePhone,
     profileEmail,
+    homeMarketId: homeMarketIdProp,
     cleanerId,
   },
   ref,
 ) {
+  const homeMarketId = readMarketId(homeMarketIdProp);
   const baselineRef = useRef("");
   const formRef = useRef<ContractorQuestionnaireInput | null>(null);
   const savingRef = useRef(false);
@@ -207,7 +215,10 @@ export const ContractorBusinessQuestionnaireForm = forwardRef<
   );
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ContractorQuestionnaireInput>(() => {
-    const initial = inputFromSavedState(initialDraft, initialQuestionnaire, profileContact);
+    const initial = withHomeMarketQuestionnaireDefaults(
+      inputFromSavedState(initialDraft, initialQuestionnaire, profileContact),
+      homeMarketId,
+    );
     baselineRef.current = snapshotInput(initial);
     formRef.current = initial;
     return initial;
@@ -342,7 +353,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
   async function handleContinue(): Promise<void> {
     const current = formRef.current;
     if (!current) return;
-    const stepErrors = validateQuestionnaireWizardStep(step, current);
+    const stepErrors = validateQuestionnaireWizardStep(step, current, homeMarketId);
     if (Object.keys(stepErrors).length > 0) {
       setErrors((prev) => ({ ...clearErrorsForWizardStep(step, prev), ...stepErrors }));
       scrollToFirstStepError(stepErrors, step);
@@ -465,7 +476,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
   }));
 
   useEffect(() => {
-    const stepValidation = validateQuestionnaireWizardStep(step, form);
+    const stepValidation = validateQuestionnaireWizardStep(step, form, homeMarketId);
     setErrors((prev) => {
       let next: QuestionnaireFieldErrors | undefined;
       for (const key of wizardStepFieldKeys(step)) {
@@ -1113,7 +1124,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
             />
           </div>
           {form.generalLiabilityStatus === "NO" || form.generalLiabilityStatus === "IN_PROGRESS" ? (
-            <NextInsuranceRecommendationCard />
+            <NextInsuranceRecommendationCard homeMarketId={homeMarketId} />
           ) : null}
         </div>
 
@@ -1136,8 +1147,8 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
             </Field>
             <div data-questionnaire-field="insuranceOregonCoverage" data-questionnaire-question="insuranceOregonCoverage" className="scroll-mt-24">
               <FieldLabelWithTooltip
-                label="Does your policy cover cleaning jobs in Oregon?"
-                tooltip="If you're unsure, contact your insurance company and ask whether your policy covers the cleaning services you perform in Oregon."
+                label={insuranceHomeMarketCoverageQuestion(homeMarketId)}
+                tooltip={insuranceHomeMarketCoverageTooltip(homeMarketId)}
               />
               <div className="mt-2">
                 <RadioGroup<InsuranceOregonCoverageStatus>
@@ -1153,7 +1164,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
                 />
               </div>
               {form.insuranceOregonCoverage === "NO" || form.insuranceOregonCoverage === "UNSURE" ? (
-                <NextInsuranceOregonCoverageHelper />
+                <NextInsuranceHomeMarketCoverageHelper homeMarketId={homeMarketId} />
               ) : null}
             </div>
           </div>
@@ -1177,7 +1188,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
                 List on the certificate as additional insured
               </p>
               <p className="mt-1.5 font-medium leading-snug text-ink">{COI_ADDITIONAL_INSURED_LEGAL_NAME}</p>
-              <p className="mt-1 leading-snug text-ink/80">{COI_ADDITIONAL_INSURED_ADDRESS}</p>
+              <p className="mt-1 leading-snug text-ink/80">{coiAdditionalInsuredAddress(homeMarketId)}</p>
             </div>
             <div className="rounded-xl bg-white/80 px-3 py-2.5 ring-1 ring-ink/8">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink/50">Send to</p>
@@ -1196,7 +1207,7 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
 
       {step === 4 ? (
       <>
-        <ContractorBusinessQuestionnaireReview form={form} onEditStep={handleEditFromReview} />
+        <ContractorBusinessQuestionnaireReview form={form} homeMarketId={homeMarketId} onEditStep={handleEditFromReview} />
         {unchangedFromSubmission ? (
           <CautionNotice>
             <p>

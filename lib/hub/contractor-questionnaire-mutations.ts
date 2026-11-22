@@ -7,7 +7,9 @@ import {
   prepareQuestionnaireDraftInput,
   normalizeQuestionnaireInput,
   validateQuestionnaireInput,
+  withHomeMarketQuestionnaireDefaults,
 } from "../domain/contractor-questionnaire.ts";
+import { readMarketId } from "../domain/markets.ts";
 import type {
   BusinessRegistrationVerificationStatus,
   CoiVerificationStatus,
@@ -56,8 +58,9 @@ export function saveContractorQuestionnaireOnHub(
     return { hub, result: { ok: false, message: "Cleaner not found." }, submitted: false };
   }
   try {
+    const withMarket = withHomeMarketQuestionnaireDefaults(input, readMarketId(cleaner.homeMarketId));
     const normalized =
-      intent === "draft" ? prepareQuestionnaireDraftInput(input) : normalizeQuestionnaireInput(input);
+      intent === "draft" ? prepareQuestionnaireDraftInput(withMarket) : normalizeQuestionnaireInput(withMarket);
 
     if (intent === "draft") {
       const nextCleaner = {
