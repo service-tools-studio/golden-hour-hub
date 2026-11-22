@@ -12,6 +12,8 @@ import {
   calendarImportScheduleMovedFromGoogle,
   calendarImportShowsOnAdminDashboard,
   findExistingJobForCalendarImport,
+  resolveCalendarImportMatchedJobId,
+  resolveCalendarImportScheduleMatch,
   extractFirstEmailFromEventText,
   extractInviteeEmailFromGoogleAttendees,
   formatCalendarImportAddress,
@@ -759,6 +761,222 @@ describe("calendar import parser", () => {
       },
     );
     assert.equal(matched?.jobId, "job-1");
+  });
+
+  it("matches same customer and date by arrival when multiple visits share a day", () => {
+    const base: Omit<Job, "jobId" | "arrivalWindowStart" | "arrivalWindowEnd"> = {
+      customerId: "cust-1",
+      propertyId: "prop-1",
+      serviceType: "RECURRING",
+      date: "2026-11-26",
+      headcountNeeded: 1,
+      snapshot: {
+        customerDisplayName: "Test customer",
+        phone: "5035551212",
+        propertyId: "prop-1",
+        streetAddress: "8301 E Monte Vista Rd",
+        city: "Scottsdale",
+        state: "AZ",
+        zip: "85257",
+        marketId: "phoenix",
+        timeZone: "America/Phoenix",
+        bedrooms: 3,
+        bathrooms: 2,
+        squareFeet: 1500,
+        preferences: "",
+      },
+      specialInstructions: "",
+      status: "SCHEDULED",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "test",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      updatedBy: "test",
+    };
+    const jobMorning: Job = {
+      ...base,
+      jobId: "job-10am",
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+    };
+    const jobNoon: Job = {
+      ...base,
+      jobId: "job-12pm",
+      arrivalWindowStart: "12:00",
+      arrivalWindowEnd: "12:00",
+    };
+    const matchInput = {
+      googleCalendarEventId: "gcal-10",
+      serviceDate: "2026-11-26",
+      suggestedCustomerId: "cust-1",
+      suggestedPropertyId: "prop-1",
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      parsed: { suggestedFirstName: "Test", suggestedLastName: "customer" },
+    };
+    const matched = findExistingJobForCalendarImport([jobMorning, jobNoon], [], [], matchInput);
+    assert.equal(matched?.jobId, "job-10am");
+    assert.equal(
+      findExistingJobForCalendarImport([jobMorning, jobNoon], [], [], {
+        ...matchInput,
+        arrivalWindowStart: "12:00",
+        arrivalWindowEnd: "12:00",
+        googleCalendarEventId: "gcal-12",
+      })?.jobId,
+      "job-12pm",
+    );
+  });
+
+  it("resolveCalendarImportMatchedJobId ignores stale matchedJobId when arrival differs", () => {
+    const job: Job = {
+      jobId: "job-12pm",
+      customerId: "cust-1",
+      propertyId: "prop-1",
+      serviceType: "DEEP_CLEAN",
+      date: "2026-11-26",
+      arrivalWindowStart: "12:00",
+      arrivalWindowEnd: "12:00",
+      headcountNeeded: 1,
+      snapshot: {
+        customerDisplayName: "Test customer",
+        phone: "5035551212",
+        propertyId: "prop-1",
+        streetAddress: "8301 E Monte Vista Rd",
+        city: "Scottsdale",
+        state: "AZ",
+        zip: "85257",
+        marketId: "phoenix",
+        timeZone: "America/Phoenix",
+        bedrooms: 3,
+        bathrooms: 2,
+        squareFeet: 1500,
+        preferences: "",
+      },
+      specialInstructions: "",
+      status: "SCHEDULED",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "test",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      updatedBy: "test",
+    };
+    const row = {
+      importId: "calimp-test",
+      googleCalendarEventId: "gcal-10",
+      googleCalendarIcalUid: "uid",
+      serviceDate: "2026-11-26",
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      serviceType: "DEEP_CLEAN" as const,
+      headcountNeeded: 1,
+      specialInstructions: "",
+      marketId: "phoenix" as const,
+      status: "PENDING_REVIEW" as const,
+      suggestedCustomerId: "cust-1",
+      suggestedPropertyId: "prop-1",
+      matchedJobId: "job-12pm",
+      parsed: { suggestedFirstName: "Test", suggestedLastName: "customer" },
+      raw: { title: "Test customer", description: "", location: "" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      lastSyncedAt: "2026-01-01T00:00:00.000Z",
+    } satisfies CalendarImport;
+    assert.equal(resolveCalendarImportMatchedJobId([job], [], [], row), undefined);
+  });
+
+  it("flags visit match when customer/date/time align but address differs", () => {
+    const properties = [
+      {
+        propertyId: "prop-pdx",
+        customerId: "cust-1",
+        streetAddress: "123 Main St",
+        city: "Portland",
+        state: "OR",
+        zip: "97211",
+        marketId: "portland" as const,
+        bedrooms: 3,
+        bathrooms: 2,
+        squareFeet: 1600,
+        preferences: "",
+        label: "Home",
+        status: "ACTIVE" as const,
+        createdAt: "",
+        updatedAt: "",
+        createdBy: "test",
+        updatedBy: "test",
+      },
+    ];
+    const job: Job = {
+      jobId: "job-pdx",
+      customerId: "cust-1",
+      propertyId: "prop-pdx",
+      serviceType: "DEEP_CLEAN",
+      date: "2026-11-26",
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      headcountNeeded: 1,
+      snapshot: {
+        customerDisplayName: "Test customer",
+        phone: "5035551212",
+        propertyId: "prop-pdx",
+        streetAddress: "123 Main St",
+        city: "Portland",
+        state: "OR",
+        zip: "97211",
+        marketId: "portland",
+        timeZone: "America/Los_Angeles",
+        bedrooms: 3,
+        bathrooms: 2,
+        squareFeet: 1600,
+        preferences: "",
+      },
+      specialInstructions: "",
+      status: "SCHEDULED",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "test",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      updatedBy: "test",
+    };
+    const row = {
+      importId: "calimp-az",
+      googleCalendarEventId: "gcal-az",
+      googleCalendarIcalUid: "uid",
+      serviceDate: "2026-11-26",
+      arrivalWindowStart: "10:00",
+      arrivalWindowEnd: "10:00",
+      serviceType: "DEEP_CLEAN" as const,
+      headcountNeeded: 1,
+      specialInstructions: "",
+      marketId: "phoenix" as const,
+      status: "PENDING_REVIEW" as const,
+      suggestedCustomerId: "cust-1",
+      parsed: {
+        suggestedFirstName: "Test",
+        suggestedLastName: "customer",
+        streetAddress: "8301 E Monte Vista Rd",
+        city: "Scottsdale",
+        state: "AZ",
+        zip: "85257",
+        marketId: "phoenix" as const,
+      },
+      raw: { title: "Test customer", description: "", location: "8301 E Monte Vista Rd, Scottsdale, AZ" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      lastSyncedAt: "2026-01-01T00:00:00.000Z",
+    } satisfies CalendarImport;
+    const match = resolveCalendarImportScheduleMatch([job], [], properties, row);
+    assert.equal(match.kind, "visit_address_mismatch");
+    if (match.kind === "visit_address_mismatch") assert.equal(match.jobId, "job-pdx");
+    assert.equal(resolveCalendarImportMatchedJobId([job], [], properties, row), undefined);
+    assert.equal(
+      findExistingJobForCalendarImport([job], [], properties, {
+        googleCalendarEventId: row.googleCalendarEventId,
+        serviceDate: row.serviceDate,
+        suggestedCustomerId: "cust-1",
+        arrivalWindowStart: "10:00",
+        arrivalWindowEnd: "10:00",
+        parsed: row.parsed,
+      }),
+      undefined,
+    );
   });
 
   it("suggests a customer by exact name", () => {

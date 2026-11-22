@@ -34,7 +34,14 @@ import { liveAvailabilityAttentionMessage } from "@/lib/domain/invitations";
 import { isConfirmedScheduleConflictReason, type ConfirmedScheduleConflictNotice } from "@/lib/domain/scheduling";
 import type { CleanerProfile, Job, PayType } from "@/lib/domain/types";
 import { mondayOf } from "@/lib/domain/time";
-import { CLEANING_DELETE_BLOCKED_MESSAGE, jobHasCleanerBlockingDeletion, windowsForCleaner } from "@/lib/domain/scheduling";
+import {
+  CLEANING_DELETE_BLOCKED_MESSAGE,
+  CLEANING_DELETE_GMAIL_LINKED_MESSAGE,
+  jobDeleteBlockedByGmailLink,
+  jobHasCleanerBlockingDeletion,
+  windowsForCleaner,
+} from "@/lib/domain/scheduling";
+import { appleCalendarDayUrl } from "@/lib/calendar";
 import {
   assignmentFormStatus,
   assignmentPayFieldAriaLabel,
@@ -710,9 +717,13 @@ export function EditJobView({
 
 function DeleteCleaningButton({
   deleteBlocked,
+  blockMessage,
+  iphoneCalendarDayHref,
   onDelete,
 }: {
   deleteBlocked: boolean;
+  blockMessage?: string;
+  iphoneCalendarDayHref?: string | null;
   onDelete: () => void;
 }) {
   const [hintOpen, setHintOpen] = useState(false);
@@ -730,12 +741,20 @@ function DeleteCleaningButton({
   return (
     <div className="relative">
       {hintOpen && deleteBlocked ? (
-        <p
+        <div
           role="tooltip"
           className="absolute bottom-full left-0 right-0 z-10 mb-2 rounded-2xl bg-mint px-4 py-3 text-center text-sm leading-5 text-ink shadow-[0_8px_30px_rgba(51,51,51,0.12)] ring-1 ring-ink/10"
         >
-          {CLEANING_DELETE_BLOCKED_MESSAGE}
-        </p>
+          <p>{blockMessage ?? CLEANING_DELETE_BLOCKED_MESSAGE}</p>
+          {iphoneCalendarDayHref ? (
+            <a
+              href={iphoneCalendarDayHref}
+              className="mt-2 inline-block font-semibold text-ink underline decoration-ink/30 underline-offset-2"
+            >
+              Open day in iPhone Calendar
+            </a>
+          ) : null}
+        </div>
       ) : null}
       <button
         type="button"
@@ -821,7 +840,18 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
     return { ok: true };
   }
 
-  const deleteBlocked = jobHasCleanerBlockingDeletion(hub.assignments, cleaning.jobId);
+  const deleteBlockedByCleaners = jobHasCleanerBlockingDeletion(hub.assignments, cleaning.jobId);
+  const deleteBlockedByGmail = jobDeleteBlockedByGmailLink(cleaning);
+  const deleteBlocked = deleteBlockedByCleaners || deleteBlockedByGmail;
+  const deleteBlockMessage = deleteBlockedByCleaners
+    ? CLEANING_DELETE_BLOCKED_MESSAGE
+    : deleteBlockedByGmail
+      ? CLEANING_DELETE_GMAIL_LINKED_MESSAGE
+      : undefined;
+  const iphoneCalendarDayHref = appleCalendarDayUrl({
+    date: cleaning.date,
+    time: cleaning.arrivalWindowStart || undefined,
+  });
 
   async function remove() {
     const result = await hub.deleteJob(cleaning.jobId);
@@ -880,7 +910,14 @@ function VisitEditForm({ jobId, customerId = "", from }: { jobId: string; custom
           );
           return flag ? <Notice>{flag}</Notice> : null;
         }}
-        trailing={<DeleteCleaningButton deleteBlocked={deleteBlocked} onDelete={remove} />}
+        trailing={
+          <DeleteCleaningButton
+            deleteBlocked={deleteBlocked}
+            blockMessage={deleteBlockMessage}
+            iphoneCalendarDayHref={deleteBlockedByGmail ? iphoneCalendarDayHref : null}
+            onDelete={remove}
+          />
+        }
       />
     </Screen>
   );

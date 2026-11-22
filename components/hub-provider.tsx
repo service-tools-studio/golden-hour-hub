@@ -57,6 +57,7 @@ import {
   syncCalendarImportsAction,
   type CalendarImportActionResult,
 } from "@/app/actions/calendar-import";
+import { linkCalendarSyncAction } from "@/app/actions/calendar-sync-link";
 import type { ApproveCalendarImportInput } from "@/lib/hub/calendar-import-mutations";
 import {
   bootstrapHub,
@@ -237,6 +238,13 @@ type HubContextValue = HubState & {
     input: ApproveCalendarImportInput,
   ) => Promise<ActionResult & { jobId?: string }>;
   syncCalendarImports: () => AsyncActionResult;
+  linkCalendarSync: (
+    googleCalendarEventId: string,
+    jobId: string,
+    alignScheduleFromGmail?: boolean,
+    gcalEvent?: import("@/lib/calendar/calendar-sync-link").SyncLinkGcalEventSnapshot | null,
+    fallback?: import("@/lib/calendar/resolve-google-calendar-event").SyncLinkGcalFallback | null,
+  ) => AsyncActionResult;
   /** Extend recurring job occurrences through the current horizon (safe to call often). */
   refreshRecurringHorizon: () => void;
   applyCleanerSmsConsent: (input: {
@@ -1579,6 +1587,21 @@ export function HubProvider({
     return { ok: false, message: "Google Calendar import requires DynamoDB." };
   }
 
+  async function linkCalendarSync(
+    googleCalendarEventId: string,
+    jobId: string,
+    alignScheduleFromGmail?: boolean,
+    gcalEvent?: import("@/lib/calendar/calendar-sync-link").SyncLinkGcalEventSnapshot | null,
+    fallback?: import("@/lib/calendar/resolve-google-calendar-event").SyncLinkGcalFallback | null,
+  ): AsyncActionResult {
+    if (isDynamoAdmin()) {
+      return applyCalendarImportActionResult(
+        await linkCalendarSyncAction(jobId, googleCalendarEventId, alignScheduleFromGmail, gcalEvent, fallback),
+      );
+    }
+    return { ok: false, message: "Gmail linking requires DynamoDB." };
+  }
+
   const value: HubContextValue = {
     ...data,
     ready,
@@ -1698,6 +1721,7 @@ export function HubProvider({
     markCalendarCanceledNotified,
     approveCalendarImport,
     syncCalendarImports,
+    linkCalendarSync,
     refreshRecurringHorizon,
     applyCleanerSmsConsent,
     undoDeleteJob,

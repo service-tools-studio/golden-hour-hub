@@ -8,6 +8,7 @@ import {
   withdrawRescheduleGhostCalendarImportList,
   syncedCalendarImportSpecialInstructions,
   findExistingJobForCalendarImport,
+  jobMatchesCalendarImportVisit,
   parseGoogleCalendarEvent,
   suggestCustomerForCalendarImport,
 } from "../domain/calendar-import.ts";
@@ -221,6 +222,8 @@ export async function applyCalendarEventsToHub(
         serviceDate: parsed.fields.serviceDate,
         suggestedCustomerId: suggestions.customerId ?? existing?.suggestedCustomerId,
         suggestedPropertyId: suggestions.propertyId ?? existing?.suggestedPropertyId,
+        arrivalWindowStart: parsed.fields.arrivalWindowStart,
+        arrivalWindowEnd: parsed.fields.arrivalWindowEnd,
         parsed: parsed.fields.parsed,
       },
     );
@@ -232,7 +235,20 @@ export async function applyCalendarEventsToHub(
         ...syncedFields
       } = parsed.fields;
       const suggestedCustomerId = suggestions.customerId ?? existing.suggestedCustomerId;
-      const linkedJobId = matchedJob?.jobId ?? existing.matchedJobId ?? existing.approvedJobId;
+      const staleMatched =
+        existing.matchedJobId?.trim() &&
+        workingHub.jobs.find((job) => job.jobId === existing.matchedJobId && job.status !== "CANCELED");
+      const visitRow = {
+        googleCalendarEventId: parsed.fields.googleCalendarEventId,
+        serviceDate: parsed.fields.serviceDate,
+        arrivalWindowStart: parsed.fields.arrivalWindowStart,
+        arrivalWindowEnd: parsed.fields.arrivalWindowEnd,
+        suggestedCustomerId,
+        suggestedPropertyId: suggestions.propertyId ?? existing.suggestedPropertyId,
+      };
+      const preservedMatchedJobId =
+        matchedJob?.jobId ??
+        (staleMatched && jobMatchesCalendarImportVisit(staleMatched, visitRow) ? staleMatched.jobId : undefined);
       const next: CalendarImport = {
         ...existing,
         ...syncedFields,
@@ -250,7 +266,7 @@ export async function applyCalendarEventsToHub(
         expectedDurationMinutes: calendarImportPreservedDurationMinutes(existing, event),
         suggestedCustomerId,
         suggestedPropertyId: suggestions.propertyId ?? existing.suggestedPropertyId,
-        matchedJobId: existing.matchedJobId?.trim() || linkedJobId,
+        matchedJobId: preservedMatchedJobId,
         approvedJobId: existing.approvedJobId,
         status: "PENDING_REVIEW",
         updatedAt: now,

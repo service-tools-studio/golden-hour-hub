@@ -195,15 +195,15 @@ export function approveCalendarImportOnHub(hub: HubData, input: ApproveCalendarI
   const row = findImport(hub, input.importId);
   if (!row) return { ok: false, message: "That import could not be found." };
   if (row.status !== "PENDING_REVIEW") return { ok: false, message: "That import was already handled." };
-  const duplicateJob =
-    row.matchedJobId ||
-    findExistingJobForCalendarImport(hub.jobs, hub.customers, hub.properties, {
-      googleCalendarEventId: row.googleCalendarEventId,
-      serviceDate: row.serviceDate,
-      suggestedCustomerId: row.suggestedCustomerId,
-      suggestedPropertyId: row.suggestedPropertyId,
-      parsed: row.parsed,
-    })?.jobId;
+  const duplicateJob = findExistingJobForCalendarImport(hub.jobs, hub.customers, hub.properties, {
+    googleCalendarEventId: row.googleCalendarEventId,
+    serviceDate: row.serviceDate,
+    suggestedCustomerId: row.suggestedCustomerId,
+    suggestedPropertyId: row.suggestedPropertyId,
+    arrivalWindowStart: row.arrivalWindowStart,
+    arrivalWindowEnd: row.arrivalWindowEnd,
+    parsed: row.parsed,
+  })?.jobId;
   if (duplicateJob) {
     return { ok: false, message: "A cleaning is already scheduled for this calendar event." };
   }

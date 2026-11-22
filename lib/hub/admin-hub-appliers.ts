@@ -32,6 +32,8 @@ import {
   confirmedScheduleConflictBlock,
   confirmedScheduleConflictNotice,
   CLEANING_DELETE_BLOCKED_MESSAGE,
+  CLEANING_DELETE_GMAIL_LINKED_MESSAGE,
+  jobDeleteBlockedByGmailLink,
   isConfirmedScheduleConflictReason,
   jobHasCleanerBlockingDeletion,
 } from "../domain/scheduling.ts";
@@ -1082,6 +1084,9 @@ export function deleteJobOnHub(hub: HubData, jobId: string): AdminHubApplierResu
   if (!job) return { ok: false, message: "That cleaning could not be deleted." };
   if (jobHasCleanerBlockingDeletion(hub.assignments, jobId)) {
     return { ok: false, message: CLEANING_DELETE_BLOCKED_MESSAGE };
+  }
+  if (jobDeleteBlockedByGmailLink(job)) {
+    return { ok: false, message: CLEANING_DELETE_GMAIL_LINKED_MESSAGE };
   }
   const now = new Date().toISOString();
   return {

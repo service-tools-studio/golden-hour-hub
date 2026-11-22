@@ -20,7 +20,7 @@ import type { CalendarImport } from "@/lib/domain/types";
 import {
   calendarImportCanceledJobId,
   normalizeCalendarEventTitle,
-  resolveCalendarImportMatchedJobId,
+  resolveCalendarImportScheduleMatch,
   visibleDashboardCalendarImports,
   visibleRecentlyDismissedCalendarImports,
   visibleRecentlySyncRemovedCalendarImports,
@@ -352,7 +352,7 @@ export function DashboardView() {
                     {syncRemoved.length} import{syncRemoved.length === 1 ? "" : "s"} removed by sync — review
                   </button>
                 ) : null}
-                <div className="[&_button]:min-h-10 [&_button]:w-auto [&_button]:px-4 [&_button]:text-sm">
+                <div className="flex flex-wrap items-center justify-end gap-2 [&_button]:min-h-10 [&_button]:w-auto [&_button]:px-4 [&_button]:text-sm">
                   <SecondaryButton
                     type="button"
                     disabled={checkingGmail}
@@ -362,15 +362,28 @@ export function DashboardView() {
                   >
                     Check Gmail
                   </SecondaryButton>
+                  <Link
+                    href="/admin/sync-link"
+                    className="min-h-10 rounded-xl px-3 text-sm font-semibold text-ink/70 underline decoration-ink/25 underline-offset-2"
+                  >
+                    Link Gmail ↔ Hub
+                  </Link>
                 </div>
               </div>
             </div>
             {calendarImports.length > 0 ? (
               calendarImports.map((item) => {
                 const canceledOnGmail = item.status === "CALENDAR_CANCELED";
+                const scheduleMatch = canceledOnGmail
+                  ? { kind: "none" as const }
+                  : resolveCalendarImportScheduleMatch(hub.jobs, hub.customers, hub.properties, item);
                 const matchedJobId = canceledOnGmail
                   ? calendarImportCanceledJobId(hub, item)
-                  : resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, item);
+                  : scheduleMatch.kind === "on_schedule"
+                    ? scheduleMatch.jobId
+                    : undefined;
+                const addressMismatchJobId =
+                  scheduleMatch.kind === "visit_address_mismatch" ? scheduleMatch.jobId : undefined;
                 const dismissing = dismissingImportId === item.importId;
                 const notifying = notifyingImportId === item.importId;
                 const notifyIds = item.calendarCanceledNotifyCleanerIds ?? [];
@@ -442,6 +455,10 @@ export function DashboardView() {
                         {item.raw.location ? <p className="mt-1 text-sm text-ink/70">{item.raw.location}</p> : null}
                         {matchedJobId ? (
                           <p className="mt-2 text-sm font-semibold text-gold">Already on schedule</p>
+                        ) : addressMismatchJobId ? (
+                          <p className="mt-2 text-sm font-semibold text-amber-800">
+                            Possible match in Hub — address differs. Review.
+                          </p>
                         ) : (
                           <p className="mt-2 text-sm font-semibold text-ink">Review import</p>
                         )}

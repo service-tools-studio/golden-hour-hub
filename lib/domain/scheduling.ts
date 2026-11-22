@@ -334,6 +334,13 @@ export function jobHasCleanerBlockingDeletion(
 export const CLEANING_DELETE_BLOCKED_MESSAGE =
   "Remove confirmed cleaners from this cleaning before deleting it.";
 
+export const CLEANING_DELETE_GMAIL_LINKED_MESSAGE =
+  "This cleaning is linked from Gmail. Cancel or delete the event in Gmail—the hub will follow on the next sync.";
+
+export function jobDeleteBlockedByGmailLink(job: { googleCalendarEventId?: string }): boolean {
+  return Boolean(job.googleCalendarEventId?.trim());
+}
+
 export function isCleanerAllowedCrewSize(maxHelperCount: number, crewSize: number): boolean {
   if (!Number.isInteger(crewSize) || crewSize < 1) return false;
   return crewSize <= maxCrewSize(maxHelperCount);

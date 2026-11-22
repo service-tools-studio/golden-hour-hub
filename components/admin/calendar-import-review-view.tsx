@@ -25,6 +25,7 @@ import {
   propertyMatchesCalendarImportAddress,
   normalizeCalendarEventTitle,
   resolveCalendarImportMatchedJobId,
+  resolveCalendarImportScheduleMatch,
   suggestCustomerForCalendarImport,
 } from "@/lib/domain/calendar-import";
 import { appleCalendarDayUrl } from "@/lib/calendar";
@@ -381,8 +382,13 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
   );
   const customerChanged = Boolean(customerId.trim()) && customerId.trim() !== suggestedCustomerId;
   const shownServiceType = customerChanged ? serviceType : displayServiceType;
+  const scheduleMatch = resolveCalendarImportScheduleMatch(hub.jobs, hub.customers, hub.properties, active);
   const matchedJobId = resolveCalendarImportMatchedJobId(hub.jobs, hub.customers, hub.properties, active);
   const matchedJob = matchedJobId ? hub.jobs.find((job) => job.jobId === matchedJobId) : undefined;
+  const addressMismatchJob =
+    scheduleMatch.kind === "visit_address_mismatch"
+      ? hub.jobs.find((job) => job.jobId === scheduleMatch.jobId)
+      : undefined;
   const suggestedName = [active.parsed.suggestedFirstName, active.parsed.suggestedLastName].filter(Boolean).join(" ");
   const mergedHints = mergeCalendarImportCustomerHints(
     active.parsed,
@@ -610,6 +616,26 @@ export function CalendarImportReviewView({ importId }: { importId: string }) {
               className="mt-2 inline-block text-sm font-semibold underline"
             >
               View scheduled cleaning
+            </Link>
+          </div>
+        ) : addressMismatchJob ? (
+          <div className="rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200/80">
+            <p className="text-sm font-semibold text-ink">Possible match — address differs</p>
+            <p className="mt-1 text-sm text-ink/75">
+              Gmail lines up with a scheduled visit for this customer and time, but the event address does not match
+              the Hub cleaning at {addressMismatchJob.snapshot.streetAddress}, {addressMismatchJob.snapshot.city}. Link
+              them only if they are the same visit; otherwise approve to create a separate cleaning or add the event
+              address on the customer first.
+            </p>
+            <Link
+              href={`/admin/jobs/${addressMismatchJob.jobId}?from=dashboard`}
+              className="mt-2 inline-block text-sm font-semibold underline"
+            >
+              View Hub cleaning
+            </Link>
+            <span className="mx-2 text-ink/40">·</span>
+            <Link href="/admin/sync-link" className="mt-2 inline-block text-sm font-semibold underline">
+              Link Gmail ↔ Hub
             </Link>
           </div>
         ) : null}

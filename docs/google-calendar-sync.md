@@ -32,6 +32,22 @@ Production needs:
 
 Local dev: push notifications need a tunnel to your machine; use the daily cron or call the import cron manually otherwise.
 
+### Reset import staging (Dynamo)
+
+To wipe import rows and watch state without touching customers, jobs, or cleaners:
+
+```bash
+npm run dynamo:clear-calendar-sync -- --dry-run   # preview counts
+npm run dynamo:clear-calendar-sync              # delete imports + GCAL_WATCH; clear job Gmail links
+npm run dynamo:clear-calendar-sync -- --keep-job-links   # imports/watch only
+```
+
+Then use **Check Gmail** on the admin dashboard to pull events again.
+
+### Link existing cleanings (`/admin/sync-link`)
+
+When a Hub job was created manually (or an import was dismissed) but the Gmail event still exists, use **Link Gmail ↔ Hub** on the dashboard. The page lists suggested matches, unlinked Gmail events, and unlinked cleanings; **Link** sets `googleCalendarEventId` and marks the import **APPROVED** so future syncs move/cancel the job. Optionally **align hub date/time from Gmail** when linking.
+
 ## Phase 2 (outbound — later)
 
 `lib/services/google-calendar.ts` remains the integration point for Hub → Calendar. After approve/create/update visit, call `syncJobToGoogleCalendar` asynchronously using `Job.googleCalendarEventId` for idempotent `events.insert` / `events.patch`. Failures must never block scheduling saves.

@@ -28,8 +28,10 @@ import type { Job, JobAssignment } from "@/lib/domain/types";
 import { liveAvailabilityAttentionMessage, assignmentAttentionReasonForAdmin } from "@/lib/domain/invitations";
 import {
   CLEANING_DELETE_BLOCKED_MESSAGE,
+  CLEANING_DELETE_GMAIL_LINKED_MESSAGE,
   calculateConfirmedHeadcount,
   isConfirmedScheduleConflictReason,
+  jobDeleteBlockedByGmailLink,
   jobHasCleanerBlockingDeletion,
   windowsForCleaner,
 } from "@/lib/domain/scheduling";
@@ -144,7 +146,14 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
   const needed = job.headcountNeeded > 0 ? String(job.headcountNeeded) : "not set";
   const draft = job.status === "DRAFT";
   const full = !draft && job.headcountNeeded > 0 && confirmed >= job.headcountNeeded;
-  const deleteCleaningBlocked = jobHasCleanerBlockingDeletion(hub.assignments, job.jobId);
+  const deleteCleaningBlockedByCleaners = jobHasCleanerBlockingDeletion(hub.assignments, job.jobId);
+  const deleteCleaningBlockedByGmail = jobDeleteBlockedByGmailLink(job);
+  const deleteCleaningBlocked = deleteCleaningBlockedByCleaners || deleteCleaningBlockedByGmail;
+  const deleteCleaningBlockMessage = deleteCleaningBlockedByCleaners
+    ? CLEANING_DELETE_BLOCKED_MESSAGE
+    : deleteCleaningBlockedByGmail
+      ? CLEANING_DELETE_GMAIL_LINKED_MESSAGE
+      : undefined;
   const earliest = earliestCleanerArrival(cleanerArrivals(job, hub.assignments, hub.cleaners));
   const customer = hub.customers.find((item) => item.customerId === job.customerId);
   const arrivalFlag =
@@ -488,6 +497,7 @@ function JobCleaningPanel({ job, from }: { job: Job; from?: CleaningOrigin }) {
             onAskDelete={() => setConfirmDelete(true)}
             onCloseDelete={() => setConfirmDelete(false)}
             deleteCleaningBlocked={deleteCleaningBlocked}
+            deleteCleaningBlockMessage={deleteCleaningBlockMessage}
             onDeleteCleaning={() => {
               void (async () => {
                 const result = await hub.deleteJob(job.jobId);
@@ -634,6 +644,7 @@ function RecurringCard({
   onAskDelete,
   onCloseDelete,
   deleteCleaningBlocked,
+  deleteCleaningBlockMessage,
   onDeleteCleaning,
   onDeleteSchedule,
   actionsDisabled = false,
@@ -649,6 +660,7 @@ function RecurringCard({
   detail: string;
   confirmDelete: boolean;
   deleteCleaningBlocked: boolean;
+  deleteCleaningBlockMessage?: string;
   onAskDelete: () => void;
   onCloseDelete: () => void;
   onDeleteCleaning: () => void;
@@ -699,7 +711,7 @@ function RecurringCard({
             </h2>
             <p className="mt-1 text-sm leading-5 text-ink/70">Remove only this cleaning, or the whole recurring schedule?</p>
             {deleteCleaningBlocked ? (
-              <p className="mt-3 text-sm text-ink/70">{CLEANING_DELETE_BLOCKED_MESSAGE}</p>
+              <p className="mt-3 text-sm text-ink/70">{deleteCleaningBlockMessage ?? CLEANING_DELETE_BLOCKED_MESSAGE}</p>
             ) : null}
             <div className="mt-4 space-y-2">
               <button

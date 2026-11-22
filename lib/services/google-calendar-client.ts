@@ -153,3 +153,35 @@ export async function listGoogleCalendarEventsInRange(input: {
   } while (pageToken);
   return events;
 }
+
+const EVENT_FIELDS =
+  "id,status,summary,description,location,htmlLink,iCalUID,attendees(email,organizer,self,responseStatus),start,end";
+
+async function fetchGoogleCalendarEventByPath(eventPathSegment: string): Promise<GoogleCalendarEvent | null> {
+  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID!.trim());
+  const accessToken = await fetchAccessToken();
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventPathSegment}?fields=${EVENT_FIELDS}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Google Calendar get failed (${response.status}): ${text.slice(0, 200)}`);
+  }
+  return (await response.json()) as GoogleCalendarEvent;
+}
+
+/** Fetch one calendar event by id (works even when it falls outside a list window). */
+export async function getGoogleCalendarEvent(eventId: string): Promise<GoogleCalendarEvent | null> {
+  if (!googleCalendarImportConfigured()) return null;
+  const trimmed = eventId.trim();
+  if (!trimmed) return null;
+  const encoded = encodeURIComponent(trimmed);
+  const fetched = await fetchGoogleCalendarEventByPath(encoded);
+  if (fetched) return fetched;
+  if (encoded !== trimmed) {
+    return fetchGoogleCalendarEventByPath(trimmed);
+  }
+  return null;
+}

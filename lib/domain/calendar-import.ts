@@ -1,3 +1,4 @@
+import { isUnsetArrival } from "./arrival.ts";
 import {
   buildCustomerSearchKeys,
   findCustomerByCalendarEventName,
@@ -846,11 +847,93 @@ type CalendarImportJobMatchInput = {
   serviceDate: string;
   suggestedCustomerId?: string;
   suggestedPropertyId?: string;
+  arrivalWindowStart?: string;
+  arrivalWindowEnd?: string;
   parsed: CalendarImportParsedHints;
 };
 
-/** A cleaning already on the schedule for this calendar event or customer/date. */
-export function findExistingJobForCalendarImport(
+function normalizeCalendarImportArrival(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function calendarImportHasTimedArrival(start?: string, end?: string): boolean {
+  return Boolean(normalizeCalendarImportArrival(start) && !isUnsetArrival(start, end));
+}
+
+function jobMatchesCalendarImportArrival(
+  job: Job,
+  importStart?: string,
+  importEnd?: string,
+): boolean {
+  const importHas = calendarImportHasTimedArrival(importStart, importEnd);
+  if (!importHas) return true;
+  if (!calendarImportHasTimedArrival(job.arrivalWindowStart, job.arrivalWindowEnd)) return false;
+  return (
+    normalizeCalendarImportArrival(job.arrivalWindowStart) === normalizeCalendarImportArrival(importStart) &&
+    normalizeCalendarImportArrival(job.arrivalWindowEnd) === normalizeCalendarImportArrival(importEnd)
+  );
+}
+
+/** Whether a hub job is the same visit as this import (event id, or customer/date/time). */
+export function jobMatchesCalendarImportVisit(
+  job: Job,
+  row: Pick<
+    CalendarImport,
+    "googleCalendarEventId" | "serviceDate" | "arrivalWindowStart" | "arrivalWindowEnd" | "suggestedCustomerId"
+  >,
+): boolean {
+  if (row.googleCalendarEventId && job.googleCalendarEventId === row.googleCalendarEventId) return true;
+  if (job.date !== row.serviceDate) return false;
+  if (row.suggestedCustomerId && job.customerId !== row.suggestedCustomerId) return false;
+  if (calendarImportHasTimedArrival(row.arrivalWindowStart, row.arrivalWindowEnd)) {
+    return jobMatchesCalendarImportArrival(job, row.arrivalWindowStart, row.arrivalWindowEnd);
+  }
+  if (calendarImportHasTimedArrival(job.arrivalWindowStart, job.arrivalWindowEnd)) return false;
+  return true;
+}
+
+export function calendarImportHasComparableAddress(hints: CalendarImportParsedHints): boolean {
+  return Boolean(hints.streetAddress?.trim());
+}
+
+function hubJobAddressForCalendarImport(
+  job: Job,
+  properties: Array<{ propertyId: string; streetAddress: string; city?: string; zip?: string; unit?: string }>,
+): Pick<Property, "streetAddress"> & Partial<Pick<Property, "unit" | "city" | "zip">> {
+  const property = properties.find((item) => item.propertyId === job.propertyId);
+  if (property) return property;
+  return {
+    streetAddress: job.snapshot.streetAddress,
+    unit: job.snapshot.unit,
+    city: job.snapshot.city,
+    zip: job.snapshot.zip,
+  };
+}
+
+/** True when the hub job property is the same place as the Gmail / Calendly address. */
+export function calendarImportJobAddressMatches(
+  job: Job,
+  properties: Array<{ propertyId: string; streetAddress: string; city?: string; zip?: string; unit?: string }>,
+  hints: CalendarImportParsedHints,
+): boolean {
+  if (!calendarImportHasComparableAddress(hints)) return true;
+  return propertyMatchesCalendarImportAddress(hubJobAddressForCalendarImport(job, properties), hints);
+}
+
+function calendarImportPropertySuggestionFitsImport(
+  properties: Array<{ propertyId: string; streetAddress: string; city?: string; zip?: string; unit?: string }>,
+  propertyId: string | undefined,
+  parsed: CalendarImportParsedHints,
+): boolean {
+  if (!propertyId) return false;
+  if (!calendarImportHasComparableAddress(parsed)) return true;
+  const property = properties.find((item) => item.propertyId === propertyId);
+  if (!property) return false;
+  return propertyMatchesCalendarImportAddress(property, parsed);
+}
+
+function findCalendarImportVisitJob(
   jobs: Job[],
   customers: Customer[],
   properties: Array<{ propertyId: string; customerId: string; streetAddress: string; marketId?: unknown }>,
@@ -873,16 +956,81 @@ export function findExistingJobForCalendarImport(
   const onDate = active.filter((job) => job.customerId === customerId && job.date === input.serviceDate);
   if (onDate.length === 0) return undefined;
 
-  if (propertyId) {
-    const byProperty = onDate.find((job) => job.propertyId === propertyId);
-    if (byProperty) return byProperty;
+  let candidates = onDate;
+  if (propertyId && calendarImportPropertySuggestionFitsImport(properties, propertyId, input.parsed)) {
+    const byProperty = onDate.filter((job) => job.propertyId === propertyId);
+    if (byProperty.length > 0) candidates = byProperty;
   }
-  return onDate[0];
+
+  const importHasArrival = calendarImportHasTimedArrival(input.arrivalWindowStart, input.arrivalWindowEnd);
+  if (importHasArrival) {
+    const byArrival = candidates.filter((job) =>
+      jobMatchesCalendarImportArrival(job, input.arrivalWindowStart, input.arrivalWindowEnd),
+    );
+    if (byArrival.length === 1) return byArrival[0];
+    if (byArrival.length > 1) return byArrival[0];
+    return undefined;
+  }
+
+  if (candidates.length === 1) return candidates[0];
+  return undefined;
 }
 
-function normalizeCalendarImportArrival(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed || undefined;
+/** Hub job for the same customer visit (customer/date/time), ignoring address. */
+export function findCalendarImportVisitJobForImport(
+  jobs: Job[],
+  customers: Customer[],
+  properties: Array<{ propertyId: string; customerId: string; streetAddress: string; marketId?: unknown }>,
+  input: CalendarImportJobMatchInput,
+): Job | undefined {
+  return findCalendarImportVisitJob(jobs, customers, properties, input);
+}
+
+export type CalendarImportScheduleMatch =
+  | { kind: "none" }
+  | { kind: "on_schedule"; jobId: string }
+  | { kind: "visit_address_mismatch"; jobId: string };
+
+export function resolveCalendarImportScheduleMatch(
+  jobs: Job[],
+  customers: Customer[],
+  properties: Array<{ propertyId: string; customerId: string; streetAddress: string; marketId?: unknown }>,
+  row: CalendarImport,
+): CalendarImportScheduleMatch {
+  const visitJob = findCalendarImportVisitJob(jobs, customers, properties, {
+    googleCalendarEventId: row.googleCalendarEventId,
+    serviceDate: row.serviceDate,
+    suggestedCustomerId: row.suggestedCustomerId,
+    suggestedPropertyId: row.suggestedPropertyId,
+    arrivalWindowStart: row.arrivalWindowStart,
+    arrivalWindowEnd: row.arrivalWindowEnd,
+    parsed: row.parsed,
+  });
+  if (!visitJob) return { kind: "none" };
+  const eventId = row.googleCalendarEventId?.trim();
+  if (eventId && visitJob.googleCalendarEventId === eventId) {
+    return { kind: "on_schedule", jobId: visitJob.jobId };
+  }
+  if (!calendarImportHasComparableAddress(row.parsed)) {
+    return { kind: "on_schedule", jobId: visitJob.jobId };
+  }
+  if (calendarImportJobAddressMatches(visitJob, properties, row.parsed)) {
+    return { kind: "on_schedule", jobId: visitJob.jobId };
+  }
+  return { kind: "visit_address_mismatch", jobId: visitJob.jobId };
+}
+
+/** A cleaning already on the schedule for this calendar event or customer/date/address. */
+export function findExistingJobForCalendarImport(
+  jobs: Job[],
+  customers: Customer[],
+  properties: Array<{ propertyId: string; customerId: string; streetAddress: string; marketId?: unknown }>,
+  input: CalendarImportJobMatchInput,
+): Job | undefined {
+  const visit = findCalendarImportVisitJob(jobs, customers, properties, input);
+  if (!visit) return undefined;
+  if (calendarImportJobAddressMatches(visit, properties, input.parsed)) return visit;
+  return undefined;
 }
 
 /** True when Google event date/arrival differs from the import row and/or the linked hub job. */
@@ -961,11 +1109,13 @@ export function calendarImportActiveJobForCancelRow(
     const byEvent = hub.jobs.find((item) => item.googleCalendarEventId === eventId && item.status !== "CANCELED");
     if (byEvent) return byEvent;
   }
-  const matched = findExistingJobForCalendarImport(hub.jobs, hub.customers, hub.properties, {
+  const matched = findCalendarImportVisitJobForImport(hub.jobs, hub.customers, hub.properties, {
     googleCalendarEventId: row.googleCalendarEventId,
     serviceDate: row.serviceDate,
     suggestedCustomerId: row.suggestedCustomerId,
     suggestedPropertyId: row.suggestedPropertyId,
+    arrivalWindowStart: row.arrivalWindowStart,
+    arrivalWindowEnd: row.arrivalWindowEnd,
     parsed: row.parsed,
   });
   if (matched && matched.status !== "CANCELED") return matched;
@@ -1014,17 +1164,8 @@ export function resolveCalendarImportMatchedJobId(
   properties: Array<{ propertyId: string; customerId: string; streetAddress: string; marketId?: unknown }>,
   row: CalendarImport,
 ): string | undefined {
-  if (row.matchedJobId) {
-    const linked = jobs.find((job) => job.jobId === row.matchedJobId && job.status !== "CANCELED");
-    if (linked) return linked.jobId;
-  }
-  return findExistingJobForCalendarImport(jobs, customers, properties, {
-    googleCalendarEventId: row.googleCalendarEventId,
-    serviceDate: row.serviceDate,
-    suggestedCustomerId: row.suggestedCustomerId,
-    suggestedPropertyId: row.suggestedPropertyId,
-    parsed: row.parsed,
-  })?.jobId;
+  const match = resolveCalendarImportScheduleMatch(jobs, customers, properties, row);
+  return match.kind === "on_schedule" ? match.jobId : undefined;
 }
 
 export function suggestCustomerForCalendarImport(
@@ -1066,6 +1207,7 @@ function matchPropertyForHints(
   if (parsed.streetAddress?.trim()) {
     const match = mine.find((property) => propertyMatchesCalendarImportAddress(property, parsed));
     if (match) return match;
+    return undefined;
   }
   const market = parsed.marketId && isMarketId(parsed.marketId) ? parsed.marketId : undefined;
   if (market) {
