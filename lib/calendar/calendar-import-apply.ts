@@ -40,7 +40,9 @@ import {
   cancelJobFromCalendarSync,
   importRowMissingFromGoogleShouldCancelJob,
   seenGoogleEventIdsContains,
+  supplementSeenGoogleEventIdsFromLinkedJobs,
 } from "./calendar-import-sync-side-effects.ts";
+import { googleCalendarEventIdsMatch } from "./google-calendar-event-match.ts";
 import { applyApprovedImportScheduleFromGoogle } from "./calendar-import-apply-reschedule.ts";
 
 export type CalendarImportApplyResult = {
@@ -134,8 +136,7 @@ export async function applyCalendarEventsToHub(
     const rescheduleStale = calendarImportRescheduleStaleImportRow(workingHub, existing);
     const jobId = rescheduleStale
       ? undefined
-      : (calendarImportActiveJobForStrictEventLink(workingHub, existing)?.jobId ??
-        calendarImportLinkedJobId(workingHub, existing));
+      : calendarImportActiveJobForStrictEventLink(workingHub, existing)?.jobId;
     if (existing.status === "WITHDRAWN" && !jobId) {
       return;
     }
@@ -182,7 +183,8 @@ export async function applyCalendarEventsToHub(
       } else {
         const job = workingHub.jobs.find(
           (item) =>
-            item.googleCalendarEventId === eventId &&
+            item.googleCalendarEventId &&
+            googleCalendarEventIdsMatch(item.googleCalendarEventId, eventId) &&
             item.status !== "CANCELED" &&
             item.date >= today &&
             item.date <= horizonEnd,
@@ -339,6 +341,8 @@ export async function applyCalendarEventsToHub(
 
   sweepRescheduleGhostImports();
   applyImportDedupe();
+
+  await supplementSeenGoogleEventIdsFromLinkedJobs(workingHub, seenGoogleEventIds, today, horizonEnd);
 
   for (const row of nextImports) {
     if (row.status === "WITHDRAWN") continue;

@@ -7,7 +7,7 @@ import {
 } from "@/lib/calendar/google-calendar-webhook";
 import { readGoogleCalendarWatchState } from "@/lib/data/google-calendar-watch-state";
 import { dynamoConfigured } from "@/lib/data/repository";
-import { loadAdminHubSlices } from "@/lib/data/load-admin-hub";
+import { loadHubForCalendarImportApply } from "@/lib/calendar/calendar-import-hub-load";
 import { googleCalendarImportConfigured, googleCalendarWatchChannelToken } from "@/lib/services/google-calendar-client";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const hub = await loadAdminHubSlices({ persistReconciliation: false });
+    const hub = await loadHubForCalendarImportApply();
     const result = await runCalendarImportCron(hub);
     console.info("[gcal:webhook] import", {
       messageNumber: headers.messageNumber,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { runCalendarImportCron } from "@/lib/calendar/calendar-import-cron";
 import { dynamoConfigured } from "@/lib/data/repository";
-import { loadAdminHubSlices } from "@/lib/data/load-admin-hub";
+import { loadHubForCalendarImportApply } from "@/lib/calendar/calendar-import-hub-load";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, ran: false, message: "DynamoDB is not configured." });
   }
   try {
-    const hub = await loadAdminHubSlices({ persistReconciliation: false });
+    const hub = await loadHubForCalendarImportApply();
     const result = await runCalendarImportCron(hub);
     console.info("[cron:calendar-import]", result);
     return NextResponse.json({ ok: true, ...result });

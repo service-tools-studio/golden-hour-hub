@@ -12,48 +12,13 @@ import {
 } from "@/lib/calendar/resolve-google-calendar-event";
 import { CALENDAR_IMPORT_HORIZON_DAYS } from "@/lib/domain/calendar-import";
 import { addDays, todayInBusinessZone, zonedToUtc } from "@/lib/domain/time";
-import { queryApprovedCalendarImportsInRange } from "@/lib/data/calendar-import-queries";
+import { loadHubForCalendarImportApply } from "@/lib/calendar/calendar-import-hub-load";
 import { dynamoConfigured } from "@/lib/data/repository";
-import { loadAdminHubJobPartitionSlice, loadAdminHubSlices } from "@/lib/data/load-admin-hub";
 import { persistHubDiffMutation } from "@/lib/data/persist-hub-diff-mutation";
-import { readCalendarImport } from "@/lib/data/items";
 import { linkCalendarEventToJobOnHub } from "@/lib/hub/calendar-sync-link-mutations";
 import type { HubData } from "@/lib/mock/seed";
 import { googleCalendarImportConfigured, listGoogleCalendarEventsInRange } from "@/lib/services/google-calendar-client";
 import type { CalendarImportActionResult } from "./calendar-import";
-
-function mergeHubWithJobSlice(base: HubData, slice: HubData, jobId: string): HubData {
-  const job = slice.jobs.find((item) => item.jobId === jobId);
-  if (!job) return base;
-  const hasJob = base.jobs.some((item) => item.jobId === jobId);
-  const assignments = slice.assignments.filter((item) => item.jobId === jobId);
-  return {
-    ...base,
-    jobs: hasJob ? base.jobs : [...base.jobs, job],
-    assignments: [
-      ...base.assignments.filter((item) => item.jobId !== jobId),
-      ...assignments,
-    ],
-  };
-}
-
-async function loadHubForSyncLink(ensureJobId?: string): Promise<HubData> {
-  const hub = await loadAdminHubSlices({ persistReconciliation: false });
-  const today = hub.today || todayInBusinessZone();
-  const end = addDays(today, CALENDAR_IMPORT_HORIZON_DAYS);
-  const approvedItems = await queryApprovedCalendarImportsInRange(today, end);
-  const approved = approvedItems.map((item) => readCalendarImport(item));
-  const byId = new Map<string, (typeof hub.calendarImports)[number]>();
-  for (const row of hub.calendarImports) byId.set(row.importId, row);
-  for (const row of approved) byId.set(row.importId, row);
-  let merged: HubData = { ...hub, calendarImports: [...byId.values()] };
-  const jobId = ensureJobId?.trim();
-  if (jobId && !merged.jobs.some((item) => item.jobId === jobId)) {
-    const slice = await loadAdminHubJobPartitionSlice(jobId);
-    merged = mergeHubWithJobSlice(merged, slice, jobId);
-  }
-  return merged;
-}
 
 export type LoadSyncLinkWorkspaceResult =
   | { ok: true; workspace: SyncLinkWorkspace }
@@ -68,7 +33,7 @@ export async function loadSyncLinkWorkspaceAction(
     if (!googleCalendarImportConfigured()) {
       return { ok: false, message: "Google Calendar import is not configured." };
     }
-    const hub = await loadHubForSyncLink();
+    const hub = await loadHubForCalendarImportApply();
     const today = hub.today || todayInBusinessZone();
     const endDate = addDays(today, CALENDAR_IMPORT_HORIZON_DAYS);
     const timeMinIso = zonedToUtc(today, "00:00").toISOString();
@@ -96,7 +61,7 @@ export async function linkCalendarSyncAction(
     if (!googleCalendarImportConfigured()) {
       return { ok: false, message: "Google Calendar import is not configured." };
     }
-    const hub = await loadHubForSyncLink(jobId);
+    const hub = await loadHubForCalendarImportApply([jobId]);
     const today = hub.today || todayInBusinessZone();
     const endDate = addDays(today, CALENDAR_IMPORT_HORIZON_DAYS);
     const timeMinIso = zonedToUtc(today, "00:00").toISOString();
@@ -117,7 +82,7 @@ export async function linkCalendarSyncAction(
     }
 
     const saved = await persistHubDiffMutation(
-      () => loadHubForSyncLink(jobId),
+      () => loadHubForCalendarImportApply([jobId]),
       (before) => {
         const outcome = linkCalendarEventToJobOnHub(before, event, {
           jobId,

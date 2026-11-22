@@ -16,7 +16,7 @@ Hub stores **one staging row per Google event id** (`calimp-gcal-…` derived fr
 - When an **approved** import’s date or arrival changes and the linked job still has **invited or confirmed** cleaners, Hub updates assignment dates, sets **needs re-invite** on those rows, and the linked job shows under **Jobs needing attention** on the dashboard (re-invite cleaners flag) until you text staff from the job.
 - Marks pending imports **withdrawn** when an event is cancelled or deleted from Google.
 - Treats Calendly-style **`Canceled:`** / **`Cancelled:`** event titles as cancellations even when Google still returns `status: confirmed`.
-- Loads **approved** import rows from Dynamo during sync (they are not kept in the admin hub slice) so deleted events still cancel linked jobs.
+- Loads **approved** import rows and their linked job partitions into the sync hub (the dashboard slice alone is not enough), then verifies linked event ids against Google before canceling cleanings.
 - For **approved** imports, moves the linked Hub job to the new date/time or **cancels** it when the calendar event is removed or cancelled; sets import status to **`CALENDAR_CANCELED`** for dashboard follow-up (notify cleaners, then dismiss). Job cancel on removal uses the job’s current `googleCalendarEventId` (not fuzzy customer matching on stale import rows).
 - **Reschedule** (same linked job, new date) must not show a cancel card on the **old** import date — stale `CALENDAR_CANCELED` / pending rows are withdrawn quietly when the hub job is still scheduled on a different day.
 

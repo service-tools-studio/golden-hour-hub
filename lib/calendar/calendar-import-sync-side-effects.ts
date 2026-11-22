@@ -5,6 +5,7 @@ import {
 import { addDays } from "../domain/time.ts";
 import type { CalendarImport, Job } from "../domain/types.ts";
 import type { HubData } from "../mock/seed.ts";
+import { calendarEventIndicatesHubCancel } from "../domain/calendar-import.ts";
 import { googleCalendarEventIdsMatch } from "./google-calendar-event-match.ts";
 
 export const CALENDAR_SYNC_ACTOR = "calendar-sync";
@@ -28,6 +29,28 @@ export function seenGoogleEventIdsContains(seenGoogleEventIds: Set<string>, even
  * When an import row's stored event id is gone from Google, cancel the hub job only if that job
  * still points at the same missing id (not when the job was relinked to a live event).
  */
+/** When list sync omits an id, verify linked jobs before treating the event as deleted (Jim link + Check Gmail). */
+export async function supplementSeenGoogleEventIdsFromLinkedJobs(
+  hub: HubData,
+  seenGoogleEventIds: Set<string>,
+  today: string,
+  horizonEnd: string,
+): Promise<void> {
+  const { getGoogleCalendarEvent, googleCalendarImportConfigured } = await import("../services/google-calendar-client.ts");
+  if (!googleCalendarImportConfigured()) return;
+  for (const job of hub.jobs) {
+    const eventId = job.googleCalendarEventId?.trim();
+    if (!eventId || job.status === "CANCELED") continue;
+    if (job.date < today || job.date > horizonEnd) continue;
+    if (seenGoogleEventIdsContains(seenGoogleEventIds, eventId)) continue;
+    const event = await getGoogleCalendarEvent(eventId);
+    const fetchedId = event?.id?.trim();
+    if (!fetchedId) continue;
+    if (event && calendarEventIndicatesHubCancel(event)) continue;
+    seenGoogleEventIds.add(fetchedId);
+  }
+}
+
 export function importRowMissingFromGoogleShouldCancelJob(
   hub: HubData,
   row: CalendarImport,

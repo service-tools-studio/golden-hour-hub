@@ -5,6 +5,7 @@ import { runCalendarImportCron } from "@/lib/calendar/calendar-import-cron";
 import { calendarImportCustomerPrefillFromRow } from "@/lib/domain/calendar-import";
 import type { CalendarImportParsedHints } from "@/lib/domain/types";
 import { dynamoConfigured, readHubRevision } from "@/lib/data/repository";
+import { loadHubForCalendarImportApply } from "@/lib/calendar/calendar-import-hub-load";
 import { loadAdminHubCalendarImportSlice, loadAdminHubSlices } from "@/lib/data/load-admin-hub";
 import { googleCalendarImportConfigured } from "@/lib/services/google-calendar-client";
 import { persistHubDiffMutation } from "@/lib/data/persist-hub-diff-mutation";
@@ -54,7 +55,7 @@ export async function syncCalendarImportsAction(): Promise<CalendarImportActionR
     if (!googleCalendarImportConfigured()) {
       return { ok: false, message: "Google Calendar import is not configured." };
     }
-    const hub = await loadAdminHubSlices({ persistReconciliation: true });
+    const hub = await loadHubForCalendarImportApply();
     const result = await runCalendarImportCron(hub, { notifyJasminOnNewImports: false });
     if (!result.ran) {
       return { ok: false, message: formatCalendarSyncMessage(result) };
