@@ -1,5 +1,11 @@
 import "server-only";
 
+import {
+  filterE2eGoogleEventsInRange,
+  readE2eGoogleCalendarFixtures,
+} from "../calendar/e2e-google-calendar-fixtures.ts";
+import { e2eGoogleCalendarStubEnabled } from "../e2e/e2e-route-auth.ts";
+
 export type GoogleCalendarEvent = {
   id: string;
   status?: string;
@@ -14,6 +20,7 @@ export type GoogleCalendarEvent = {
 };
 
 export function googleCalendarImportConfigured(): boolean {
+  if (e2eGoogleCalendarStubEnabled()) return true;
   if (process.env.GOOGLE_CALENDAR_ENABLED !== "true") return false;
   const calendarId = process.env.GOOGLE_CALENDAR_ID?.trim();
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
@@ -122,6 +129,10 @@ export async function listGoogleCalendarEventsInRange(input: {
   timeMinIso: string;
   timeMaxIso: string;
 }): Promise<GoogleCalendarEvent[]> {
+  if (e2eGoogleCalendarStubEnabled()) {
+    const fixtures = await readE2eGoogleCalendarFixtures();
+    return filterE2eGoogleEventsInRange(fixtures, input.timeMinIso, input.timeMaxIso);
+  }
   if (!googleCalendarImportConfigured()) return [];
   const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID!.trim());
   const accessToken = await fetchAccessToken();
@@ -174,9 +185,14 @@ async function fetchGoogleCalendarEventByPath(eventPathSegment: string): Promise
 
 /** Fetch one calendar event by id (works even when it falls outside a list window). */
 export async function getGoogleCalendarEvent(eventId: string): Promise<GoogleCalendarEvent | null> {
-  if (!googleCalendarImportConfigured()) return null;
   const trimmed = eventId.trim();
   if (!trimmed) return null;
+  if (e2eGoogleCalendarStubEnabled()) {
+    const fixtures = await readE2eGoogleCalendarFixtures();
+    const match = fixtures.find((item) => item.id === trimmed);
+    if (match) return match;
+  }
+  if (!googleCalendarImportConfigured()) return null;
   const encoded = encodeURIComponent(trimmed);
   const fetched = await fetchGoogleCalendarEventByPath(encoded);
   if (fetched) return fetched;

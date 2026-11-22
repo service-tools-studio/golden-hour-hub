@@ -68,6 +68,7 @@ export type JobProfileRow = {
   jobId?: string;
   date?: string;
   status?: string;
+  googleCalendarEventId?: string;
   gsi1pk?: string;
   gsi2pk?: string;
   draftCleanerIds?: string[];
@@ -216,6 +217,28 @@ export async function waitForSavedJobId(page: Page): Promise<string> {
   const jobId = jobIdFromPathname(page.url());
   if (!jobId) throw new Error(`No saved job id in URL (URL: ${page.url()})`);
   return jobId;
+}
+
+export async function expectJobGoogleEventInDynamo(jobId: string, googleCalendarEventId: string): Promise<void> {
+  const profile = await getJobProfileFromDynamo(jobId);
+  if (!profile?.entity || profile.entity !== "job") {
+    throw new Error(`JOB#${jobId} PROFILE missing in Dynamo.`);
+  }
+  if (profile.googleCalendarEventId !== googleCalendarEventId) {
+    throw new Error(
+      `Dynamo job ${jobId} googleCalendarEventId is ${String(profile.googleCalendarEventId)}, expected ${googleCalendarEventId}.`,
+    );
+  }
+}
+
+export async function expectJobStatusInDynamo(jobId: string, status: string): Promise<void> {
+  const profile = await getJobProfileFromDynamo(jobId);
+  if (!profile?.entity || profile.entity !== "job") {
+    throw new Error(`JOB#${jobId} PROFILE missing in Dynamo.`);
+  }
+  if (profile.status !== status) {
+    throw new Error(`Dynamo job ${jobId} status is ${String(profile.status)}, expected ${status}.`);
+  }
 }
 
 export async function expectJobPersistedInDynamo(

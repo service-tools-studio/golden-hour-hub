@@ -59,7 +59,12 @@ export async function approveImportOnReviewPage(page: Page, durationLabel = "3 h
 
 export async function expectCalendarImportInDynamo(
   importId: string,
-  expected: { status: string; approvedJobId?: string; googleCalendarEventId?: string },
+  expected: {
+    status: string;
+    approvedJobId?: string;
+    googleCalendarEventId?: string;
+    rejectedReason?: string;
+  },
 ): Promise<void> {
   const row = await getCalendarImportFromDynamo(importId);
   if (!row) throw new Error(`CAL_IMPORT#${importId} PROFILE missing in Dynamo.`);
@@ -77,6 +82,11 @@ export async function expectCalendarImportInDynamo(
   ) {
     throw new Error(
       `Dynamo googleCalendarEventId is ${String(row.googleCalendarEventId)}, expected ${expected.googleCalendarEventId}.`,
+    );
+  }
+  if (expected.rejectedReason !== undefined && row.rejectedReason !== expected.rejectedReason) {
+    throw new Error(
+      `Dynamo rejectedReason is ${String(row.rejectedReason)}, expected ${expected.rejectedReason}.`,
     );
   }
 }

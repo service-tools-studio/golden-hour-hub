@@ -64,6 +64,10 @@ npm run dynamo:clear-calendar-sync -- --keep-job-links   # imports/watch only
 
 Then use **Check Gmail** on the admin dashboard to pull events again.
 
+### E2E (Playwright, not production)
+
+When `E2E_PREVIEW_AUTH=true`, Hub stores stub Google events on `HUB` / `E2E_GCAL_FIXTURES` and `listGoogleCalendarEventsInRange` reads that JSON instead of calling Google. Guarded routes `POST /api/e2e/calendar-fixtures` and `POST /api/e2e/calendar-sync` (header `X-E2E-Secret` / `E2E_CALENDAR_SECRET`) drive sync apply in CI. See `e2e/calendar-sync.spec.ts` and [README.md](../README.md).
+
 ### Link existing cleanings (`/admin/sync-link`)
 
 When a Hub job was created manually (or an import was dismissed) but the Gmail event still exists, use **Link Gmail ↔ Hub** on the dashboard. The page lists suggested matches, unlinked Gmail events, and unlinked cleanings; **Link** sets `googleCalendarEventId` and marks the import **APPROVED** so future syncs move/cancel the job. Optionally **align hub date/time from Gmail** when linking.

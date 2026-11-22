@@ -11,6 +11,10 @@ export const e2eCalendarImportApproveDate = addDays(todayInBusinessZone(), 14);
 export const e2eCalendarImportDismissDate = addDays(todayInBusinessZone(), 15);
 export const e2eCalendarImportFreshDate = addDays(todayInBusinessZone(), 16);
 export const e2eCalendarImportReturningDate = addDays(todayInBusinessZone(), 17);
+export const e2eCalendarSyncRecreateDate = addDays(todayInBusinessZone(), 18);
+export const e2eCalendarSyncLinkDate = addDays(todayInBusinessZone(), 19);
+export const e2eCalendarSyncWithdrawDate = addDays(todayInBusinessZone(), 20);
+export const e2eCalendarSyncWithdrawQuietDate = addDays(todayInBusinessZone(), 21);
 
 /** Spread staffing specs so Ada is not double-booked at the same clock time. Keep in sync with `scripts/seed-e2e.ts` availability. */
 export const e2eStaffingDayOffsets = {

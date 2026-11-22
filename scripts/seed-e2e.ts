@@ -222,6 +222,18 @@ function pendingCalendarImport(
   };
 }
 
+function seededCalendarImport(
+  row: Parameters<typeof pendingCalendarImport>[0],
+  status: CalendarImport["status"],
+  patch: Partial<CalendarImport> = {},
+): CalendarImport {
+  return {
+    ...pendingCalendarImport(row),
+    status,
+    ...patch,
+  };
+}
+
 function hubJob(
   jobId: string,
   date: string,
@@ -230,6 +242,7 @@ function hubJob(
   cust: Customer,
   prop: Property,
   status: Job["status"],
+  patch: Partial<Job> = {},
 ): Job {
   return {
     jobId,
@@ -249,6 +262,7 @@ function hubJob(
     createdBy: ACTOR,
     updatedAt: STAMP,
     updatedBy: ACTOR,
+    ...patch,
   };
 }
 
@@ -314,6 +328,45 @@ export async function seedE2eHub(): Promise<void> {
   const importDismissDate = addDays(today, 15);
   const importFreshDate = addDays(today, 16);
   const importReturningDate = addDays(today, 17);
+  const importSyncRecreateDate = addDays(today, 18);
+  const importSyncLinkDate = addDays(today, 19);
+  const importSyncWithdrawDate = addDays(today, 20);
+  const importSyncWithdrawQuietDate = addDays(today, 21);
+
+  const syncCustomer = customer(E2E.customerSyncRecreate, "E2E", "Recreate", "5035550177");
+  const quietCustomer = customer(E2E.customerSyncWithdrawQuiet, "E2E", "WithdrawQuiet", "5035550188");
+  const quietProperty = property(
+    E2E.propertySyncWithdrawQuiet,
+    E2E.customerSyncWithdrawQuiet,
+    "portland",
+    "Portland",
+    "OR",
+    "97208",
+  );
+  const syncProperty = {
+    ...property(E2E.propertySyncRecreate, E2E.customerSyncRecreate, "portland", "Portland", "OR", "97207"),
+    streetAddress: "300 E2E Sync Ln",
+    bedrooms: 3,
+    bathrooms: 2,
+    squareFeet: 1500,
+  };
+  const syncImportRaw = {
+    title: "E2E Recreate",
+    description: "3 bed\n2 bath\n1,500 sq ft",
+    location: "300 E2E Sync Ln, Portland, OR 97207, United States",
+  };
+  const syncImportParsed = {
+    suggestedFirstName: "E2E",
+    suggestedLastName: "Recreate",
+    streetAddress: "300 E2E Sync Ln",
+    city: "Portland",
+    state: "OR",
+    zip: "97207",
+    marketId: "portland" as const,
+    bedrooms: 3,
+    bathrooms: 2,
+    squareFeet: 1500,
+  };
 
   const hub = {
     ...emptyHub(today),
@@ -321,8 +374,8 @@ export async function seedE2eHub(): Promise<void> {
       cleaner(E2E.cleanerPortland, "Ada", "E2E", "portland", "5035550201"),
       cleaner(E2E.cleanerPhoenix, "Rio", "E2E", "phoenix", "6025550202"),
     ],
-    customers: [pdxCustomer, phxCustomer, freshCustomer, returningCustomer],
-    properties: [pdxProperty, phxProperty, freshProperty, returningProperty],
+    customers: [pdxCustomer, phxCustomer, freshCustomer, returningCustomer, syncCustomer, quietCustomer],
+    properties: [pdxProperty, phxProperty, freshProperty, returningProperty, syncProperty, quietProperty],
     jobs: [
       hubJob(
         E2E.jobReturningScheduled,
@@ -336,6 +389,64 @@ export async function seedE2eHub(): Promise<void> {
       draftJob(E2E.jobPortland, jobDate, E2E.customerPortland, E2E.propertyPortland, pdxCustomer, pdxProperty),
       draftJob(E2E.jobPhoenix, jobDate, E2E.customerPhoenix, E2E.propertyPhoenix, phxCustomer, phxProperty),
       draftJob(E2E.jobPhoenixAssign, jobDate, E2E.customerPhoenix, E2E.propertyPhoenix, phxCustomer, phxProperty),
+      hubJob(
+        E2E.jobSyncLinked,
+        importSyncRecreateDate,
+        E2E.customerSyncRecreate,
+        E2E.propertySyncRecreate,
+        syncCustomer,
+        syncProperty,
+        "SCHEDULED",
+        {
+          googleCalendarEventId: E2E.gcalEventSyncLive,
+          serviceType: "RECURRING",
+          arrivalWindowStart: "15:00",
+          arrivalWindowEnd: "15:00",
+        },
+      ),
+      hubJob(
+        E2E.jobSyncWithdraw,
+        importSyncWithdrawDate,
+        E2E.customerSyncRecreate,
+        E2E.propertySyncRecreate,
+        syncCustomer,
+        syncProperty,
+        "SCHEDULED",
+        {
+          googleCalendarEventId: E2E.gcalEventSyncWithdraw,
+          serviceType: "RECURRING",
+          arrivalWindowStart: "11:00",
+          arrivalWindowEnd: "11:00",
+        },
+      ),
+      hubJob(
+        E2E.jobSyncLinkTarget,
+        importSyncLinkDate,
+        E2E.customerSyncRecreate,
+        E2E.propertySyncRecreate,
+        syncCustomer,
+        syncProperty,
+        "DRAFT",
+        {
+          serviceType: "RECURRING",
+          arrivalWindowStart: "15:00",
+          arrivalWindowEnd: "15:00",
+        },
+      ),
+      hubJob(
+        E2E.jobSyncWithdrawQuiet,
+        importSyncWithdrawQuietDate,
+        E2E.customerSyncWithdrawQuiet,
+        E2E.propertySyncWithdrawQuiet,
+        quietCustomer,
+        quietProperty,
+        "DRAFT",
+        {
+          serviceType: "DEEP_CLEAN",
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+        },
+      ),
     ],
     availability: availabilityDates.flatMap((date) => [
       availabilityWindow(`e2e-av-pdx-${date}`, E2E.cleanerPortland, date),
@@ -431,6 +542,134 @@ export async function seedE2eHub(): Promise<void> {
           bathrooms: 2,
           squareFeet: 1400,
         },
+      }),
+      seededCalendarImport(
+        {
+          importId: E2E.calImportSyncLive,
+          googleCalendarEventId: E2E.gcalEventSyncLive,
+          serviceDate: importSyncRecreateDate,
+          marketId: "portland",
+          suggestedCustomerId: E2E.customerSyncRecreate,
+          suggestedPropertyId: E2E.propertySyncRecreate,
+          raw: syncImportRaw,
+          parsed: syncImportParsed,
+          serviceType: "RECURRING",
+          arrivalWindowStart: "15:00",
+          arrivalWindowEnd: "15:00",
+        },
+        "APPROVED",
+        { approvedJobId: E2E.jobSyncLinked },
+      ),
+      seededCalendarImport(
+        {
+          importId: E2E.calImportSyncGhost,
+          googleCalendarEventId: E2E.gcalEventSyncGhost,
+          serviceDate: importSyncRecreateDate,
+          marketId: "portland",
+          suggestedCustomerId: E2E.customerSyncRecreate,
+          suggestedPropertyId: E2E.propertySyncRecreate,
+          raw: syncImportRaw,
+          parsed: syncImportParsed,
+          serviceType: "RECURRING",
+          arrivalWindowStart: "15:00",
+          arrivalWindowEnd: "15:00",
+        },
+        "WITHDRAWN",
+      ),
+      seededCalendarImport(
+        {
+          importId: E2E.calImportSyncGhostBad,
+          googleCalendarEventId: E2E.gcalEventSyncGhostBad,
+          serviceDate: importSyncRecreateDate,
+          marketId: "portland",
+          suggestedCustomerId: E2E.customerSyncRecreate,
+          suggestedPropertyId: E2E.propertySyncRecreate,
+          raw: syncImportRaw,
+          parsed: syncImportParsed,
+          serviceType: "RECURRING",
+          arrivalWindowStart: "15:00",
+          arrivalWindowEnd: "15:00",
+        },
+        "WITHDRAWN",
+        { rejectedReason: "Dismissed after sync removal" },
+      ),
+      seededCalendarImport(
+        {
+          importId: E2E.calImportSyncStaleApproved,
+          googleCalendarEventId: E2E.gcalEventSyncStale,
+          serviceDate: importSyncRecreateDate,
+          marketId: "portland",
+          suggestedCustomerId: E2E.customerSyncRecreate,
+          suggestedPropertyId: E2E.propertySyncRecreate,
+          raw: syncImportRaw,
+          parsed: syncImportParsed,
+          serviceType: "RECURRING",
+          arrivalWindowStart: "15:00",
+          arrivalWindowEnd: "15:00",
+        },
+        "APPROVED",
+        { approvedJobId: E2E.jobSyncLinked },
+      ),
+      seededCalendarImport(
+        {
+          importId: E2E.calImportSyncWithdrawQuiet,
+          googleCalendarEventId: E2E.gcalEventSyncWithdrawQuiet,
+          serviceDate: importSyncWithdrawQuietDate,
+          marketId: "portland",
+          suggestedCustomerId: E2E.customerSyncWithdrawQuiet,
+          suggestedPropertyId: E2E.propertySyncWithdrawQuiet,
+          raw: {
+            title: "E2E Withdraw Quiet",
+            description: "2 bed\n1 bath\n1,200 sq ft",
+            location: "400 E2E St, Portland, OR 97208, United States",
+          },
+          parsed: {
+            suggestedFirstName: "E2E",
+            suggestedLastName: "WithdrawQuiet",
+            streetAddress: "400 E2E St",
+            city: "Portland",
+            state: "OR",
+            zip: "97208",
+            marketId: "portland",
+            bedrooms: 2,
+            bathrooms: 1,
+            squareFeet: 1200,
+          },
+          arrivalWindowStart: "09:00",
+          arrivalWindowEnd: "09:00",
+        },
+        "APPROVED",
+        { approvedJobId: E2E.jobSyncWithdrawQuiet },
+      ),
+      seededCalendarImport(
+        {
+          importId: E2E.calImportSyncWithdraw,
+          googleCalendarEventId: E2E.gcalEventSyncWithdraw,
+          serviceDate: importSyncWithdrawDate,
+          marketId: "portland",
+          suggestedCustomerId: E2E.customerSyncRecreate,
+          suggestedPropertyId: E2E.propertySyncRecreate,
+          raw: { ...syncImportRaw, title: "E2E Sync Withdraw" },
+          parsed: syncImportParsed,
+          serviceType: "RECURRING",
+          arrivalWindowStart: "11:00",
+          arrivalWindowEnd: "11:00",
+        },
+        "APPROVED",
+        { approvedJobId: E2E.jobSyncWithdraw },
+      ),
+      pendingCalendarImport({
+        importId: E2E.calImportSyncLink,
+        googleCalendarEventId: E2E.gcalEventSyncLink,
+        serviceDate: importSyncLinkDate,
+        marketId: "portland",
+        suggestedCustomerId: E2E.customerSyncRecreate,
+        suggestedPropertyId: E2E.propertySyncRecreate,
+        raw: syncImportRaw,
+        parsed: syncImportParsed,
+        serviceType: "RECURRING",
+        arrivalWindowStart: "15:00",
+        arrivalWindowEnd: "15:00",
       }),
     ],
   };

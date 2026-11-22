@@ -6,6 +6,7 @@ const root = process.cwd();
 const e2ePort = process.env.E2E_PORT ?? "3099";
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${e2ePort}`;
 const e2eTable = process.env.E2E_DYNAMODB_TABLE_NAME ?? "GoldenHourHub-e2e";
+const e2eCalendarSecret = process.env.E2E_CALENDAR_SECRET ?? "e2e-calendar-fixtures";
 
 /** Test workers and Dynamo helpers must not read prod table name from `.env.local`. */
 process.env.E2E_DYNAMODB_TABLE_NAME = e2eTable;
@@ -53,6 +54,9 @@ export default defineConfig({
     baseURL,
     ...devices["Pixel 5"],
     trace: "on-first-retry",
+    extraHTTPHeaders: {
+      "X-E2E-Secret": e2eCalendarSecret,
+    },
   },
   globalSetup: "./e2e/global-setup.ts",
   webServer: {
@@ -64,6 +68,7 @@ export default defineConfig({
       ...fileEnv,
       ...process.env,
       E2E_PREVIEW_AUTH: "true",
+      E2E_CALENDAR_SECRET: e2eCalendarSecret,
       DYNAMODB_TABLE_NAME: e2eTable,
       SMS_PROVIDER: "mock",
       E2E_DYNAMODB_TABLE_NAME: e2eTable,

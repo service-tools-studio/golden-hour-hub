@@ -1,3 +1,5 @@
+import { calendarImportIdForGoogleEvent } from "../../lib/calendar/calendar-import-canonical.ts";
+
 /** Stable ids written by scripts/seed-e2e.ts — keep in sync with Playwright specs. */
 export const E2E = {
   cleanerPortland: "e2e-pdx-cleaner",
@@ -16,14 +18,39 @@ export const E2E = {
   customerFresh: "e2e-fresh-customer",
   propertyFresh: "e2e-fresh-property",
   /** Gmail / calendar import rows (see scripts/seed-e2e.ts). */
-  calImportPortlandApprove: "e2e-cal-pdx-approve",
-  calImportDismiss: "e2e-cal-dismiss",
-  calImportFresh: "e2e-cal-fresh",
-  calImportReturning: "e2e-cal-returning",
   gcalEventPortlandApprove: "e2e-gcal-pdx-approve",
   gcalEventDismiss: "e2e-gcal-dismiss",
   gcalEventFresh: "e2e-gcal-fresh",
   gcalEventReturning: "e2e-gcal-returning",
+  calImportPortlandApprove: calendarImportIdForGoogleEvent("e2e-gcal-pdx-approve"),
+  calImportDismiss: calendarImportIdForGoogleEvent("e2e-gcal-dismiss"),
+  calImportFresh: calendarImportIdForGoogleEvent("e2e-gcal-fresh"),
+  calImportReturning: calendarImportIdForGoogleEvent("e2e-gcal-returning"),
+  /** Gmail sync / recreate scenarios (scripts/seed-e2e.ts). */
+  customerSyncRecreate: "e2e-sync-customer",
+  customerSyncWithdrawQuiet: "e2e-sync-quiet-customer",
+  propertySyncWithdrawQuiet: "e2e-sync-quiet-property",
+  propertySyncRecreate: "e2e-sync-property",
+  jobSyncLinked: "e2e-sync-linked-job",
+  jobSyncLinkTarget: "e2e-sync-link-job",
+  jobSyncWithdraw: "e2e-sync-withdraw-job",
+  jobSyncWithdrawQuiet: "e2e-sync-withdraw-quiet-job",
+  gcalEventSyncLive: "e2e-gcal-sync-live",
+  gcalEventSyncGhost: "e2e-gcal-sync-dead",
+  gcalEventSyncGhostBad: "e2e-gcal-sync-dead-old",
+  gcalEventSyncStale: "e2e-gcal-sync-dead-stale",
+  gcalEventSyncLink: "e2e-gcal-sync-link",
+  gcalEventSyncNew: "e2e-gcal-sync-new",
+  gcalEventSyncWithdraw: "e2e-gcal-sync-withdraw",
+  gcalEventSyncWithdrawQuiet: "e2e-gcal-sync-withdraw-quiet",
+  calImportSyncLive: calendarImportIdForGoogleEvent("e2e-gcal-sync-live"),
+  calImportSyncGhost: calendarImportIdForGoogleEvent("e2e-gcal-sync-dead"),
+  calImportSyncGhostBad: calendarImportIdForGoogleEvent("e2e-gcal-sync-dead-old"),
+  calImportSyncStaleApproved: calendarImportIdForGoogleEvent("e2e-gcal-sync-dead-stale"),
+  calImportSyncLink: calendarImportIdForGoogleEvent("e2e-gcal-sync-link"),
+  calImportSyncNew: calendarImportIdForGoogleEvent("e2e-gcal-sync-new"),
+  calImportSyncWithdraw: calendarImportIdForGoogleEvent("e2e-gcal-sync-withdraw"),
+  calImportSyncWithdrawQuiet: calendarImportIdForGoogleEvent("e2e-gcal-sync-withdraw-quiet"),
   labels: {
     portlandCustomer: "E2E Portland",
     phoenixCustomer: "E2E Phoenix",
@@ -31,5 +58,6 @@ export const E2E = {
     phoenixCleaner: "Rio E2E",
     freshCustomer: "E2E Fresh",
     returningCustomer: "E2E Returning",
+    syncRecreateCustomer: "E2E Recreate",
   },
 } as const;
