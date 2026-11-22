@@ -241,7 +241,11 @@ export function SyncLinkView() {
                           <span className="font-semibold text-ink">{event.title}</span>
                           <span className="mt-0.5 block text-ink/65">
                             {event.serviceDate} · {event.arrivalLabel}
-                            {event.importStatus ? ` · import ${event.importStatus}` : ""}
+                            {event.importStatus === "APPROVED"
+                              ? " · approved in Hub — re-link to a cleaning"
+                              : event.importStatus
+                                ? ` · import ${event.importStatus}`
+                                : ""}
                           </span>
                         </button>
                       </li>

@@ -90,6 +90,13 @@ function pickGcalSnapshot(event: GoogleCalendarEvent): SyncLinkGcalEventSnapshot
   };
 }
 
+function activeJobId(hub: HubData, jobId: string | undefined): string | undefined {
+  const trimmed = jobId?.trim();
+  if (!trimmed) return undefined;
+  const job = hub.jobs.find((item) => item.jobId === trimmed && item.status !== "CANCELED");
+  return job?.jobId;
+}
+
 function linkedJobIdForEvent(
   hub: HubData,
   eventId: string,
@@ -105,7 +112,7 @@ function linkedJobIdForEvent(
       row.status === "APPROVED" &&
       row.approvedJobId,
   );
-  return approved?.approvedJobId;
+  return activeJobId(hub, approved?.approvedJobId);
 }
 
 function findJobMatchesForEvent(

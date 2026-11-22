@@ -55,7 +55,12 @@ export function linkCalendarEventToJobOnHub(
       row.approvedJobId !== jobId,
   );
   if (approvedElsewhere) {
-    return { ok: false, message: "This Gmail event is already approved on a different cleaning." };
+    const otherJob = hub.jobs.find(
+      (item) => item.jobId === approvedElsewhere.approvedJobId && item.status !== "CANCELED",
+    );
+    if (otherJob) {
+      return { ok: false, message: "This Gmail event is already approved on a different cleaning." };
+    }
   }
 
   if (job.googleCalendarEventId && job.googleCalendarEventId !== eventId) {
