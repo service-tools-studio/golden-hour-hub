@@ -157,7 +157,7 @@ export type {
 const STORAGE_KEY = "ghh-preview-v2";
 const SESSION_KEY = "ghh-session-v2";
 /** Background refresh while the tab is visible (admin ↔ cleaner, multiple tabs). */
-const REMOTE_SYNC_INTERVAL_MS = 20_000;
+const REMOTE_SYNC_INTERVAL_MS = 60_000;
 
 type HubState = HubData & {
   role: AppRole | null;

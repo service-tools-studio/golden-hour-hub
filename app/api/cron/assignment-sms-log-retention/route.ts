@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { purgeStaleAssignmentSmsLogs } from "@/lib/cleaner/assignment-sms-log-retention";
-import { dynamoConfigured, loadHub } from "@/lib/data/repository";
+import { dynamoConfigured } from "@/lib/data/repository";
+import { loadAdminHubSlices } from "@/lib/data/load-admin-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, deleted: 0, message: "DynamoDB is not configured." });
   }
   try {
-    const hub = await loadHub({ persistReconciliation: true });
+    const hub = await loadAdminHubSlices({ persistReconciliation: false });
     const deleted = await purgeStaleAssignmentSmsLogs(hub);
     return NextResponse.json({ ok: true, deleted });
   } catch (error) {

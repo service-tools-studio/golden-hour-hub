@@ -66,8 +66,8 @@ describe("googleCalendarWebhookAuthorized", () => {
 });
 
 describe("googleCalendarWebhookShouldImport", () => {
-  it("imports on sync, exists, and not_exists", () => {
-    assert.equal(googleCalendarWebhookShouldImport("sync"), true);
+  it("imports on exists and not_exists only", () => {
+    assert.equal(googleCalendarWebhookShouldImport("sync"), false);
     assert.equal(googleCalendarWebhookShouldImport("exists"), true);
     assert.equal(googleCalendarWebhookShouldImport("not_exists"), true);
     assert.equal(googleCalendarWebhookShouldImport("unknown"), false);

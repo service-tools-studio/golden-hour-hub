@@ -1,7 +1,9 @@
 import "server-only";
 
+import { pickCanonicalCalendarImport } from "../calendar/calendar-import-canonical.ts";
 import { addDays } from "../domain/time.ts";
 import type { DynamoItem } from "./items.ts";
+import { readCalendarImport } from "./items.ts";
 import { queryRelationIndex, queryScheduleIndex } from "./dynamo-queries.ts";
 
 function queryCalendarImportsByStatusInRange(
@@ -85,10 +87,18 @@ export async function queryCalendarImportsForSyncInRange(
   return [...pending, ...approved, ...canceled];
 }
 
-export async function findCalendarImportByGoogleEventId(eventId: string): Promise<DynamoItem | null> {
+export async function queryCalendarImportItemsByGoogleEventId(eventId: string): Promise<DynamoItem[]> {
   const id = eventId.trim();
-  if (!id) return null;
+  if (!id) return [];
   const rows = await queryRelationIndex(`GCAL_EVENT#${id}`);
-  const match = rows.find((item) => item.entity === "calendar_import");
-  return match ?? null;
+  return rows.filter((item) => item.entity === "calendar_import");
+}
+
+export async function findCalendarImportByGoogleEventId(eventId: string): Promise<DynamoItem | null> {
+  const rows = await queryCalendarImportItemsByGoogleEventId(eventId);
+  if (rows.length === 0) return null;
+  const parsed = rows.map((item) => readCalendarImport(item));
+  const canonical = pickCanonicalCalendarImport(parsed);
+  if (!canonical) return null;
+  return rows.find((item) => readCalendarImport(item).importId === canonical.importId) ?? rows[0] ?? null;
 }

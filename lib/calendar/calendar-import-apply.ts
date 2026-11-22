@@ -16,7 +16,14 @@ import { readMarketId } from "../domain/markets.ts";
 import type { MarketId } from "../domain/markets.ts";
 import type { CalendarImport } from "../domain/types.ts";
 import {
-  findCalendarImportByGoogleEventId,
+  calendarImportIdForGoogleEvent,
+  calendarImportProfileKey,
+  calendarImportsMatchingGoogleEvent,
+  dedupeCalendarImportsByGoogleEventId,
+  pickCanonicalCalendarImport,
+} from "./calendar-import-canonical.ts";
+import {
+  queryCalendarImportItemsByGoogleEventId,
   queryCalendarImportsForSyncInRange,
 } from "../data/calendar-import-queries.ts";
 import { readCalendarImport } from "../data/items.ts";
@@ -75,6 +82,7 @@ export async function applyCalendarEventsToHub(
   let withdrawn = 0;
   let workingHub = hub;
   const nextImports = [...hub.calendarImports];
+  const importExtraDeletes: string[] = [];
   const seenGoogleEventIds = new Set<string>();
   const today = hub.today;
   const horizonEnd = calendarImportSyncHorizonEnd(today);
@@ -92,6 +100,25 @@ export async function applyCalendarEventsToHub(
     const index = nextImports.findIndex((item) => item.importId === row.importId);
     if (index === -1) nextImports.push(row);
     else nextImports[index] = row;
+  }
+
+  function applyImportDedupe() {
+    const { imports: deduped, removedImportIds } = dedupeCalendarImportsByGoogleEventId(nextImports);
+    if (removedImportIds.length === 0) return;
+    importExtraDeletes.push(...removedImportIds);
+    nextImports.length = 0;
+    nextImports.push(...deduped);
+    workingHub = { ...workingHub, calendarImports: deduped };
+  }
+
+  async function loadCanonicalCalendarImportForEvent(eventId: string): Promise<CalendarImport | null> {
+    const items = await queryCalendarImportItemsByGoogleEventId(eventId);
+    for (const item of items) {
+      upsertImport(readCalendarImport(item));
+    }
+    applyImportDedupe();
+    const matches = calendarImportsMatchingGoogleEvent(nextImports, eventId);
+    return pickCanonicalCalendarImport(matches);
   }
 
   function withdrawLinkedImport(existing: CalendarImport) {
@@ -122,6 +149,7 @@ export async function applyCalendarEventsToHub(
   for (const item of syncImportItems) {
     upsertImport(readCalendarImport(item));
   }
+  applyImportDedupe();
   sweepRescheduleGhostImports();
 
   for (const event of events) {
@@ -133,9 +161,8 @@ export async function applyCalendarEventsToHub(
     seenGoogleEventIds.add(eventId);
 
     if (calendarEventIndicatesHubCancel(event)) {
-      const existingItem = await findCalendarImportByGoogleEventId(eventId);
-      if (existingItem) {
-        const existing = readCalendarImport(existingItem);
+      const existing = await loadCanonicalCalendarImportForEvent(eventId);
+      if (existing) {
         const activeJobId = calendarImportLinkedJobId(workingHub, existing);
         if (calendarImportShouldWithdrawFromGoogleSync(existing, activeJobId)) {
           withdrawLinkedImport(existing);
@@ -157,9 +184,8 @@ export async function applyCalendarEventsToHub(
     }
 
     if (calendarEventIsExcludedFromImport(event)) {
-      const existingItem = await findCalendarImportByGoogleEventId(eventId);
-      if (existingItem) {
-        const existing = readCalendarImport(existingItem);
+      const existing = await loadCanonicalCalendarImportForEvent(eventId);
+      if (existing) {
         const activeJobId = calendarImportLinkedJobId(workingHub, existing);
         if (calendarImportShouldWithdrawFromGoogleSync(existing, activeJobId)) {
           withdrawLinkedImport(existing);
@@ -175,8 +201,7 @@ export async function applyCalendarEventsToHub(
       continue;
     }
 
-    const existingItem = await findCalendarImportByGoogleEventId(eventId);
-    const existing = existingItem ? readCalendarImport(existingItem) : null;
+    const existing = await loadCanonicalCalendarImportForEvent(eventId);
     if (existing?.status === "REJECTED") {
       skipped += 1;
       continue;
@@ -277,7 +302,7 @@ export async function applyCalendarEventsToHub(
       continue;
     }
 
-    const importId = `calimp-${eventId.slice(0, 12)}-${Date.now().toString(36)}`;
+    const importId = calendarImportIdForGoogleEvent(eventId);
     const row: CalendarImport = {
       importId,
       ...parsed.fields,
@@ -301,6 +326,7 @@ export async function applyCalendarEventsToHub(
   }
 
   sweepRescheduleGhostImports();
+  applyImportDedupe();
 
   for (const row of nextImports) {
     if (row.status === "WITHDRAWN") continue;
@@ -318,9 +344,8 @@ export async function applyCalendarEventsToHub(
     if (job.date < today || job.date > horizonEnd) continue;
     if (seenGoogleEventIds.has(eventId)) continue;
 
-    const existingItem = await findCalendarImportByGoogleEventId(eventId);
-    if (existingItem) {
-      const existing = readCalendarImport(existingItem);
+    const existing = await loadCanonicalCalendarImportForEvent(eventId);
+    if (existing) {
       const activeJobId = calendarImportLinkedJobId(workingHub, existing);
       if (calendarImportShouldWithdrawFromGoogleSync(existing, activeJobId)) {
         withdrawLinkedImport(existing);
@@ -341,7 +366,13 @@ export async function applyCalendarEventsToHub(
   };
 
   const plan = buildHubDiffPersistPlan(before, after);
-  if (plan.puts.length === 0) {
+  for (const importId of [...new Set(importExtraDeletes)]) {
+    const key = calendarImportProfileKey(importId);
+    if (!plan.deletes.some((item) => item.pk === key.pk && item.sk === key.sk)) {
+      plan.deletes.push(key);
+    }
+  }
+  if (plan.puts.length === 0 && plan.deletes.length === 0) {
     return {
       created,
       createdMarketIds,

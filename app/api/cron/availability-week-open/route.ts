@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAvailabilityWeekOpenCron } from "@/lib/cleaner/availability-week-open-cron";
-import { dynamoConfigured, loadHub } from "@/lib/data/repository";
+import { dynamoConfigured } from "@/lib/data/repository";
+import { loadAdminHubSlices } from "@/lib/data/load-admin-hub";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, ran: false, message: "DynamoDB is not configured." });
   }
   try {
-    const hub = await loadHub({ persistReconciliation: true });
+    const hub = await loadAdminHubSlices({ persistReconciliation: false });
     const result = await runAvailabilityWeekOpenCron(hub);
     if (!result.ran) {
       return NextResponse.json({ ok: true, ran: false, message: "Skipped — not Monday in business timezone." });

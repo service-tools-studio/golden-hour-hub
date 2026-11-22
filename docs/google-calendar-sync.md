@@ -6,6 +6,8 @@ When `GOOGLE_CALENDAR_ENABLED=true` and OAuth env vars are set, Hub imports even
 
 Admins review at `/admin/calendar-imports/[importId]`, match or create a customer, edit visit details, then **Approve** (creates a draft Hub job with `googleCalendarEventId`) or **Dismiss**. When Gmail matches an existing hub visit (**Already on schedule**), use **Link to Hub cleaning** on the dashboard or review screen to attach `googleCalendarEventId` without creating a duplicate. Dismissed imports appear under **Recently dismissed**; sync-withdrawn rows appear under **Removed by sync** (listed first). Both are recoverable for 14 days. **Reopen for review** returns them to the pending queue; sync-removed rows also run **Check Gmail** to refresh parsed details. When any imports were withdrawn by sync, the dashboard shows a badge next to **Check Gmail** (e.g. “2 imports removed by sync — review”).
 
+Hub stores **one staging row per Google event id** (`calimp-gcal-…` derived from the event id). Overlapping sync runs upsert the same row; any legacy duplicates are merged and deleted on the next import pass.
+
 **Check Gmail** (and the import cron/webhook) re-fetches Google Calendar for the same 60-day window. Hub then:
 
 - Updates pending import rows when an event’s date or arrival changes (reschedule).
@@ -19,7 +21,7 @@ Admins review at `/admin/calendar-imports/[importId]`, match or create a custome
 ### Near-real-time push
 
 1. **Watch registration** — Daily cron `GET /api/cron/calendar-import-watch` (Vercel `0 7 * * *`) calls Google `events.watch` with webhook URL `{NEXT_PUBLIC_APP_URL}/api/google-calendar/webhook`. Channel state is stored on Dynamo `HUB` / `GCAL_WATCH`. Channels expire in ~7 days; the cron renews when expiry is within 48 hours.
-2. **Webhook** — `POST /api/google-calendar/webhook` validates `X-Goog-Channel-ID` / `X-Goog-Resource-ID` (and optional `GOOGLE_CALENDAR_WEBHOOK_TOKEN` via `X-Goog-Channel-Token`), then runs the same import pass as the daily cron.
+2. **Webhook** — `POST /api/google-calendar/webhook` validates `X-Goog-Channel-ID` / `X-Goog-Resource-ID` (and optional `GOOGLE_CALENDAR_WEBHOOK_TOKEN` via `X-Goog-Channel-Token`), then runs the same import pass as the daily cron for `exists` / `not_exists` notifications. Initial channel `sync` pings are ignored (daily cron backstop).
 3. **Daily backstop** — `GET /api/cron/calendar-import` (`0 9 * * *`) still runs a full range import if a push was missed.
 
 When **automated** sync (daily cron or Google push webhook) **persists one or more new** `PENDING_REVIEW` imports, Hub texts **`JASMIN_PHONE`** (Twilio staff SMS) with the count, which market(s) they are in, and a link to `/admin` (`NEXT_PUBLIC_APP_URL`). Dashboard **Check Gmail** does not send that text. Updates to existing import rows do not trigger it.

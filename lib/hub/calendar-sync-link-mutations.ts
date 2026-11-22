@@ -1,3 +1,4 @@
+import { calendarImportIdForGoogleEvent } from "../calendar/calendar-import-canonical.ts";
 import {
   calendarImportDefaultServiceType,
   findExistingJobForCalendarImport,
@@ -82,9 +83,7 @@ export function linkCalendarEventToJobOnHub(
 
   const now = new Date().toISOString();
   const existing = findImportByEventId(hub, eventId);
-  const importId =
-    existing?.importId ??
-    `calimp-${eventId.slice(0, 12)}-link-${Date.now().toString(36)}`;
+  const importId = existing?.importId ?? calendarImportIdForGoogleEvent(eventId);
 
   const linkedImport: CalendarImport = {
     importId,

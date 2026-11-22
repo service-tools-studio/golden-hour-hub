@@ -42,8 +42,9 @@ export function googleCalendarWebhookAuthorized(
   return { ok: true };
 }
 
+/** Real calendar changes use `exists` / `not_exists`. `sync` is channel setup only — skip heavy import (daily cron backstop). */
 export function googleCalendarWebhookShouldImport(resourceState: string | null): boolean {
   if (!resourceState) return false;
   const state = resourceState.toLowerCase();
-  return state === "sync" || state === "exists" || state === "not_exists";
+  return state === "exists" || state === "not_exists";
 }
