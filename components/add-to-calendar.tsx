@@ -2,41 +2,15 @@
 
 import { useState } from "react";
 import { ActionSheet } from "@/components/action-sheet";
-import { fullAddress } from "@/components/address-link";
-import { type CalendarEvent, googleCalendarUrl, icsDownloadPath, outlookCalendarUrl } from "@/lib/calendar";
-import { isUnsetArrival } from "@/lib/domain/arrival";
-import { hasKnownDurationMinutes } from "@/lib/domain/duration";
-import { calculateBlockedRange } from "@/lib/domain/scheduling";
+import { googleCalendarUrl, icsDownloadPath, outlookCalendarUrl } from "@/lib/calendar";
+import { buildCleanerAssignmentCalendarEvent } from "@/lib/cleaner/calendar-event";
 import type { Job, JobAssignment } from "@/lib/domain/types";
-import { cleanerServiceLabel, customerFirstNameForCleaner, formatArrival } from "@/lib/format";
 
-export function cleaningCalendarEvent(job: Job, assignment: JobAssignment): CalendarEvent | null {
-  if (isUnsetArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)) return null;
-  if (!hasKnownDurationMinutes(assignment.expectedDurationMinutes)) return null;
-  const range = calculateBlockedRange({
-    date: assignment.serviceDate,
-    arrivalWindowStart: assignment.arrivalWindowStart!,
-    arrivalWindowEnd: assignment.arrivalWindowEnd!,
-    expectedDurationMinutes: assignment.expectedDurationMinutes,
-  });
-  const notes = [
-    `Start time: ${formatArrival(assignment.arrivalWindowStart, assignment.arrivalWindowEnd)}`,
-    job.snapshot.preferences ? `Preferences: ${job.snapshot.preferences}` : "",
-    job.specialInstructions ? `Instructions: ${job.specialInstructions}` : "",
-  ].filter(Boolean);
-  return {
-    uid: `${assignment.assignmentId}@goldenhourhub`,
-    title: `Golden Hour: ${customerFirstNameForCleaner(job.snapshot)} – ${cleanerServiceLabel(job.serviceType)}`,
-    start: range.startUtc,
-    end: range.endUtc,
-    location: fullAddress(job.snapshot),
-    notes: notes.join("\n"),
-  };
-}
+export { buildCleanerAssignmentCalendarEvent as cleaningCalendarEvent } from "@/lib/cleaner/calendar-event";
 
 export function AddToCalendarButton({ job, assignment }: { job: Job; assignment: JobAssignment }) {
   const [open, setOpen] = useState(false);
-  const event = cleaningCalendarEvent(job, assignment);
+  const event = buildCleanerAssignmentCalendarEvent(job, assignment);
   if (!event) return null;
   return (
     <>
