@@ -86,7 +86,7 @@ export async function saveNewCleaning(page: Page): Promise<string> {
 
 /** Bottom nav — keeps hub client state (avoids missing jobs after a hard schedule reload). */
 export async function openAdminScheduleViaNav(page: Page): Promise<void> {
-  await page.locator("nav.fixed").getByRole("link", { name: "Schedule", exact: true }).click();
+  await page.getByRole("navigation").last().getByRole("link", { name: "Schedule", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Schedule" })).toBeVisible();
 }
 

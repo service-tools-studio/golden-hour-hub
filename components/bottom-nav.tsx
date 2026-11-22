@@ -36,7 +36,7 @@ export function BottomNav({ items }: { items: Item[] }) {
   }
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-md border-t border-ink/10 bg-[#fffdf6] pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-md border-t border-ink/10 bg-[#fffdf6] pb-[env(safe-area-inset-bottom)]">
       {items.map((item) => {
         const active = tabActive(pathname, item.href);
         const loading = isPending && navigatingTo === item.href;
