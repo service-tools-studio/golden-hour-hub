@@ -362,12 +362,6 @@ export function DashboardView() {
                   >
                     Check Gmail
                   </SecondaryButton>
-                  <Link
-                    href="/admin/sync-link"
-                    className="min-h-10 rounded-xl px-3 text-sm font-semibold text-ink/70 underline decoration-ink/25 underline-offset-2"
-                  >
-                    Link Gmail ↔ Hub
-                  </Link>
                 </div>
               </div>
             </div>
