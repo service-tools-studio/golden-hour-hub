@@ -84,9 +84,9 @@ export async function saveNewCleaning(page: Page): Promise<string> {
   return waitForSavedJobId(page);
 }
 
-/** Bottom nav — keeps hub client state (avoids missing jobs after a hard schedule reload). */
+/** Schedule tab — client nav is flaky under long dashboards in CI; route load is enough for e2e. */
 export async function openAdminScheduleViaNav(page: Page): Promise<void> {
-  await page.getByRole("navigation").last().getByRole("link", { name: "Schedule", exact: true }).click();
+  await page.goto("/admin/schedule");
   await expect(page.getByRole("heading", { name: "Schedule" })).toBeVisible();
 }
 

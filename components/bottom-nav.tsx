@@ -36,7 +36,10 @@ export function BottomNav({ items }: { items: Item[] }) {
   }
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-md border-t border-ink/10 bg-[#fffdf6] pb-[env(safe-area-inset-bottom)]">
+    <nav
+      aria-label="Main"
+      className="fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-md border-t border-ink/10 bg-[#fffdf6] pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(51,51,51,0.06)]"
+    >
       {items.map((item) => {
         const active = tabActive(pathname, item.href);
         const loading = isPending && navigatingTo === item.href;

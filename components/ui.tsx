@@ -7,7 +7,7 @@ import type { ConfirmedScheduleConflictNotice as ScheduleConflictNoticeFields } 
 const DEFAULT_PAGE_HEADER_EYEBROW = "Golden Hour Hub";
 
 export function Screen({ children }: { children: React.ReactNode }) {
-  return <div className="mx-auto min-h-dvh w-full max-w-md pb-28">{children}</div>;
+  return <div className="mx-auto min-h-dvh w-full max-w-md pb-32">{children}</div>;
 }
 
 type Crumb = { label: string; href?: string; onClick?: () => void };
