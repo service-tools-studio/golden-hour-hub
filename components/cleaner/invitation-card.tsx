@@ -17,7 +17,6 @@ import {
   formatArrival,
   formatDuration,
   formatEstimatedOnSiteEnd,
-  cleanerOtherCleanersNote,
   formatLongDate,
   propertySizeLabel,
 } from "@/lib/format";
@@ -97,7 +96,6 @@ function InvitationCardContent({
           assignment.expectedDurationMinutes,
         );
   const sizeLine = propertySizeLabel(job.snapshot.bedrooms, job.snapshot.bathrooms, job.snapshot.squareFeet);
-  const otherCleanersNote = cleanerOtherCleanersNote(job.headcountNeeded);
   const invitePayLines = cleanerInvitationPayLines({
     bringsHelpers,
     payType: assignment.payType,
@@ -159,7 +157,6 @@ function InvitationCardContent({
         </AddressLink>
       </div>
       {sizeLine ? <p className="mt-2 text-base text-ink/70">{sizeLine}</p> : null}
-      {otherCleanersNote ? <p className="mt-2 text-base text-ink/70">{otherCleanersNote}</p> : null}
       {job.seriesId ? (
         <p className="mt-2 text-[10px] leading-snug text-ink/50">
           Recurring customer. You are accepting this cleaning only.
