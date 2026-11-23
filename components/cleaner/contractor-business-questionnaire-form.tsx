@@ -591,7 +591,10 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
   }
 
   return (
-    <div className="pb-36" aria-busy={saving || submitPending}>
+    <div
+      className="pb-[calc(12rem+env(safe-area-inset-bottom,0px))]"
+      aria-busy={saving || submitPending}
+    >
       <div className="space-y-3" tabIndex={-1}>
         <div className="flex items-center justify-between gap-3 text-sm text-ink/65">
           <p>
@@ -1256,8 +1259,8 @@ function scrollToFirstStepError(stepErrors: QuestionnaireFieldErrors, wizardStep
       ) : null}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-2">
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-40 mx-auto w-full max-w-md border-t border-ink/10 bg-cream/95 px-5 pb-3 pt-3 shadow-[0_-4px_16px_rgba(51,51,51,0.06)] backdrop-blur-sm">
+        <div className="flex w-full flex-col gap-2">
           {returnToReviewAfterEdit && step < 4 ? (
             <SecondaryButton type="button" onClick={handleBackToReview}>
               Back to review
